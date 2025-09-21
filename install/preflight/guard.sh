@@ -20,9 +20,22 @@ done
 # Must be x86 only to fully work
 [ "$(uname -m)" != "x86_64" ] && abort "x86_64 CPU"
 
-# Must not have Gnome or KDE already install
-pacman -Qe gnome-shell &>/dev/null && abort "Fresh + Vanilla Arch"
-pacman -Qe plasma-desktop &>/dev/null && abort "Fresh + Vanilla Arch"
+# Check for existing desktop environments
+if pacman -Qe gnome-shell &>/dev/null; then
+    if [[ "$OMARCHY_INSTALL_MODE" != "overlay" ]]; then
+        abort "Fresh + Vanilla Arch (or set OMARCHY_FORCE_OVERLAY=true for overlay installation)"
+    else
+        echo "⚠️  GNOME detected - installing in overlay mode"
+    fi
+fi
+
+if pacman -Qe plasma-desktop &>/dev/null; then
+    if [[ "$OMARCHY_INSTALL_MODE" != "overlay" ]]; then
+        abort "Fresh + Vanilla Arch (or set OMARCHY_FORCE_OVERLAY=true for overlay installation)"
+    else
+        echo "⚠️  KDE Plasma detected - installing in overlay mode"
+    fi
+fi
 
 # Cleared all guards
 echo "Guards: OK"

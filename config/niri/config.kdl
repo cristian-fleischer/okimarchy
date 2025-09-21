@@ -1,0 +1,349 @@
+// Learn how to configure Niri: https://github.com/YaLTeR/niri/wiki/Configuration
+
+// ============================================================================
+// OMARCHY DEFAULTS - DO NOT EDIT THESE DIRECTLY!
+// ============================================================================
+// To customize, create override files in ~/.config/niri/
+// - monitors.kdl  (monitor/display configuration)
+// - input.kdl     (keyboard, mouse, touchpad settings)
+// - layout.kdl    (gaps, borders, column widths)
+// - bindings.kdl  (custom keybindings)
+
+// Default input configuration from ~/.local/share/omarchy/default/niri/input.kdl
+input {
+    keyboard {
+        xkb {
+            layout "us"
+            // Uncomment if you want Caps Lock as Ctrl
+            // options "ctrl:nocaps"
+        }
+
+        // Repeat configuration
+        repeat-delay 600
+        repeat-rate 25
+    }
+
+    touchpad {
+        tap true
+        dwt true
+        dwtp true
+        natural-scroll true
+        accel-speed 0.2
+        accel-profile "flat"
+        tap-button-map "left-right-middle"
+    }
+
+    mouse {
+        natural-scroll false
+        accel-speed 0.2
+        accel-profile "flat"
+    }
+
+    tablet {
+        map-to-output "eDP-1"
+    }
+}
+
+// Default layout configuration from ~/.local/share/omarchy/default/niri/layout.kdl
+layout {
+    gaps 8
+
+    // When to center a column when changing focus, options: never, always, on-overflow
+    center-focused-column "never"
+
+    // Default column width as a proportion
+    default-column-width { proportion 0.5; }
+
+    // Available preset column widths for Super+R
+    preset-column-widths {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+    }
+
+    // Window focus ring (colors will be overridden by theme)
+    focus-ring {
+        width 2
+        active-color "#7c3aed"
+        inactive-color "#313244"
+    }
+
+    // Window borders (colors will be overridden by theme)
+    border {
+        width 2
+        active-color "#7c3aed"
+        inactive-color "#313244"
+    }
+
+    // Struts/reserves space for panels like waybar
+    // struts {
+    //    // Reserve space for waybar at the top
+    //    top 32
+    // }
+}
+
+// Applications to spawn on startup
+// Applications started via UWSM for proper systemd integration
+// This matches the Hyprland exec-once = uwsm app -- pattern
+spawn-at-startup "uwsm" "app" "--" "mako"
+spawn-at-startup "uwsm" "app" "--" "waybar"
+spawn-at-startup "uwsm" "app" "--" "swayosd-server"
+spawn-at-startup "uwsm" "app" "--" "swaybg" "-i" "~/.config/omarchy/current/background" "-m" "fill"
+spawn-sh-at-startup "uwsm app -- swayidle -w -C ~/.config/swayidle/config"
+
+// Additional system processes (not via uwsm)
+spawn-at-startup "/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"
+spawn-at-startup "wl-clip-persist" "--clipboard" "regular" "--all-mime-type-regex" "^(?!x-kde-passwordManagerHint).+"
+spawn-at-startup "omarchy-cmd-first-run"
+
+// Key bindings - Aligned with Hyprland for easy switching
+binds {
+    // ============================================================================
+    // LAUNCHERS (matching Hyprland utilities.conf)
+    // ============================================================================
+    "Mod+Space" { spawn "walker" "-p" "Start…"; }                    // Launch apps
+    "Mod+Ctrl+E" { spawn "walker" "-m" "Emojis"; }                   // Emoji picker
+    "Mod+Alt+Space" { spawn "omarchy-menu"; }                        // Omarchy menu
+    "Mod+Escape" { spawn "omarchy-menu" "system"; }                  // Power menu
+    "Mod+K" { spawn "omarchy-menu-keybindings"; }                    // Show key bindings
+
+    // ============================================================================
+    // APPLICATIONS (matching Hyprland bindings.conf)
+    // ============================================================================
+    "Mod+Return" { spawn "alacritty"; }                              // Terminal
+    "Mod+F" { spawn "nautilus" "--new-window"; }                     // File manager
+    "Mod+B" { spawn "omarchy-launch-browser"; }                      // Browser
+    "Mod+M" { spawn "spotify"; }                                     // Music
+    "Mod+N" { spawn "alacritty" "-e" "nvim"; }                       // Neovim
+    "Mod+T" { spawn "alacritty" "-e" "btop"; }                       // Activity monitor
+    "Mod+D" { spawn "alacritty" "-e" "lazydocker"; }                 // Docker
+    "Mod+G" { spawn "signal-desktop"; }                             // Signal
+    "Mod+O" { spawn "obsidian" "-disable-gpu"; }                    // Obsidian
+    "Mod+Slash" { spawn "1password"; }                              // Passwords
+
+    // Web apps (matching Hyprland)
+    "Mod+A" { spawn "omarchy-launch-webapp" "https://chatgpt.com"; }
+    "Mod+Shift+A" { spawn "omarchy-launch-webapp" "https://grok.com"; }
+    "Mod+C" { spawn "omarchy-launch-webapp" "https://app.hey.com/calendar/weeks/"; }
+    "Mod+E" { spawn "omarchy-launch-webapp" "https://app.hey.com"; }
+    "Mod+Y" { spawn "omarchy-launch-webapp" "https://youtube.com/"; }
+    "Mod+X" { spawn "omarchy-launch-webapp" "https://x.com/"; }
+
+    // ============================================================================
+    // WINDOW MANAGEMENT (adapted from Hyprland tiling.conf)
+    // ============================================================================
+    "Mod+W" { close-window; }                                        // Close active window
+    "Mod+Ctrl+Alt+Delete" { spawn "omarchy-cmd-close-all-windows"; }  // Close all windows
+    "Mod+V" { /* toggle-floating equivalent - niri doesn't have this */; }
+    "Shift+F11" { fullscreen-window; }                              // Force full screen
+
+    // ============================================================================
+    // FOCUS MOVEMENT (matching Hyprland arrow keys)
+    // ============================================================================
+    "Mod+Left"  { focus-column-left; }                              // Move focus left
+    "Mod+Right" { focus-column-right; }                             // Move focus right
+    "Mod+Up"    { focus-window-up; }                                // Move focus up
+    "Mod+Down"  { focus-window-down; }                              // Move focus down
+
+    // ============================================================================
+    // WORKSPACES (matching Hyprland 1-9)
+    // ============================================================================
+    "Mod+1" { focus-workspace 1; }                                  // Switch to workspace 1
+    "Mod+2" { focus-workspace 2; }                                  // Switch to workspace 2
+    "Mod+3" { focus-workspace 3; }                                  // Switch to workspace 3
+    "Mod+4" { focus-workspace 4; }                                  // Switch to workspace 4
+    "Mod+5" { focus-workspace 5; }                                  // Switch to workspace 5
+    "Mod+6" { focus-workspace 6; }                                  // Switch to workspace 6
+    "Mod+7" { focus-workspace 7; }                                  // Switch to workspace 7
+    "Mod+8" { focus-workspace 8; }                                  // Switch to workspace 8
+    "Mod+9" { focus-workspace 9; }                                  // Switch to workspace 9
+
+    // Tab between workspaces (matching Hyprland)
+    "Mod+Tab" { focus-workspace "+1"; }                            // Next workspace
+    "Mod+Shift+Tab" { focus-workspace "-1"; }                      // Previous workspace
+
+    // ============================================================================
+    // MOVE WINDOWS TO WORKSPACES (matching Hyprland)
+    // ============================================================================
+    "Mod+Shift+1" { move-column-to-workspace 1; }                   // Move to workspace 1
+    "Mod+Shift+2" { move-column-to-workspace 2; }                   // Move to workspace 2
+    "Mod+Shift+3" { move-column-to-workspace 3; }                   // Move to workspace 3
+    "Mod+Shift+4" { move-column-to-workspace 4; }                   // Move to workspace 4
+    "Mod+Shift+5" { move-column-to-workspace 5; }                   // Move to workspace 5
+    "Mod+Shift+6" { move-column-to-workspace 6; }                   // Move to workspace 6
+    "Mod+Shift+7" { move-column-to-workspace 7; }                   // Move to workspace 7
+    "Mod+Shift+8" { move-column-to-workspace 8; }                   // Move to workspace 8
+    "Mod+Shift+9" { move-column-to-workspace 9; }                   // Move to workspace 9
+
+    // ============================================================================
+    // WINDOW SWAPPING/MOVEMENT (adapted from Hyprland)
+    // ============================================================================
+    "Mod+Shift+Left"  { move-column-left; }                         // Swap/move window left
+    "Mod+Shift+Right" { move-column-right; }                        // Swap/move window right
+    "Mod+Shift+Up"    { move-window-up; }                           // Move window up in column
+    "Mod+Shift+Down"  { move-window-down; }                         // Move window down in column
+
+    // ============================================================================
+    // WINDOW CYCLING (matching Hyprland Alt+Tab)
+    // ============================================================================
+    "Alt+Tab" { focus-window-or-workspace-up; }                     // Cycle to next window
+    "Alt+Shift+Tab" { focus-window-or-workspace-down; }             // Cycle to prev window
+
+    // ============================================================================
+    // AESTHETICS (matching Hyprland utilities.conf)
+    // ============================================================================
+    "Mod+Shift+Space" { spawn "pkill" "-SIGUSR1" "waybar"; }        // Toggle top bar
+    "Mod+Ctrl+Space" { spawn "omarchy-theme-bg-next"; }             // Next background
+    "Mod+Shift+Ctrl+Space" { spawn "omarchy-menu" "theme"; }        // Pick new theme
+
+    // ============================================================================
+    // NOTIFICATIONS (matching Hyprland)
+    // ============================================================================
+    "Mod+Comma" { spawn "makoctl" "dismiss"; }                      // Dismiss last notification
+    "Mod+Shift+Comma" { spawn "makoctl" "dismiss" "--all"; }        // Dismiss all notifications
+
+    // ============================================================================
+    // NIRI-SPECIFIC TILING CONTROLS
+    // ============================================================================
+    "Mod+BracketLeft"  { consume-window-into-column; }              // Consume window into column
+    "Mod+BracketRight" { expel-window-from-column; }                // Expel window from column
+    "Mod+R" { switch-preset-column-width; }                        // Switch column width
+    "Mod+Shift+R" { reset-window-height; }                         // Reset window height
+    "Mod+F" { maximize-column; }                                   // Maximize column
+
+    // ============================================================================
+    // SCREENSHOTS (adapted to use grim instead of hyprshot)
+    // ============================================================================
+    "Print" { spawn "grim" "-g" "$(slurp)"; }                        // Screenshot of region
+    "Shift+Print" { spawn "grim"; }                                 // Screenshot of display
+    "Ctrl+Print" { spawn "grim" "-g" "$(slurp)"; }                   // Screenshot of region (alternative)
+
+    // ============================================================================
+    // MEDIA KEYS (matching Hyprland media.conf)
+    // ============================================================================
+    "XF86AudioRaiseVolume" { spawn "swayosd-client" "--output-volume" "raise"; }
+    "XF86AudioLowerVolume" { spawn "swayosd-client" "--output-volume" "lower"; }
+    "XF86AudioMute" { spawn "swayosd-client" "--output-volume" "mute-toggle"; }
+    "XF86AudioMicMute" { spawn "swayosd-client" "--input-volume" "mute-toggle"; }
+    "XF86MonBrightnessUp" { spawn "swayosd-client" "--brightness" "raise"; }
+    "XF86MonBrightnessDown" { spawn "swayosd-client" "--brightness" "lower"; }
+
+    // Playerctl (matching Hyprland)
+    "XF86AudioNext" { spawn "swayosd-client" "--playerctl" "next"; }
+    "XF86AudioPlay" { spawn "swayosd-client" "--playerctl" "play-pause"; }
+    "XF86AudioPause" { spawn "swayosd-client" "--playerctl" "play-pause"; }
+    "XF86AudioPrev" { spawn "swayosd-client" "--playerctl" "previous"; }
+
+    // ============================================================================
+    // SYSTEM CONTROLS
+    // ============================================================================
+    "Mod+Ctrl+I" { spawn "omarchy-toggle-idle"; }                   // Toggle locking on idle
+    "Mod+Ctrl+N" { spawn "omarchy-toggle-nightlight"; }             // Toggle nightlight
+
+    // Session management
+    "Mod+Shift+E" { quit; }                                        // Quit niri
+}
+
+// Window rules for automatic workspace assignment and behavior
+window-rule {
+    match app-id="1Password"
+    open-on-workspace 5
+}
+
+window-rule {
+    match app-id="signal"
+    open-on-workspace 4
+}
+
+window-rule {
+    match app-id="discord"
+    open-on-workspace 4
+}
+
+window-rule {
+    match app-id="obsidian"
+    open-on-workspace 3
+}
+
+window-rule {
+    match app-id="chromium-browser"
+    open-on-workspace 1
+}
+
+window-rule {
+    match app-id="firefox"
+    open-on-workspace 1
+}
+
+window-rule {
+    match app-id="code"
+    open-on-workspace 2
+}
+
+window-rule {
+    match app-id="nvim"
+    open-on-workspace 2
+}
+
+window-rule {
+    match title="Picture in Picture"
+    geometry-corner-radius 8
+    clip-to-geometry true
+}
+
+// Default window appearance
+window-rules {
+    // Rounded corners for all windows
+    geometry-corner-radius 8
+    clip-to-geometry true
+}
+
+// Animations (optional - can be disabled for performance)
+animations {
+    slowdown 1.0
+
+    window-open {
+        duration-ms 150
+        curve "ease-out-expo"
+    }
+
+    window-close {
+        duration-ms 150
+        curve "ease-out-expo"
+    }
+
+    workspace-switch {
+        duration-ms 200
+        curve "ease-out-expo"
+    }
+}
+
+// Cursor configuration
+cursor {
+    hide-after-inactive-ms 3000
+}
+
+// Screenshot configuration
+screenshot {
+    path "~/Pictures/Screenshots"
+}
+
+// Debug settings (disable in production)
+debug {
+    preview-render false
+    wait-for-frame-completion-before-queueing false
+    enable-color-transformations-capability true
+}
+
+// Environment variables
+environment {
+    // Ensure applications use Wayland when possible
+    QT_QPA_PLATFORM "wayland"
+    GDK_BACKEND "wayland"
+    MOZ_ENABLE_WAYLAND "1"
+
+    // XDG settings
+    XDG_CURRENT_DESKTOP "niri"
+    XDG_SESSION_DESKTOP "niri"
+    XDG_SESSION_TYPE "wayland"
+}

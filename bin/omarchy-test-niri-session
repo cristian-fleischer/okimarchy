@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# Test if niri can be started properly
+# Useful for debugging session startup issues
+
+echo "🧪 Testing niri session startup..."
+
+# Check if niri is installed
+if ! command -v niri >/dev/null; then
+    echo "❌ Niri is not installed"
+    exit 1
+fi
+
+# Check if niri-session exists  
+if ! command -v niri-session >/dev/null; then
+    echo "❌ niri-session command not found"
+    echo "💡 Try running 'niri' directly or check if niri package provides niri-session"
+    exit 1
+fi
+
+# Check if walker is available (used as launcher)
+if ! command -v walker >/dev/null; then
+    echo "⚠️  walker command not found (used as app launcher)"
+    echo "💡 Make sure walker-bin package is installed"
+fi
+
+# Check if niri config is valid
+if [[ -f ~/.config/niri/config.kdl ]]; then
+    echo "🔍 Validating niri configuration..."
+    if niri validate ~/.config/niri/config.kdl; then
+        echo "✅ Niri configuration is valid"
+    else
+        echo "❌ Niri configuration has errors"
+        exit 1
+    fi
+else
+    echo "⚠️  No niri configuration found at ~/.config/niri/config.kdl"
+    echo "💡 Run omarchy installation with niri selected first"
+fi
+
+# Check desktop entry
+if [[ -f /usr/share/wayland-sessions/niri.desktop ]]; then
+    echo "✅ Niri desktop entry found"
+    echo "📋 Desktop entry contents:"
+    cat /usr/share/wayland-sessions/niri.desktop | sed 's/^/   /'
+else
+    echo "❌ Niri desktop entry not found at /usr/share/wayland-sessions/niri.desktop"
+fi
+
+# Show current seamless login service status
+if [[ -f /etc/systemd/system/omarchy-seamless-login.service ]]; then
+    echo
+    echo "🔍 Current seamless login service configuration:"
+    grep "ExecStart=" /etc/systemd/system/omarchy-seamless-login.service | sed 's/^/   /'
+    
+    if grep -q "niri-session" /etc/systemd/system/omarchy-seamless-login.service; then
+        echo "✅ Seamless login is configured for niri"
+    else
+        echo "⚠️  Seamless login is not configured for niri"
+        echo "💡 Run 'omarchy-wm-switch niri' to update"
+    fi
+else
+    echo "❌ Seamless login service not found"
+fi
+
+echo
+echo "🎯 Test completed. If all checks passed, niri should start on next login/reboot."

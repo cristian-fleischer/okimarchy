@@ -1,0 +1,33 @@
+// Custom layout configuration for Niri  
+// Override default layout settings here
+// Learn more at: https://github.com/YaLTeR/niri/wiki/Configuration:-Layout
+
+// Example customizations:
+
+// layout {
+//     gaps 16  // Bigger gaps
+//     
+//     default-column-width { fixed 800; }  // Fixed column width instead of proportion
+//     
+//     preset-column-widths {
+//         proportion 0.25
+//         proportion 0.5  
+//         proportion 0.75
+//         fixed 400
+//         fixed 800
+//     }
+//     
+//     focus-ring {
+//         width 4      // Thicker focus ring
+//         active-color "#ff0000"    // Custom colors
+//         inactive-color "#333333"
+//     }
+//     
+//     border {
+//         width 3
+//         active-color "#00ff00"
+//         inactive-color "#666666"
+//     }
+//     
+//     center-focused-column "always"  // Always center focused column
+// }

@@ -1,0 +1,32 @@
+// Custom monitor configuration for Niri
+// Configure your monitors/displays here
+// Learn more at: https://github.com/YaLTeR/niri/wiki/Configuration:-Outputs
+
+// Example configurations:
+
+// Single monitor with specific resolution
+// output "eDP-1" {
+//     mode "1920x1080@60.000"
+//     position x=0 y=0
+//     transform "normal"
+//     scale 1.0
+// }
+
+// Dual monitor setup
+// output "DP-1" {
+//     mode "2560x1440@165.000"  
+//     position x=0 y=0
+//     scale 1.0
+// }
+// 
+// output "HDMI-A-1" {
+//     mode "1920x1080@60.000"
+//     position x=2560 y=0
+//     scale 1.0
+//     transform "90"  // Portrait mode
+// }
+
+// Disable a monitor
+// output "VGA-1" {
+//     off
+// }

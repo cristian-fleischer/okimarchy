@@ -1,0 +1,7 @@
+// Custom keybindings for Niri
+// Add your own keybindings here to override defaults
+
+binds {
+    // Add your custom keybindings here
+    // Example: "Mod+Shift+Return" { spawn "alacritty"; }
+}

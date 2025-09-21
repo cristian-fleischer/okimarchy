@@ -1,0 +1,148 @@
+#!/bin/bash
+
+# Generate final niri configuration by merging defaults with user overrides
+# Similar to how Hyprland handles configuration sourcing
+
+NIRI_CONFIG_DIR="$HOME/.config/niri"
+OMARCHY_DEFAULT_DIR="$HOME/.local/share/omarchy/default/niri"
+OMARCHY_THEME_DIR="$HOME/.config/omarchy/current/theme"
+TEMP_CONFIG="/tmp/niri-config.kdl"
+
+echo "🔧 Generating niri configuration with user overrides..."
+
+# Start with the base template
+cat > "$TEMP_CONFIG" << 'EOF'
+// Generated niri configuration for Omarchy
+// This file is auto-generated - do not edit directly!
+// Customize by editing files in ~/.config/niri/
+
+EOF
+
+# Add default input configuration
+echo "// ============================================================================" >> "$TEMP_CONFIG"
+echo "// INPUT CONFIGURATION" >> "$TEMP_CONFIG"
+echo "// ============================================================================" >> "$TEMP_CONFIG"
+
+if [[ -f "$OMARCHY_DEFAULT_DIR/input.kdl" ]]; then
+    cat "$OMARCHY_DEFAULT_DIR/input.kdl" >> "$TEMP_CONFIG"
+    echo "" >> "$TEMP_CONFIG"
+fi
+
+# Add user input overrides if they exist
+if [[ -f "$NIRI_CONFIG_DIR/input.kdl" ]]; then
+    echo "// User input overrides from ~/.config/niri/input.kdl" >> "$TEMP_CONFIG"
+    # Extract only the content inside the input {} block
+    grep -A 1000 "^input {" "$NIRI_CONFIG_DIR/input.kdl" | grep -v "^//" | grep -v "^$" >> "$TEMP_CONFIG"
+    echo "" >> "$TEMP_CONFIG"
+fi
+
+# Add default layout configuration
+echo "// ============================================================================" >> "$TEMP_CONFIG"
+echo "// LAYOUT CONFIGURATION" >> "$TEMP_CONFIG"
+echo "// ============================================================================" >> "$TEMP_CONFIG"
+
+if [[ -f "$OMARCHY_DEFAULT_DIR/layout.kdl" ]]; then
+    cat "$OMARCHY_DEFAULT_DIR/layout.kdl" >> "$TEMP_CONFIG"
+    echo "" >> "$TEMP_CONFIG"
+fi
+
+# Add user layout overrides if they exist
+if [[ -f "$NIRI_CONFIG_DIR/layout.kdl" ]] && grep -q "^layout {" "$NIRI_CONFIG_DIR/layout.kdl" 2>/dev/null; then
+    echo "// User layout overrides from ~/.config/niri/layout.kdl" >> "$TEMP_CONFIG"
+    grep -A 1000 "^layout {" "$NIRI_CONFIG_DIR/layout.kdl" | grep -v "^//" | grep -v "^$" >> "$TEMP_CONFIG"
+    echo "" >> "$TEMP_CONFIG"
+fi
+if [[ -f "$NIRI_CONFIG_DIR/monitors.kdl" ]]; then
+    echo "// ============================================================================" >> "$TEMP_CONFIG"
+    echo "// MONITOR CONFIGURATION" >> "$TEMP_CONFIG"
+    echo "// ============================================================================" >> "$TEMP_CONFIG"
+    echo "// User monitor configuration from ~/.config/niri/monitors.kdl" >> "$TEMP_CONFIG"
+    cat "$NIRI_CONFIG_DIR/monitors.kdl" >> "$TEMP_CONFIG"
+    echo "" >> "$TEMP_CONFIG"
+fi
+
+# Startup applications using UWSM app launcher (matching Hyprland pattern)
+echo "// ============================================================================" >> "$TEMP_CONFIG"
+echo "// STARTUP APPLICATIONS" >> "$TEMP_CONFIG"
+echo "// ============================================================================" >> "$TEMP_CONFIG"
+cat >> "$TEMP_CONFIG" << 'EOF'
+// Applications started via UWSM for proper systemd integration
+// This matches the Hyprland exec-once = uwsm app -- pattern
+spawn-at-startup "uwsm" "app" "--" "mako"
+spawn-at-startup "uwsm" "app" "--" "waybar"
+spawn-at-startup "uwsm" "app" "--" "swayosd-server"
+// We need to use spawn-sh-at-startup here so that it expands the tilde (~) to the user's home directory
+spawn-sh-at-startup "uwsm app -- swaybg -i ~/.config/omarchy/current/background -m fill"
+spawn-sh-at-startup "uwsm app -- swayidle -w -C ~/.config/swayidle/config"
+
+// Additional system processes (not via uwsm)
+spawn-at-startup "/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"
+spawn-at-startup "wl-clip-persist" "--clipboard" "regular" "--all-mime-type-regex" "^(?!x-kde-passwordManagerHint).+"
+spawn-at-startup "omarchy-cmd-first-run"
+
+EOF
+
+# Add default keybindings
+echo "// ============================================================================" >> "$TEMP_CONFIG"
+echo "// KEYBINDINGS" >> "$TEMP_CONFIG"
+echo "// ============================================================================" >> "$TEMP_CONFIG"
+
+if [[ -f "$OMARCHY_DEFAULT_DIR/bindings.kdl" ]]; then
+    cat "$OMARCHY_DEFAULT_DIR/bindings.kdl" >> "$TEMP_CONFIG"
+    echo "" >> "$TEMP_CONFIG"
+fi
+
+# Add user keybinding overrides
+if [[ -f "$NIRI_CONFIG_DIR/bindings.kdl" ]]; then
+    echo "// User keybinding overrides from ~/.config/niri/bindings.kdl" >> "$TEMP_CONFIG"
+    if [[ -s "$NIRI_CONFIG_DIR/bindings.kdl" ]]; then sed -n "/^binds {/,/^}$/{ /^binds {/d; /^}$/d; p }" "$NIRI_CONFIG_DIR/bindings.kdl" | grep -v "^//" >> "$TEMP_CONFIG"; fi
+    echo "" >> "$TEMP_CONFIG"
+fi
+
+# Window rules with proper workspace assignments
+echo "" >> "$TEMP_CONFIG"
+echo "// ============================================================================" >> "$TEMP_CONFIG"
+echo "// WINDOW RULES" >> "$TEMP_CONFIG"
+echo "// ============================================================================" >> "$TEMP_CONFIG"
+echo "window-rule {" >> "$TEMP_CONFIG"
+echo '    match app-id="1Password"' >> "$TEMP_CONFIG"
+echo '    open-on-workspace "5"' >> "$TEMP_CONFIG"
+echo "}" >> "$TEMP_CONFIG"
+echo "" >> "$TEMP_CONFIG"
+echo "window-rule {" >> "$TEMP_CONFIG"
+echo '    match app-id="signal"' >> "$TEMP_CONFIG"
+echo '    open-on-workspace "4"' >> "$TEMP_CONFIG"
+echo "}" >> "$TEMP_CONFIG"
+echo "" >> "$TEMP_CONFIG"
+echo "window-rule {" >> "$TEMP_CONFIG"
+echo '    match app-id="obsidian"' >> "$TEMP_CONFIG"
+echo '    open-on-workspace "3"' >> "$TEMP_CONFIG"
+echo "}" >> "$TEMP_CONFIG"
+echo "" >> "$TEMP_CONFIG"
+echo "window-rule {" >> "$TEMP_CONFIG"
+echo '    match app-id="chromium-browser"' >> "$TEMP_CONFIG"
+echo '    open-on-workspace "1"' >> "$TEMP_CONFIG"
+echo "}" >> "$TEMP_CONFIG"
+echo "" >> "$TEMP_CONFIG"
+echo "window-rule {" >> "$TEMP_CONFIG"
+echo '    match app-id="code"' >> "$TEMP_CONFIG"
+echo '    open-on-workspace "2"' >> "$TEMP_CONFIG"
+echo "}" >> "$TEMP_CONFIG"
+
+# Replace theme placeholders with default colors
+sed -i 's/{{THEME_FOCUS_ACTIVE}}/#7aa2f7/g' "$TEMP_CONFIG"
+sed -i 's/{{THEME_FOCUS_INACTIVE}}/#414868/g' "$TEMP_CONFIG"
+
+# Move the generated config to the final location
+mv "$TEMP_CONFIG" "$NIRI_CONFIG_DIR/config.kdl"
+
+echo "✅ Niri configuration generated successfully"
+echo "📍 Location: $NIRI_CONFIG_DIR/config.kdl"
+echo ""
+echo "💡 To customize your setup, edit these files:"
+echo "   • ~/.config/niri/monitors.kdl"
+echo "   • ~/.config/niri/input.kdl"
+echo "   • ~/.config/niri/layout.kdl"
+echo "   • ~/.config/niri/bindings.kdl"
+echo ""
+echo "🔄 After making changes, run: omarchy-niri-config-generate && omarchy-refresh-niri"

@@ -1,6 +1,18 @@
 #!/bin/bash
 
-# Hyprland launched via UWSM and login directly as user, rely on disk encryption + hyprlock for security
+# Seamless login setup - only for standalone installations
+# Skip if existing display manager is detected
+
+# Check if we should skip seamless login setup
+if [[ "$OMARCHY_INSTALL_MODE" == "overlay" ]]; then
+    echo "📋 Overlay mode detected - keeping existing session manager"
+    echo "   Existing display manager: ${OMARCHY_DM_TYPE:-unknown}"
+    echo "   Seamless login setup will be SKIPPED"
+    echo "   Hyprland/Niri will be available in your display manager's session list"
+    return 0
+fi
+
+echo "🚀 Standalone mode - setting up seamless login..."
 
 # ==============================================================================
 # PLYMOUTH SETUP
@@ -96,6 +108,15 @@ CCODE
   rm /tmp/seamless-login.c
 fi
 
+# Determine which window manager to start
+if [[ "$OMARCHY_WM" == "niri" ]]; then
+    WM_DESKTOP="niri.desktop"
+    WM_SESSION_CMD="uwsm start -- niri.desktop"
+else
+    WM_DESKTOP="hyprland.desktop"
+    WM_SESSION_CMD="uwsm start -- hyprland.desktop"
+fi
+
 if [ ! -f /etc/systemd/system/omarchy-seamless-login.service ]; then
   cat <<EOF | sudo tee /etc/systemd/system/omarchy-seamless-login.service
 [Unit]
@@ -107,7 +128,7 @@ PartOf=graphical.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/seamless-login uwsm start -- hyprland.desktop
+ExecStart=/usr/local/bin/seamless-login $WM_SESSION_CMD
 Restart=always
 RestartSec=2
 StartLimitIntervalSec=30
@@ -125,6 +146,46 @@ PAMName=login
 [Install]
 WantedBy=graphical.target
 EOF
+elif [ -f /etc/systemd/system/omarchy-seamless-login.service ]; then
+    # Service exists - check if we need to update it for different WM
+    CURRENT_EXEC=$(grep "ExecStart=" /etc/systemd/system/omarchy-seamless-login.service)
+    EXPECTED_EXEC="ExecStart=/usr/local/bin/seamless-login $WM_SESSION_CMD"
+    
+    if [[ "$CURRENT_EXEC" != "$EXPECTED_EXEC" ]]; then
+        echo "🔄 Updating seamless login service for $OMARCHY_WM..."
+        
+        # Update the service file with new window manager
+        cat <<EOF | sudo tee /etc/systemd/system/omarchy-seamless-login.service
+[Unit]
+Description=Omarchy Seamless Auto-Login
+Documentation=https://github.com/basecamp/omarchy
+Conflicts=getty@tty1.service
+After=systemd-user-sessions.service getty@tty1.service plymouth-quit.service systemd-logind.service
+PartOf=graphical.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/seamless-login $WM_SESSION_CMD
+Restart=always
+RestartSec=2
+StartLimitIntervalSec=30
+StartLimitBurst=2
+User=$USER
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal+console
+PAMName=login
+
+[Install]
+WantedBy=graphical.target
+EOF
+        # Reload systemd after service file change
+        sudo systemctl daemon-reload
+    fi
 fi
 
 if [ ! -f /etc/systemd/system/plymouth-quit.service.d/wait-for-graphical.conf ]; then

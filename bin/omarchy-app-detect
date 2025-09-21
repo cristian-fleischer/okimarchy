@@ -1,0 +1,28 @@
+#!/bin/bash
+
+# Detect app ID of currently focused window
+# Useful for creating window rules
+
+if command -v niri >/dev/null && pgrep -x niri >/dev/null 2>&1; then
+    echo "🔍 Getting info for currently focused window in niri..."
+    if niri msg focused-window 2>/dev/null; then
+        echo
+        echo "💡 Use this information to create window rules in ~/.config/niri/config.kdl"
+        echo "   Example:"
+        echo "   window-rule {"
+        echo "       match app-id=\"your-app-id\""
+        echo "       open-on-workspace 2"
+        echo "   }"
+    else
+        echo "❌ Could not get window information"
+        exit 1
+    fi
+elif command -v hyprctl >/dev/null && pgrep -x Hyprland >/dev/null 2>&1; then
+    echo "🔍 Getting info for currently focused window in hyprland..."
+    hyprctl activewindow | grep -E "(class|title):" | head -2
+    echo
+    echo "💡 Use 'class' value for window rules"
+else
+    echo "❌ Neither niri nor hyprland is running"
+    exit 1
+fi

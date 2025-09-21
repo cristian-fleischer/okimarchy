@@ -58,12 +58,27 @@ fi
 # Trigger alacritty config reload
 touch "$HOME/.config/alacritty/alacritty.toml"
 
+# Apply niri theme if niri is running
+if command -v niri >/dev/null && pgrep -x niri >/dev/null 2>&1; then
+    # Copy niri theme config if it exists
+    if [[ -f ~/.config/omarchy/current/theme/niri.conf ]]; then
+        mkdir -p ~/.config/niri/theme
+        cp ~/.config/omarchy/current/theme/niri.conf ~/.config/niri/theme/
+        # Reload niri configuration
+        niri msg action reload-config 2>/dev/null || echo "Note: Could not reload niri config automatically"
+    fi
+fi
+
 # Restart components to apply new theme
 pkill -SIGUSR2 btop
 omarchy-restart-waybar
 omarchy-restart-swayosd
 makoctl reload
-hyprctl reload
+
+# Reload hyprland config if hyprland is running
+if command -v hyprctl >/dev/null && pgrep -x Hyprland >/dev/null 2>&1; then
+    hyprctl reload
+fi
 
 # Set new background
 omarchy-theme-bg-next

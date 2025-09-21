@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# Refresh niri configuration
+if command -v niri >/dev/null && pgrep -x niri >/dev/null 2>&1; then
+    echo "🔄 Refreshing niri configuration..."
+    if niri msg action reload-config 2>/dev/null; then
+        echo "✅ Niri configuration reloaded successfully"
+    else
+        echo "⚠️  Failed to reload niri configuration"
+        exit 1
+    fi
+else
+    echo "❌ Niri is not running"
+    exit 1
+fi

@@ -1,0 +1,35 @@
+// Default input configuration for Niri
+// This file provides sensible defaults - override in ~/.config/niri/input.kdl
+
+input {
+    keyboard {
+        xkb {
+            layout "us"
+            // Uncomment if you want Caps Lock as Ctrl
+            // options "ctrl:nocaps"
+        }
+        
+        // Repeat configuration
+        repeat-delay 600
+        repeat-rate 25
+    }
+    
+    touchpad {
+        tap
+        dwt
+        dwtp
+        natural-scroll
+        accel-speed 0.2
+        accel-profile "flat"
+        tap-button-map "left-right-middle"
+    }
+    
+    mouse {
+        accel-speed 0.2
+        accel-profile "flat"
+    }
+    
+    tablet {
+        map-to-output "eDP-1"
+    }
+}

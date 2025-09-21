@@ -1,0 +1,39 @@
+// Default layout configuration for Niri
+// This file provides sensible defaults - override in ~/.config/niri/layout.kdl
+
+layout {
+    gaps 8
+
+    // When to center a column when changing focus, options: never, always, on-overflow
+    center-focused-column "never"
+
+    // Default column width as a proportion
+    default-column-width { proportion 0.5; }
+
+    // Available preset column widths for Super+R
+    preset-column-widths {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+    }
+
+    // Window focus ring
+    focus-ring {
+        width 2
+        active-color "{{THEME_FOCUS_ACTIVE}}"
+        inactive-color "{{THEME_FOCUS_INACTIVE}}"
+    }
+
+    // Window borders
+    border {
+        width 2
+        active-color "{{THEME_FOCUS_ACTIVE}}"
+        inactive-color "{{THEME_FOCUS_INACTIVE}}"
+    }
+
+    // Struts/reserves space for panels like waybar
+    // struts {
+    //     // Reserve space for waybar at the top
+    //     top 32
+    // }
+}

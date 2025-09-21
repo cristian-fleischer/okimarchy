@@ -1,6 +1,9 @@
 #!/bin/bash
 
-sudo pacman -S --noconfirm --needed \
+# Omarchy package list - easily maintainable from upstream
+# This file only defines the package list, installation happens elsewhere
+# Format: one package per line with backslash continuation for merge-conflict resistance
+OMARCHY_PACKAGES="\
   1password-beta \
   1password-cli \
   asdcontrol-git \
@@ -99,7 +102,7 @@ sudo pacman -S --noconfirm --needed \
   swaybg \
   swayosd \
   system-config-printer \
-  tldr \
+  tealdeer \
   tree-sitter-cli \
   ttf-cascadia-mono-nerd \
   ttf-ia-writer \
@@ -127,4 +130,4 @@ sudo pacman -S --noconfirm --needed \
   xournalpp \
   yaru-icon-theme \
   yay \
-  zoxide
+  zoxide"

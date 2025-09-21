@@ -1,0 +1,26 @@
+// Custom input configuration for Niri
+// Override default input settings here
+// Learn more at: https://github.com/YaLTeR/niri/wiki/Configuration:-Input
+
+// Example customizations:
+
+// input {
+//     keyboard {
+//         xkb {
+//             layout "us,de"
+//             options "grp:alt_shift_toggle,ctrl:nocaps"
+//         }
+//     }
+//     
+//     touchpad {
+//         natural-scroll false
+//         tap-button-map "left-middle-right"
+//         accel-speed 0.5
+//     }
+//     
+//     mouse {
+//         accel-speed 0.8
+//         scroll-method "button"
+//         middle-emulation true
+//     }
+// }

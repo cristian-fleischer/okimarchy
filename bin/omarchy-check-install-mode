@@ -1,0 +1,111 @@
+#!/bin/bash
+
+# Check current Omarchy installation mode and session configuration
+
+echo "🔍 Omarchy Installation Mode Check"
+echo "=================================="
+
+# Check current window manager
+if [[ -f ~/.local/state/omarchy/current-wm ]]; then
+    CURRENT_WM=$(cat ~/.local/state/omarchy/current-wm)
+    echo "📱 Current WM: $CURRENT_WM"
+else
+    echo "📱 Current WM: Unknown (likely hyprland)"
+    CURRENT_WM="hyprland"
+fi
+
+# Check seamless login service
+if [[ -f /etc/systemd/system/omarchy-seamless-login.service ]]; then
+    echo "🚀 Seamless Login: ENABLED (Standalone mode)"
+    echo "   Service status: $(systemctl is-enabled omarchy-seamless-login.service 2>/dev/null)"
+    
+    EXEC_LINE=$(grep "ExecStart=" /etc/systemd/system/omarchy-seamless-login.service)
+    echo "   Command: ${EXEC_LINE#ExecStart=}"
+    
+    # Check if service matches current WM
+    case "$CURRENT_WM" in
+        "niri")
+            if echo "$EXEC_LINE" | grep -q "niri-session"; then
+                echo "   ✅ Service correctly configured for niri"
+            else
+                echo "   ⚠️  Service not configured for niri - run 'omarchy-wm-switch niri'"
+            fi
+            ;;
+        "hyprland")
+            if echo "$EXEC_LINE" | grep -q "hyprland.desktop"; then
+                echo "   ✅ Service correctly configured for hyprland"
+            else
+                echo "   ⚠️  Service not configured for hyprland - run 'omarchy-wm-switch hyprland'"
+            fi
+            ;;
+    esac
+else
+    echo "🚀 Seamless Login: DISABLED (Overlay mode)"
+fi
+
+# Check for display managers
+echo
+echo "🖥️  Display Manager Detection:"
+FOUND_DM=false
+for dm in gdm sddm lightdm lxdm ly; do
+    if systemctl is-enabled "$dm.service" >/dev/null 2>&1; then
+        echo "   ✅ Found active: $dm"
+        FOUND_DM=true
+        break
+    elif systemctl is-active "$dm.service" >/dev/null 2>&1; then
+        echo "   🔄 Found running: $dm"
+        FOUND_DM=true
+        break
+    fi
+done
+
+if [[ "$FOUND_DM" == "false" ]]; then
+    echo "   ℹ️  No display manager detected"
+fi
+
+# Check desktop entries
+echo
+echo "📋 Desktop Entries:"
+if [[ -f /usr/share/wayland-sessions/hyprland-omarchy.desktop ]]; then
+    echo "   ✅ Hyprland (Omarchy) session available"
+fi
+
+if [[ -f /usr/share/wayland-sessions/niri-omarchy.desktop ]]; then
+    echo "   ✅ Niri (Omarchy) session available"
+fi
+
+if [[ ! -f /usr/share/wayland-sessions/hyprland-omarchy.desktop ]] && [[ ! -f /usr/share/wayland-sessions/niri-omarchy.desktop ]]; then
+    echo "   ⚠️  No Omarchy desktop entries found"
+    echo "      (Normal for seamless login installations)"
+fi
+
+# Determine and display mode
+echo
+echo "🎯 Installation Mode Analysis:"
+if [[ -f /etc/systemd/system/omarchy-seamless-login.service ]]; then
+    echo "   📍 STANDALONE MODE"
+    echo "   • Direct boot to Omarchy desktop"
+    echo "   • No login screen (seamless auto-login)"
+    echo "   • Plymouth splash → Desktop"
+else
+    echo "   📍 OVERLAY MODE"
+    echo "   • Existing display manager preserved"
+    echo "   • Login screen shows session options"
+    echo "   • Select 'Hyprland (Omarchy)' or 'Niri (Omarchy)'"
+fi
+
+# Show recommendations
+echo
+echo "💡 Recommendations:"
+if [[ "$FOUND_DM" == "true" ]] && [[ -f /etc/systemd/system/omarchy-seamless-login.service ]]; then
+    echo "   ⚠️  You have both a display manager AND seamless login"
+    echo "   This may cause conflicts. Consider disabling one:"
+    echo "   • Keep DM: sudo systemctl disable omarchy-seamless-login.service"
+    echo "   • Keep seamless: sudo systemctl disable gdm.service (or your DM)"
+elif [[ "$FOUND_DM" == "false" ]] && [[ ! -f /etc/systemd/system/omarchy-seamless-login.service ]]; then
+    echo "   ⚠️  No session management detected"
+    echo "   You may need to start sessions manually or install a display manager"
+fi
+
+echo
+echo "✅ Check completed"

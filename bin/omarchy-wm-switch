@@ -1,0 +1,94 @@
+#!/bin/bash
+
+# Window manager switching utility
+# Allows switching between Hyprland and Niri post-installation
+
+if [[ $# -ne 1 ]]; then
+    echo "Usage: omarchy-wm-switch [hyprland|niri]"
+    echo
+    echo "Current window manager: $(cat ~/.local/state/omarchy/current-wm 2>/dev/null || echo 'unknown')"
+    exit 1
+fi
+
+TARGET_WM="$1"
+CURRENT_WM=$(cat ~/.local/state/omarchy/current-wm 2>/dev/null || echo "hyprland")
+
+case "$TARGET_WM" in
+    "niri")
+        if [[ "$CURRENT_WM" == "niri" ]]; then
+            echo "✅ Already using niri"
+            exit 0
+        fi
+        
+        echo "🔄 Switching to niri..."
+        
+        # Check if niri is installed
+        if ! command -v niri >/dev/null; then
+            echo "❌ Niri is not installed. Please install it first:"
+            echo "   sudo pacman -S niri fuzzel grim"
+            exit 1
+        fi
+        
+        # Update window manager state
+        mkdir -p ~/.local/state/omarchy
+        echo "niri" > ~/.local/state/omarchy/current-wm
+        
+        # Copy niri configuration
+        mkdir -p ~/.config/niri
+        if [[ -f ~/.local/share/omarchy/config/niri/config.kdl ]]; then
+            cp ~/.local/share/omarchy/config/niri/config.kdl ~/.config/niri/
+        fi
+        
+        # Apply current theme to niri if available
+        if [[ -f ~/.config/omarchy/current/theme/niri.conf ]]; then
+            mkdir -p ~/.config/niri/theme
+            cp ~/.config/omarchy/current/theme/niri.conf ~/.config/niri/theme/
+        fi
+        
+        # Update seamless login service to use niri
+        if [[ -f /etc/systemd/system/omarchy-seamless-login.service ]]; then
+            echo "🔄 Updating seamless login service for niri..."
+            sudo sed -i 's|ExecStart=.*|ExecStart=/usr/local/bin/seamless-login uwsm start -- niri.desktop|' /etc/systemd/system/omarchy-seamless-login.service
+            sudo systemctl daemon-reload
+        fi
+        
+        echo "✅ Switched to niri"
+        echo "🔄 Please log out and log back in to use niri"
+        ;;
+        
+    "hyprland")
+        if [[ "$CURRENT_WM" == "hyprland" ]]; then
+            echo "✅ Already using hyprland"
+            exit 0
+        fi
+        
+        echo "🔄 Switching to hyprland..."
+        
+        # Check if hyprland is installed
+        if ! command -v hyprctl >/dev/null; then
+            echo "❌ Hyprland is not installed. Please install it first:"
+            echo "   sudo pacman -S hyprland hypridle hyprlock"
+            exit 1
+        fi
+        
+        # Update window manager state
+        mkdir -p ~/.local/state/omarchy
+        echo "hyprland" > ~/.local/state/omarchy/current-wm
+        
+        # Update seamless login service to use hyprland
+        if [[ -f /etc/systemd/system/omarchy-seamless-login.service ]]; then
+            echo "🔄 Updating seamless login service for hyprland..."
+            sudo sed -i 's|ExecStart=.*|ExecStart=/usr/local/bin/seamless-login uwsm start -- hyprland.desktop|' /etc/systemd/system/omarchy-seamless-login.service
+            sudo systemctl daemon-reload
+        fi
+        
+        echo "✅ Switched to hyprland"
+        echo "🔄 Please log out and log back in to use hyprland"
+        ;;
+        
+    *)
+        echo "❌ Unknown window manager: $TARGET_WM"
+        echo "   Supported options: hyprland, niri"
+        exit 1
+        ;;
+esac
