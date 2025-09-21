@@ -1,0 +1,70 @@
+#!/bin/bash
+set -euo pipefail
+
+# Single-source Niri config generator using niri-genconfig (niri-companion)
+# - Writes ~/.config/niri-companion/settings.toml with Okimarchy defaults first,
+#   then user overrides
+# - Ensures empty override files exist
+# - Runs: niri-genconfig generate
+
+confdir="$HOME/.config/niri"
+compdir="$HOME/.config/niri-companion"
+settings="$compdir/settings.toml"
+output="$confdir/config.kdl"
+
+defdir="$HOME/.local/share/omarchy/default/niri"
+
+# Ensure directories
+mkdir -p "$confdir" "$compdir"
+
+# Expected sources: defaults first, then user overrides (in the same order)
+mapfile -t defaults < <(printf "%s\n" \
+  "$defdir/input.kdl" \
+  "$defdir/layout.kdl" \
+  "$defdir/bindings.kdl" \
+  "$defdir/monitors.kdl" \
+  "$defdir/rules.kdl" \
+  "$defdir/startup.kdl")
+
+mapfile -t overrides < <(printf "%s\n" \
+  "$confdir/input.kdl" \
+  "$confdir/layout.kdl" \
+  "$confdir/bindings.kdl" \
+  "$confdir/monitors.kdl" \
+  "$confdir/rules.kdl" \
+  "$confdir/startup.kdl")
+
+# Create empty override files if missing
+for f in "${overrides[@]}"; do
+  [[ -f "$f" ]] || : >"$f"
+done
+
+# Require niri-genconfig
+if ! command -v niri-genconfig >/dev/null 2>&1; then
+  echo "niri-genconfig not found. Please install niri-companion (AUR) with yay/paru and retry." >&2
+  exit 1
+fi
+
+# Write settings.toml reflecting our ordering
+{
+  echo "[general]"
+  echo "output_path = \"$output\""
+  echo
+  echo "[genconfig]"
+  echo "sources = ["
+  for s in "${defaults[@]}"; do
+    printf "  \"%s\",\n" "$s"
+  done
+  for i in "${!overrides[@]}"; do
+    printf "  \"%s\",\n" "${overrides[$i]}"
+  done
+  echo "]"
+  echo
+  echo "# Optional: uncomment to use daemon mode manually"
+  echo "# watch_dir = \"$confdir\""
+} > "$settings"
+
+# Generate final config
+niri-genconfig generate
+
+echo "Wrote $output"

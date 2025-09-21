@@ -1,0 +1,14 @@
+layout {
+  gaps 6
+  border {
+    width 2
+    active-color "#7aa2f7"
+    inactive-color "#444a73"
+  }
+
+  focus-ring {
+    enable true
+    width 2
+    color "#bb9af7"
+  }
+}

@@ -1,0 +1,73 @@
+# Keybindings aimed to mirror Hyprland where possible
+
+binds {
+  # Launcher and menus
+  bind "Super+Space" { spawn "walker -p 'Start…'" }
+  bind "Super+Ctrl+E" { spawn "walker -m Emojis" }
+  bind "Super+Alt+Space" { spawn "omarchy-menu" }
+  bind "Super+Escape" { spawn "omarchy-menu system" }
+
+  # Close
+  bind "Super+W" { close-window }
+  bind "Ctrl+Alt+Delete" { spawn "omarchy-cmd-close-all-windows" }
+
+  # Focus movement
+  bind "Super+Left" { focus left }
+  bind "Super+Right" { focus right }
+  bind "Super+Up" { focus up }
+  bind "Super+Down" { focus down }
+
+  # Workspaces 1-10
+  bind "Super+1" { focus-workspace 1 }
+  bind "Super+2" { focus-workspace 2 }
+  bind "Super+3" { focus-workspace 3 }
+  bind "Super+4" { focus-workspace 4 }
+  bind "Super+5" { focus-workspace 5 }
+  bind "Super+6" { focus-workspace 6 }
+  bind "Super+7" { focus-workspace 7 }
+  bind "Super+8" { focus-workspace 8 }
+  bind "Super+9" { focus-workspace 9 }
+  bind "Super+0" { focus-workspace 10 }
+
+  bind "Super+Shift+1" { move-window-to-workspace 1 }
+  bind "Super+Shift+2" { move-window-to-workspace 2 }
+  bind "Super+Shift+3" { move-window-to-workspace 3 }
+  bind "Super+Shift+4" { move-window-to-workspace 4 }
+  bind "Super+Shift+5" { move-window-to-workspace 5 }
+  bind "Super+Shift+6" { move-window-to-workspace 6 }
+  bind "Super+Shift+7" { move-window-to-workspace 7 }
+  bind "Super+Shift+8" { move-window-to-workspace 8 }
+  bind "Super+Shift+9" { move-window-to-workspace 9 }
+  bind "Super+Shift+0" { move-window-to-workspace 10 }
+
+  # Cycle workspaces
+  bind "Super+Tab" { focus-workspace next }
+  bind "Super+Shift+Tab" { focus-workspace prev }
+
+  # Fullscreen
+  bind "Alt+F11" { fullscreen width }
+  bind "Shift+F11" { fullscreen global }
+
+  # Volume/brightness OSD (requires swayosd-client)
+  bind "XF86AudioRaiseVolume" { spawn "swayosd-client --output-volume raise" }
+  bind "XF86AudioLowerVolume" { spawn "swayosd-client --output-volume lower" }
+  bind "XF86AudioMute"        { spawn "swayosd-client --output-volume mute-toggle" }
+  bind "XF86AudioMicMute"     { spawn "swayosd-client --input-volume mute-toggle" }
+  bind "XF86MonBrightnessUp"  { spawn "swayosd-client --brightness raise" }
+  bind "XF86MonBrightnessDown"{ spawn "swayosd-client --brightness lower" }
+
+  # Player controls
+  bind "XF86AudioNext"  { spawn "swayosd-client --playerctl next" }
+  bind "XF86AudioPause" { spawn "swayosd-client --playerctl play-pause" }
+  bind "XF86AudioPlay"  { spawn "swayosd-client --playerctl play-pause" }
+  bind "XF86AudioPrev"  { spawn "swayosd-client --playerctl previous" }
+
+  # Screenshots and recordings
+  bind "Print"          { spawn "omarchy-cmd-screenshot" }
+  bind "Shift+Print"    { spawn "omarchy-cmd-screenshot window" }
+  bind "Ctrl+Print"     { spawn "omarchy-cmd-screenshot output" }
+  bind "Alt+Print"      { spawn "omarchy-cmd-screenrecord region" }
+  bind "Alt+Shift+Print"{ spawn "omarchy-cmd-screenrecord region audio" }
+  bind "Ctrl+Alt+Print" { spawn "omarchy-cmd-screenrecord output" }
+  bind "Ctrl+Alt+Shift+Print" { spawn "omarchy-cmd-screenrecord output audio" }
+}

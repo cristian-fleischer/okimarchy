@@ -1,8 +1,5 @@
 #!/bin/bash
 
-# Set install mode to online since boot.sh is used for curl installations
-export OMARCHY_ONLINE_INSTALL=true
-
 ansi_art='                 ▄▄▄
  ▄█████▄    ▄███████████▄    ▄███████   ▄███████   ▄███████   ▄█   █▄    ▄█   █▄
 ███   ███  ███   ███   ███  ███   ███  ███   ███  ███   ███  ███   ███  ███   ███
@@ -17,49 +14,10 @@ ansi_art='                 ▄▄▄
 clear
 echo -e "\n$ansi_art\n"
 
-# Ensure prerequisites for selection prompt
 sudo pacman -Syu --noconfirm --needed git gum
 
-# Window manager selection (Hyprland default). Allow selecting one or both.
-selection=$(gum choose --no-limit --header "Window manager selection:" \
-  "Hyprland (default)" \
-  "Niri (scrollable tiling)")
-
-# Map selection to env flags
-export OMARCHY_INSTALL_HYPRLAND=false
-export OMARCHY_INSTALL_NIRI=false
-
-if echo "$selection" | grep -q "Hyprland"; then
-  export OMARCHY_INSTALL_HYPRLAND=true
-fi
-if echo "$selection" | grep -q "Niri"; then
-  export OMARCHY_INSTALL_NIRI=true
-fi
-
-# Default if nothing selected: Hyprland
-if [[ "$OMARCHY_INSTALL_HYPRLAND" != true && "$OMARCHY_INSTALL_NIRI" != true ]]; then
-  export OMARCHY_INSTALL_HYPRLAND=true
-fi
-
-# Determine default session (Hyprland if both)
-default_wm="hyprland"
-if [[ "$OMARCHY_INSTALL_HYPRLAND" != true && "$OMARCHY_INSTALL_NIRI" == true ]]; then
-  default_wm="niri"
-fi
-
-# Confirm selection
-summary="Installing:"
-[[ "$OMARCHY_INSTALL_HYPRLAND" == true ]] && summary+=" Hyprland"
-[[ "$OMARCHY_INSTALL_NIRI" == true ]] && summary+=" Niri"
-
-gum confirm "${summary}\n\nProceed?" || exit 1
-
-# Persist default WM for session launcher
-mkdir -p "$HOME/.config/omarchy"
-echo "$default_wm" > "$HOME/.config/omarchy/wm"
-
 # Use custom repo if specified, otherwise default to basecamp/omarchy
-# OMARCHY_REPO="${OMARCHY_REPO:-cristian-fleischer/okimarchy}"
+OMARCHY_REPO="${OMARCHY_REPO:-basecamp/nomarchy}"
 
 # echo -e "\nCloning Omarchy from: https://github.com/${OMARCHY_REPO}.git"
 
@@ -67,19 +25,46 @@ rm -rf ~/.local/share/omarchy
 mkdir -p ~/.local/share
 # git clone "https://github.com/${OMARCHY_REPO}.git" ~/.local/share/omarchy >/dev/null
 
+
 # Get absolute path of the script's directory
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 # Create symlink
 ln -sfn "$SCRIPT_DIR" "$HOME/.local/share/omarchy"
 
 # Use custom branch if instructed, otherwise default to master
-# OMARCHY_REF="${OMARCHY_REF:-master}"
-# if [[ $OMARCHY_REF != "master" ]]; then
-#   echo -e "\e[32mUsing branch: $OMARCHY_REF\e[0m"
-#   cd ~/.local/share/omarchy
-#   git fetch origin "${OMARCHY_REF}" && git checkout "${OMARCHY_REF}"
-#   cd -
-# fi
+OMARCHY_REF="${OMARCHY_REF:-master}"
+if [[ $OMARCHY_REF != "master" ]]; then
+  echo -e "\eUsing branch: $OMARCHY_REF"
+  cd ~/.local/share/omarchy
+  git fetch origin "${OMARCHY_REF}" && git checkout "${OMARCHY_REF}"
+  cd -
+fi
+
+# Interactive mode selection
+echo "🔧 Installation mode:"
+if gum confirm "Use interactive mode? (Confirm each application group)"; then
+    export OMARCHY_INTERACTIVE=true
+    echo "✓ Interactive mode enabled"
+else
+    export OMARCHY_INTERACTIVE=false
+    echo "✓ Automatic installation mode"
+fi
+
+echo
+# Window manager selection
+echo "🪟 Window manager selection:"
+WM_CHOICE=$(gum choose "Hyprland (default)" "Niri (scrollable tiling)")
+
+if echo "$WM_CHOICE" | grep -q "Niri"; then
+    export OMARCHY_WM=niri
+    echo "✓ Niri selected (scrollable tiling compositor)"
+else
+    export OMARCHY_WM=hyprland
+    echo "✓ Hyprland selected (traditional tiling)"
+fi
 
 echo -e "\nInstallation starting..."
+echo "Mode: $([ "$OMARCHY_INTERACTIVE" = "true" ] && echo "Interactive" || echo "Automatic")"
+echo "Window Manager: $OMARCHY_WM"
+echo
 source ~/.local/share/omarchy/install.sh

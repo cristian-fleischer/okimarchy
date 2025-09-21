@@ -1,0 +1,5 @@
+# Outputs / monitors — adjust or override in ~/.config/niri/monitors.kdl
+outputs {
+  # Example:
+  # output "eDP-1" { scale 1.0 }
+}

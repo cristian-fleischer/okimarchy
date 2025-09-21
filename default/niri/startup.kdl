@@ -1,0 +1,5 @@
+# Startup applications
+spawn "mako"
+spawn "waybar"
+# Background image via swaybg if desired; theme integration left to user file
+# spawn "swaybg -m fill -i ~/.config/omarchy/current/theme/backgrounds/0.jpg"

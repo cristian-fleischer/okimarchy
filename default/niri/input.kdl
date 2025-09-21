@@ -1,0 +1,11 @@
+input {
+  # Keyboard layout/options comparable to Hyprland defaults
+  xkb {
+    layout "us"
+    options "compose:caps"
+  }
+
+  touchpad {
+    natural-scroll false
+  }
+}

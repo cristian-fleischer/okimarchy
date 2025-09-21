@@ -1,0 +1,37 @@
+# Install window manager specific packages based on selection
+# Uses env flags exported by boot.sh (defaults to Hyprland if unset)
+
+set -euo pipefail
+
+HYPR_FLAG=${OMARCHY_INSTALL_HYPRLAND:-true}
+NIRI_FLAG=${OMARCHY_INSTALL_NIRI:-false}
+
+install_list=()
+
+# Hyprland packages
+if [[ "$HYPR_FLAG" == "true" ]]; then
+  if [[ -f "$OMARCHY_INSTALL/packaging/wm-hyprland.packages" ]]; then
+    mapfile -t hypr_pkgs < <(grep -v '^#' "$OMARCHY_INSTALL/packaging/wm-hyprland.packages" | grep -v '^$')
+    install_list+=("${hypr_pkgs[@]}")
+  fi
+fi
+
+# Niri packages
+if [[ "$NIRI_FLAG" == "true" ]]; then
+  if [[ -f "$OMARCHY_INSTALL/packaging/wm-niri.packages" ]]; then
+    mapfile -t niri_pkgs < <(grep -v '^#' "$OMARCHY_INSTALL/packaging/wm-niri.packages" | grep -v '^$')
+    install_list+=("${niri_pkgs[@]}")
+  fi
+fi
+
+# Install all requested WM packages via pacman if any
+if [[ ${#install_list[@]} -gt 0 ]]; then
+  sudo pacman -S --noconfirm --needed "${install_list[@]}"
+fi
+
+# Optionally install AUR helpers for Niri (niri-companion) if selected
+if [[ "$NIRI_FLAG" == "true" ]]; then
+  if command -v yay &>/dev/null; then
+    yay -S --noconfirm --needed niri-companion || true
+  fi
+fi

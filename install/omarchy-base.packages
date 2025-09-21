@@ -38,13 +38,6 @@ gnome-themes-extra
 gum
 gvfs-mtp
 gvfs-smb
-hypridle
-hyprland
-hyprland-qtutils
-hyprlock
-hyprpicker
-hyprshot
-hyprsunset
 imagemagick
 impala
 imv
@@ -123,7 +116,6 @@ wl-clipboard
 wl-screenrec
 woff2-font-awesome
 xdg-desktop-portal-gtk
-xdg-desktop-portal-hyprland
 xmlstarlet
 xournalpp
 yaru-icon-theme

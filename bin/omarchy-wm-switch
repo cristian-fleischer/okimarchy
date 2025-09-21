@@ -1,0 +1,27 @@
+#!/bin/bash
+set -euo pipefail
+
+# Ensure selector
+if ! command -v gum &>/dev/null; then
+  echo "gum is required" >&2
+  exit 1
+fi
+
+current="hyprland"
+wm_file="$HOME/.config/omarchy/wm"
+if [[ -f "$wm_file" ]]; then
+  read -r current <"$wm_file"
+fi
+
+choice=$(gum choose --header "Select Window Manager" \
+  "Hyprland" \
+  "Niri" \
+  --selected "$current")
+
+case "$choice" in
+  Hyprland|hyprland) echo hyprland >"$wm_file" ;;
+  Niri|niri) echo niri >"$wm_file" ;;
+  *) exit 0 ;;
+esac
+
+gum confirm "Switch to $choice now? This will log you out." && uwsm stop || true

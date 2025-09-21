@@ -1,0 +1,7 @@
+# Window rules — basic workspace assignments
+window-rules {
+  # Example assignments (class names may vary):
+  # rule { app-id "org.gnome.Nautilus" workspace 3 }
+  # rule { app-id "code" workspace 2 }
+  # rule { app-id "Spotify" workspace 10 }
+}

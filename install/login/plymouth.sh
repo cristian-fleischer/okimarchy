@@ -94,8 +94,47 @@ CCODE
   rm /tmp/seamless-login.c
 fi
 
-if [ ! -f /etc/systemd/system/omarchy-seamless-login.service ]; then
-  cat <<EOF | sudo tee /etc/systemd/system/omarchy-seamless-login.service
+# Install or update session starter wrappers to support multiple WMs
+if [ ! -x /usr/local/bin/omarchy-session-desktop ]; then
+  sudo tee /usr/local/bin/omarchy-session-desktop >/dev/null <<'EOF'
+#!/bin/bash
+# Prints the .desktop file for the selected WM
+wm_file="$HOME/.config/omarchy/wm"
+default="hyprland"
+if [[ -f "$wm_file" ]]; then
+  read -r default <"$wm_file"
+fi
+case "$default" in
+  niri) echo "niri.desktop" ;;
+  hyprland|*) echo "hyprland.desktop" ;;
+esac
+EOF
+  sudo chmod +x /usr/local/bin/omarchy-session-desktop
+fi
+
+if [ ! -x /usr/local/bin/omarchy-session-start ]; then
+  sudo tee /usr/local/bin/omarchy-session-start >/dev/null <<'EOF'
+#!/bin/bash
+set -euo pipefail
+session=$(omarchy-session-desktop)
+# Adjust environment to match WM for better portal/screen-share integration
+case "$session" in
+  niri.desktop)
+    export XDG_CURRENT_DESKTOP=Niri
+    export XDG_SESSION_DESKTOP=Niri
+    ;;
+  hyprland.desktop|*)
+    export XDG_CURRENT_DESKTOP=Hyprland
+    export XDG_SESSION_DESKTOP=Hyprland
+    ;;
+esac
+exec uwsm start -- "$session"
+EOF
+  sudo chmod +x /usr/local/bin/omarchy-session-start
+fi
+
+# Create or update systemd unit
+sudo tee /etc/systemd/system/omarchy-seamless-login.service >/dev/null <<EOF
 [Unit]
 Description=Omarchy Seamless Auto-Login
 Documentation=https://github.com/basecamp/omarchy
@@ -105,7 +144,7 @@ PartOf=graphical.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/seamless-login uwsm start -- hyprland.desktop
+ExecStart=/usr/local/bin/seamless-login /usr/local/bin/omarchy-session-start
 Restart=always
 RestartSec=2
 StartLimitIntervalSec=30
@@ -123,7 +162,6 @@ PAMName=login
 [Install]
 WantedBy=graphical.target
 EOF
-fi
 
 if [ ! -f /etc/systemd/system/plymouth-quit.service.d/wait-for-graphical.conf ]; then
   # Make plymouth remain until graphical.target
