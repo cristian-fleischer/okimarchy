@@ -1,6 +1,8 @@
 # Okimarchy
 
+##Update
 Compatibility: Okimarchy is now compatible with Omarchy 3
+Last synced version: Omarchy 3.1.7
 
 **Okimarchy** is an *okimari* flavor of arch forked from Omarchy.
 This transforms Omarchy from an *omakase* (chef's choice) to an *okimari* (pre-set menu) approach:
