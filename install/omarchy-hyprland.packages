@@ -1,7 +1,8 @@
 # Hyprland-specific packages
 hypridle
 hyprland
-hyprland-qtutils
+hyprland-guiutils
 hyprlock
+hyprpicker
 hyprsunset
 xdg-desktop-portal-hyprland
