@@ -1,6 +1,7 @@
 # Okimarchy
 
-##Update
+## Update
+
 Compatibility: Okimarchy is now compatible with Omarchy 3
 Last synced version: Omarchy 3.1.7
 
