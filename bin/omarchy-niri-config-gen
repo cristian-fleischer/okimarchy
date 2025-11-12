@@ -9,7 +9,8 @@ set -euo pipefail
 # Hardcoded sources to concatenate (order matters!)
 SOURCES=(
     "$HOME/.config/niri/input.kdl"
-    "$HOME/.config/niri/layout.kdl"
+    "$HOME/.config/niri/monitors.kdl"
+    "$HOME/.config/niri/looknfeel.kdl"
     "$HOME/.config/niri/autostart.kdl"
     "$HOME/.config/niri/bindings.kdl"
     "$HOME/.config/niri/windows.kdl"

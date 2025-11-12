@@ -1,4 +1,6 @@
 // Default workspace configuration for Niri
+// https://yalter.github.io/niri/Configuration%3A-Named-Workspaces.html
+
 workspace "1"
 workspace "2"
 workspace "3"

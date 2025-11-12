@@ -1,5 +1,8 @@
 // Layout configuration for Okimarchy - moved to theme files to avoid conflicts
-// This file is kept for consistency but layout config is now in themes
+
+// Settings that influence how windows are positioned and sized.
+// Find more information on the wiki:
+// https://github.com/YaLTeR/niri/wiki/Configuration:-Layout
 
 // Animation settings
 animations {

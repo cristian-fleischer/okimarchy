@@ -1,5 +1,11 @@
 // Window rules for Okimarchy Niri
 // Matches common application behaviors from Hyprland setup
+//
+// Window rules let you adjust behavior for individual windows.
+// Find more information on the wiki:
+// https://yalter.github.io/niri/Configuration%3A-Window-Rules.html
+// Work around WezTerm's initial configure bug
+// by setting an empty default-column-width.
 
 // Firefox picture-in-picture
 window-rule {

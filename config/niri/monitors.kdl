@@ -1,0 +1,33 @@
+// You can configure outputs by their name, which you can find
+// by running `niri msg outputs` while inside a niri instance.
+// The built-in laptop monitor is usually called "eDP-1".
+// Find more information on the wiki:
+// https://yalter.github.io/niri/Configuration%3A-Outputs.html
+// Remember to uncomment the node by removing "/-"!
+///-output "eDP-2" {
+//    mode "2560x1600@239.998993"
+//    scale 1.5
+//    position x=2560 y=0
+//    variable-refresh-rate
+//}
+
+// Example 3K 16"
+// output "Samsung Display Corp. 0x4178 Unknown" {    // Optionally use identifier: output "eDP-1" {
+//    mode "3200x2000@90.000"
+//    position x=0 y=395
+//    scale 1.5
+//}
+
+// Example 4K 27"
+// output "Samsung Display Corp. 0x4178 Unknown" {    // Optionally use identifier: output "DP-1" {
+//    mode "3840x2160@90.000"
+//    position x=0 y=395
+//    scale 1.5
+//}
+
+// Example 2K 24"
+// output "Samsung Display Corp. 0x4178 Unknown" {    // Optionally use identifier: output "DP-2" {
+//    mode "2560x1440@90.000"
+//    position x=0 y=395
+//    scale 1.5
+//}

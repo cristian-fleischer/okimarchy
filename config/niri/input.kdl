@@ -1,11 +1,13 @@
 // Input device configuration for Okimarchy
+// Find the full list of options on the wiki:
+// https://yalter.github.io/niri/Configuration%3A-Input.html
 input {
     keyboard {
         xkb {
             // Empty section - niri will fetch settings from org.freedesktop.locale1
             // This matches Omarchy's approach of auto-detecting keyboard layout
         }
-        
+
         // Enable numlock on startup
         numlock
     }
