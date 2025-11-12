@@ -10,8 +10,9 @@ source ~/.config/uwsm/default
 # Activate mise if present on the system
 omarchy-cmd-present mise && eval "$(mise activate bash)"
 
-# Fix timing issues with spawn-at-startup and environment variables
-# This ensures uwsm waits for all environment variables to be ready
-# before executing spawn-at-startup commands in Niri
-export UWSM_WAIT_VARNAMES="WAYLAND_DISPLAY DISPLAY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP"
-export UWSM_WAIT_VARNAMES_SETTLETIME=0.5
+# Niri-specific: wait for env propagation before spawn-at-startup
+# Apply only when running under Niri/UWSM sessions
+if [ "${XDG_CURRENT_DESKTOP:-}" = "niri" ] || [ "${DESKTOP_SESSION:-}" = "niri-uwsm" ]; then
+  export UWSM_WAIT_VARNAMES="WAYLAND_DISPLAY DISPLAY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP"
+  export UWSM_WAIT_VARNAMES_SETTLETIME=0.5
+fi

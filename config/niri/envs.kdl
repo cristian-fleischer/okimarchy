@@ -1,0 +1,4 @@
+// Niri environment overrides (optional)
+//
+// This file is included by omarchy-niri-config-gen when generating
+// It can be left empty.

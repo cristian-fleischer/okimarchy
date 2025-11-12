@@ -79,6 +79,13 @@ binds {
     // Clipboard menu
     Mod+Ctrl+V { spawn "omarchy-launch-walker" "-m" "clipboard"; }
 
+    // File sharing
+    Mod+Ctrl+S { spawn "omarchy-menu" "share"; }
+
+    // Waybar-less information
+    Mod+Ctrl+T { spawn-sh "notify-send \"    $(date +\"%A %H:%M  —  %d %B W%V %Y\")\""; }
+    Mod+Ctrl+B { spawn-sh "notify-send \"󰁹    Battery is at $(omarchy-battery-remaining)%\""; }
+
     // Window management
     Mod+W { close-window; }
     Ctrl+Alt+Delete { spawn "omarchy-cmd-close-all-windows"; }
@@ -105,7 +112,6 @@ binds {
     Mod+7 { focus-workspace 7; }
     Mod+8 { focus-workspace 8; }
     Mod+9 { focus-workspace 9; }
-    Mod+0 { focus-workspace 10; }
 
     // Move window to workspace
     Mod+Shift+1 { move-column-to-workspace 1; }
@@ -117,7 +123,6 @@ binds {
     Mod+Shift+7 { move-column-to-workspace 7; }
     Mod+Shift+8 { move-column-to-workspace 8; }
     Mod+Shift+9 { move-column-to-workspace 9; }
-    Mod+Shift+0 { move-column-to-workspace 10; }
 
     // Workspace navigation
     Mod+Tab { focus-workspace-down; }

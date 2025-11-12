@@ -11,7 +11,7 @@ sudo mkdir -p /usr/share/wayland-sessions
 if [ ! -f /usr/share/wayland-sessions/niri-uwsm.desktop ]; then
   sudo tee /usr/share/wayland-sessions/niri-uwsm.desktop >/dev/null <<'DESKTOP'
 [Desktop Entry]
-Name=Niri
+Name=Niri (uwsm)
 Comment=Start Niri via UWSM
 Exec=uwsm start -- niri --session
 Type=Application

@@ -15,6 +15,7 @@ SOURCES=(
     "$HOME/.config/niri/bindings.kdl"
     "$HOME/.config/niri/windows.kdl"
     "$HOME/.config/niri/workspaces.kdl"
+    "$HOME/.config/niri/envs.kdl"
     "$HOME/.config/omarchy/current/theme/niri.kdl"
 )
 
@@ -54,7 +55,8 @@ COMMANDS:
 
 The tool concatenates the following files in order:
     ~/.config/niri/input.kdl
-    ~/.config/niri/layout.kdl
+    ~/.config/niri/monitors.kdl
+    ~/.config/niri/looknfeel.kdl
     ~/.config/niri/autostart.kdl
     ~/.config/niri/bindings.kdl
     ~/.config/niri/windows.kdl
@@ -135,7 +137,8 @@ write_warning_header() {
 // ║                                                                               ║
 // ║  Source files (in order):                                                     ║
 // ║    • ~/.config/niri/input.kdl                                                 ║
-// ║    • ~/.config/niri/layout.kdl                                                ║
+// ║    • ~/.config/niri/monitors.kdl                                              ║
+// ║    • ~/.config/niri/looknfeel.kdl                                             ║
 // ║    • ~/.config/niri/autostart.kdl                                             ║
 // ║    • ~/.config/niri/bindings.kdl                                              ║
 // ║    • ~/.config/niri/windows.kdl                                               ║
