@@ -20,7 +20,9 @@ This transforms Omarchy from an *omakase* (chef's choice) to an *okimari* (pre-s
 
 **Configuration System:**
 - Modular Niri configuration files (`bindings.kdl`, `layout.kdl`, `windows.kdl`, etc.) and a dynamic Niri configuration generator (`omarchy-niri-config-gen`)
-- Theme-specific Niri configurations for all existing themes
+- Integration with the Omarchy theming system - Theme-specific Niri configurations for all existing themes
+
+Please note there are still open tasks: [To Do](#to-do)
 
 ## Installation
 
@@ -69,6 +71,16 @@ Once Arch has been installed:
 
 It will run for 5-30 minutes, depending on the speed of your internet connection, please be patient.  
 When it's all done, it'll ask for your permission to reboot the system.
+
+## To Do
+- [x] Update installation scripts to support selecting WM
+- [x] In install split out packages for hyprland and niri so they can be installed independently
+- [x] Omarchy Menu - add script to switch between Niri and Hyprland
+- [x] Integrate niri into the omarchy theming engine for consistent theming
+- [x] Create a niri configuration generator that is able to generate the main niri config out of multiple config files similar to hyprland
+- [ ] Replace the above custom implementation with the native niri implementation when it is deployed: https://yalter.github.io/niri/Configuration%3A-Include.html
+- [x] Configure Waybar to work with niri workspace indicator module
+- [ ] Update the Omarchy Menu to work with niri (many menu items are specific for hyprland)
 
 ---
 
