@@ -24,7 +24,7 @@ This transforms Omarchy from an *omakase* (chef's choice) to an *okimari* (pre-s
 
 ## Installation
 
-1. Download and install arch linux (https://archlinux.org/download/)
+1. Download and install arch linux (https://archlinux.org/download/)  
    *Recommended*: Boot from the Arch Linux ISO and run `archinstall`.
 2. Install Omarchy by running the following command:
    ```bash
