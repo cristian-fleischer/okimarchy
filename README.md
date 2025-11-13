@@ -78,6 +78,7 @@ When it's all done, it'll ask for your permission to reboot the system.
 - [x] Create a niri configuration generator that is able to generate the main niri config out of multiple config files similar to hyprland
 - [ ] Replace the above custom implementation with the native niri implementation when it is deployed: https://yalter.github.io/niri/Configuration%3A-Include.html
 - [x] Configure Waybar to work with niri workspace indicator module
+- [ ] Omarchy screensavers not working
 - [ ] Update the Omarchy Menu to work with niri (many menu items are specific for hyprland)
 
 ---
