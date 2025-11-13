@@ -48,7 +48,7 @@ USAGE:
     omarchy-niri-config-gen [COMMAND]
 
 COMMANDS:
-    generate    Generate Niri config by concatenating source files (default)
+    generate    Generate Niri config by concatenating source files (skips missing; default)
     check       Check if all source files exist
     validate    Validate the generated config file only
     help        Show this help message
@@ -157,10 +157,8 @@ EOF
 generate_config() {
     print_info "Generating Niri configuration..."
 
-    # Check files first
-    if ! check_files; then
-        exit 1
-    fi
+    # Check files first (warn-only; proceed with available files)
+    check_files || print_warn "Some source files are missing; proceeding with available files"
 
     # Create output directory if it doesn't exist
     mkdir -p "$(dirname "$OUTPUT_PATH")"
@@ -172,11 +170,15 @@ generate_config() {
     # Write warning header first
     write_warning_header "$temp_file"
 
-    # Concatenate all source files
+    # Concatenate all existing source files; skip missing
     for source in "${SOURCES[@]}"; do
-        print_info "Including: $source"
-        cat "$source" >> "$temp_file"
-        echo "" >> "$temp_file"  # Add newline separator
+        if [[ -f "$source" ]]; then
+            print_info "Including: $source"
+            cat "$source" >> "$temp_file"
+            echo "" >> "$temp_file"  # Add newline separator
+        else
+            print_warn "Skipping missing source: $source"
+        fi
     done
 
     # Move temp file to final location
