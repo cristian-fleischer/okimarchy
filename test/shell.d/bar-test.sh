@@ -42,6 +42,11 @@ for (const [key, value] of [['size-horizontal', 32], ['size-vertical', 34], ['ic
   assertEqual(style.barToken(key, 1), value, `[bar] ${key} in shell.toml reaches barToken()`)
 }
 
+// [bar] margin and radius reach the bar through the same parser.
+style.applyShellValues({ 'bar.margin': '10', 'bar.radius': '8' })
+assertEqual(style.barOverrides.margin, 10, '[bar] margin in shell.toml reaches the bar')
+assertEqual(style.barOverrides.radius, 8, '[bar] radius in shell.toml reaches the bar')
+
 // A widget's slot can be on the bar without being drawn (hidden by the
 // widget, or folded away by a drag), so panel routing has to pick the one
 // that is actually on screen, whichever registered first.
