@@ -20,10 +20,8 @@ size-vertical    = 28
 #   icon-canvas = 16   # size of a widget's icon
 #   icon-font   = 13   # glyph size of a font icon
 #   status-slot = 21   # width of a status indicator slot
-# Detach the bar from the screen. margin is the gap left on every edge the bar
-# touches, reserved along with the bar so windows still tile clear of it, and
-# radius rounds the bar's corners. Both are 0 by default — flush against the
-# edge, square corners — and both follow scale-with-font.
+# Gap between the bar and the edge. Takes one CSS-style scalar/list:
+# N, "Y X", "T X B", or "T R B L".
 margin           = 0
 radius           = 0
 
