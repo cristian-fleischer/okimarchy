@@ -27,6 +27,19 @@ size-vertical    = 28
 # radius applies only while the bar floats, capped at half its thickness.
 #   margin = 10
 #   radius = 12
+# Pills: a background per widget or run of widgets, so the bar background can
+# be switched off. Off unless a theme or shell.json (bar.pills) turns them on.
+# Unset keys fall back to the bar's own colours and Hyprland's rounding.
+#   pills               = "section"   # off | section | widget
+#   pill                = "{{ background }}"
+#   pill-alpha          = 0.85
+#   pill-text           = "{{ foreground }}"
+#   pill-border         = "{{ accent }}"
+#   pill-border-alpha   = 0.25
+#   pill-radius         = 8
+#   pill-inset          = 2   # gap to the bar's edges and ends
+#   pill-padding        = 4   # space inside a pill at its ends
+#   pill-gap            = 6   # space between pills
 
 [hyprland]
 # Shared Hyprland-derived border tokens. Surface sections reference these so

@@ -377,6 +377,14 @@ QtObject {
     readonly property int iconCanvas:     root.barToken("icon-canvas",     16)
     readonly property int iconFont:       root.barToken("icon-font",       13)
     readonly property int statusSlot:     root.barToken("status-slot",     21)
+    // Pills (bar.pills in shell.json). pill-inset is the gap between a pill
+    // and the bar's edges and ends; pill-padding the space inside a pill at
+    // its ends. Radius and inset keep a deliberate 0; unset, the radius
+    // follows Hyprland's rounding, capped at half the pill's thickness.
+    readonly property int pillRadius:  root.barOverrides["pill-radius"] !== undefined ? root.barInsetToken("pill-radius", 0) : root.cornerRadius
+    readonly property int pillInset:   root.barOverrides["pill-inset"] !== undefined ? root.barInsetToken("pill-inset", 0) : root.space(2)
+    readonly property int pillPadding: root.barToken("pill-padding", 4)
+    readonly property int pillGap:     root.barToken("pill-gap",     6)
   }
 
   function refresh() {
