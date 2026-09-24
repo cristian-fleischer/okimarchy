@@ -37,6 +37,26 @@ const barSource = fs.readFileSync(root + '/shell/plugins/bar/Bar.qml', 'utf8')
 const shellSource = fs.readFileSync(root + '/shell/shell.qml', 'utf8')
 
 assert(/function toggleBarTransparency\(\): string \{[\s\S]*?shell\.bar\.toggleTransparency\(\)/.test(shellSource), 'shell exposes the bar transparency toggle over IPC')
+assert(/function toggleBarPills\(\): string \{[\s\S]*?shell\.bar\.togglePills\(\)/.test(shellSource), 'shell exposes the bar pills toggle over IPC')
+assert(/function toggleBarFloating\(\): string \{[\s\S]*?shell\.bar\.toggleFloating\(\)/.test(shellSource), 'shell exposes the bar floating toggle over IPC')
+
+// A right button held past pressAndHoldInterval never reports a click, so the
+// bar options open on press.
+const gestureSource = barSource.slice(barSource.indexOf('component CenterGestureArea'))
+assert(
+  /onPressed: function\(mouse\) \{[\s\S]*?if \(mouse\.button === Qt\.RightButton\) \{\s*if \(dragging \|\| \(mouse\.buttons & Qt\.LeftButton\)\) \{\s*if \(!\(gestureArea\.pressedButtons & Qt\.LeftButton\)\) mouse\.accepted = false\s*return\s*\}\s*if \(menuOpen\) menuOpen = false\s*else if \(!openMenu\(mouse\.x, mouse\.y\)\) mouse\.accepted = false\s*return\s*\}\s*menuOpen = false\s*dragging = false/.test(gestureSource) &&
+  /onReleased: function\(mouse\) \{\s*if \(mouse\.button === Qt\.RightButton\) return\s*if \(!dragging\) return/.test(gestureSource),
+  'a right press opens or closes the bar options, does nothing during a left press or drag without taking a widget\'s grab, and passes on a press it does not use'
+)
+assert(
+  /var slot = root\.moduleSlotAtScene\(scenePoint, root\.targetWindow\(gestureArea\)\)\s*if \(slot && !root\.inPillGap\(slot, scenePoint\)\) return false/.test(gestureSource),
+  'the bar options open only off widgets, gaps between pills included'
+)
+assert(/onPositionChanged: function\(mouse\) \{\s*if \(!\(mouse\.buttons & Qt\.LeftButton\)\) return/.test(gestureSource), 'only the left button drags the bar')
+assert(/function toggleFloating\(\) \{\s*setBarOption\("floating", !floating\)/.test(barSource), 'the floating switch starts from what the bar shows, theme margin included')
+assert(/function togglePills\(\) \{\s*setBarOption\("pills", pillsOn \? "off" : lastPillMode\)/.test(barSource) && /onPillModeChanged: if \(pillMode !== "off"\) lastPillMode = pillMode/.test(barSource), 'the pills switch comes back in the last mode used')
+assert(/Component\.onCompleted: \{[^}]*if \(pillMode !== "off"\) lastPillMode = pillMode[^}]*applyBarConfig\(\)/.test(barSource), 'a theme\'s default pill mode counts as the last mode used')
+assert(/onPressAndHold: function\(mouse\) \{[^}]*?pressedButtons\s*&\s*Qt\.LeftButton[^}]*?startDrag/.test(gestureSource), 'only a left press-and-hold moves the bar')
 
 // put tolerates a placement target the bar does not carry, so the IPC call
 // must reach the registry's put rather than route back through enable.
