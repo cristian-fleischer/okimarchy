@@ -388,24 +388,26 @@ Set `scale-with-font = false` to keep those bar sizes as fixed pixels.
 
 ### Floating bar
 
-`[bar] margin` lift the bar off its screen edge. `margin` is the gap between the bar and every edge the bar touches — the one it is anchored to and the two it spans
+A floating bar sits off the screen edge instead of flush against it. It is off unless you turn it on, so a stock bar is unchanged.
 
-[bar] `radius` rounds the corners of the bar surface
-
-```toml
-[bar]
-margin = 10   # gap between the bar and the screen edges; 0 = flush
-radius = 12   # corner rounding of the bar surface; 0 = square
-```
-
-`margin` accepts the same CSS-style list as the border widths — `N`, `"Y X"`, `"T X B"`, or `"T R B L"` — so the gap can differ per edge. A bar set further off the sides than off the edge it hangs from:
+Turn it on with `"floating": true` under `bar` in `shell.json`, or let a theme do it with a non-zero `[bar] margin`. `bar.floating: false` keeps the bar flush whatever the theme says.
 
 ```toml
 [bar]
-margin = "4 8"   # 4 from the anchored edge, 8 at the two it spans
+margin = 10   # gap between the bar and the screen edges it touches
+radius = 12   # corner rounding of the bar background
 ```
 
-Both default to `0`, a bar sitting flush against its edge with square corners, and both follow `scale-with-font` like the sizes above. The gap is reserved along with the bar itself, so maximized and tiled windows stop clear of it instead of sliding underneath. Auto-hide still parks the bar fully off screen, clearing the margin as well as the bar.
+`margin` accepts the same CSS-style list as the border widths, `N`, `"Y X"`, `"T X B"` or `"T R B L"`, so the gap can differ per edge. It applies to the edge the bar is anchored to and the two it spans:
+
+```toml
+[bar]
+margin = "4 8"   # 4 above and below, 8 left and right
+```
+
+Without a theme margin a floating bar floats inside the space a flush bar already reserves. It sits half of Hyprland's `general:gaps_out` from the screen edge, so the gap above it matches the gap below it, and the full `gaps_out` in from its ends, so they line up with the windows. The windows stay where they are when floating is switched on or off, as long as half of `gaps_out` stays below the bar's thickness (`gaps_out` up to 50 for the stock 26 px bar). Above that the bar reserves half of `gaps_out` plus 1. `radius` applies only while the bar floats; a flush bar stays square. Unset, it follows Hyprland's `decoration:rounding`, and it never rounds past half the bar's thickness.
+
+Theme values follow `scale-with-font` like the sizes above; the Hyprland-derived defaults do not. A theme margin is reserved along with the bar, so tiled and maximized windows stop clear of it and keep `gaps_out` below it. Auto-hide parks the bar fully off screen, margin included.
 
 ## Custom bar modules
 
