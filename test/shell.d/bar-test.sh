@@ -37,6 +37,13 @@ const barSource = fs.readFileSync(root + '/shell/plugins/bar/Bar.qml', 'utf8')
 const shellSource = fs.readFileSync(root + '/shell/shell.qml', 'utf8')
 
 assert(/function toggleBarTransparency\(\): string \{[\s\S]*?shell\.bar\.toggleTransparency\(\)/.test(shellSource), 'shell exposes the bar transparency toggle over IPC')
+assert(/function toggleBarPills\(\): string \{[\s\S]*?shell\.bar\.togglePills\(\)/.test(shellSource), 'shell exposes the bar pills toggle over IPC')
+assert(/function toggleBarFloating\(\): string \{[\s\S]*?shell\.bar\.toggleFloating\(\)/.test(shellSource), 'shell exposes the bar floating toggle over IPC')
+
+// A right button held past pressAndHoldInterval never reports a click, so the
+// bar options open on press.
+const gestureSource = barSource.slice(barSource.indexOf('component CenterGestureArea'))
+assert(/onPressed: function\(mouse\) \{[^}]*?if \(mouse\.button === Qt\.RightButton\) openMenu\(mouse\.x, mouse\.y\)/.test(gestureSource), 'right press on empty bar space opens the bar options')
 
 // put tolerates a placement target the bar does not carry, so the IPC call
 // must reach the registry's put rather than route back through enable.
