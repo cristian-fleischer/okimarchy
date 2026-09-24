@@ -131,6 +131,7 @@ Item {
     api.position = Qt.binding(function() { return root.position })
     api.vertical = Qt.binding(function() { return root.vertical })
     api.barSize = Qt.binding(function() { return root.barSize })
+    api.barMargins = Qt.binding(function() { return root.barMargins })
     api.transparent = Qt.binding(function() { return root.transparent })
     api.foregroundAnimationEnabled = Qt.binding(function() { return root.foregroundAnimationEnabled })
     api.centerSectionRevealHeld = Qt.binding(function() { return root.centerSectionRevealHeld })
@@ -565,8 +566,19 @@ Item {
   // and rounds its corners by barRadius. Every side is 0 by default, which
   // anchors the bar flush against its edge with square corners. The keys are
   // the position names, so barMargins[position] is the anchored edge's gap.
-  readonly property var barMargins: Style.bar.margins
-  readonly property int barRadius: Style.bar.radius
+  //
+  // bar.floating in shell.json switches the gap on or off; unset, the theme's
+  // margin decides. Without a theme margin a floating bar keeps Hyprland's
+  // gaps_out, and an unset radius follows Hyprland's rounding.
+  property var floatingSetting: undefined
+  readonly property bool floating: BarModel.barFloating(floatingSetting, Style.bar.margins)
+  readonly property var barMargins: BarModel.barMargins(floating, Style.bar.margins, Style.gapsOutEdges, position)
+  readonly property bool floatInGap: BarModel.floatsInGap(floating, Style.bar.margins)
+  readonly property int barRadius: BarModel.barRadius(
+    floating,
+    Style.barOverrides["radius"] !== undefined ? Style.bar.radius : undefined,
+    Style.cornerRadius,
+    barSize)
 
   function normalizePosition(value) {
     return BarModel.normalizePosition(value)
@@ -595,6 +607,7 @@ Item {
     var config = Util.isPlainObject(barConfig) ? barConfig : fallbackBarConfig
 
     position = normalizePosition(config.position)
+    floatingSetting = typeof config.floating === "boolean" ? config.floating : undefined
     setRequestedTransparency(config.transparent === true)
     centerAnchor = Util.canonicalWidgetId(config.centerAnchor || "")
 
@@ -1260,27 +1273,22 @@ Item {
     // textures — which measures ~150ms against ~20ms to tear down. Parking
     // keeps the surface alive, so showing is only a margin change.
     visible: !remapGuard.remapping
-    exclusionMode: root.barHidden ? ExclusionMode.Ignore : ExclusionMode.Auto
+    exclusionMode: root.barHidden ? ExclusionMode.Ignore : (root.floatInGap ? ExclusionMode.Normal : ExclusionMode.Auto)
+    exclusiveZone: BarModel.exclusiveZone(root.floatInGap, root.barSize, root.barMargins, root.position)
 
     ScreenMoveRemap {
       id: remapGuard
       window: barWindow
     }
 
-    // Parking a detached bar has to clear its margin as well as its own size,
-    // or the gap leaves a sliver of it on screen.
-    readonly property int anchoredMargin: root.barMargins[root.position]
-    readonly property int parkedMargin: -(root.barSize + anchoredMargin)
-    readonly property int edgeMargin: root.barHidden ? parkedMargin : anchoredMargin
-
-    // Only the edges the bar actually touches take a gap: the one it is
-    // anchored to, and the two it spans. The remaining side is the bar's own
-    // far face, which no margin applies to.
+    // Floating margins on the edges the bar touches; hidden, parked past its
+    // anchored edge.
+    readonly property var windowMargins: BarModel.windowMargins(root.position, root.barMargins, root.barSize, root.barHidden)
     margins {
-      top: root.position === "top" ? edgeMargin : (root.vertical ? root.barMargins.top : 0)
-      bottom: root.position === "bottom" ? edgeMargin : (root.vertical ? root.barMargins.bottom : 0)
-      left: root.position === "left" ? edgeMargin : (root.vertical ? 0 : root.barMargins.left)
-      right: root.position === "right" ? edgeMargin : (root.vertical ? 0 : root.barMargins.right)
+      top: windowMargins.top
+      right: windowMargins.right
+      bottom: windowMargins.bottom
+      left: windowMargins.left
     }
 
     anchors {
