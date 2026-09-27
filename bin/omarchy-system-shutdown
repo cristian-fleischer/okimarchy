@@ -19,7 +19,7 @@ elif [[ ${1:-} == "--inhibit" ]]; then
   # Block lid handling explicitly: it ignores high-level sleep inhibitors.
   systemd-inhibit --what=sleep:idle:handle-lid-switch \
     --who=Omarchy --why="Shutdown in progress" --mode=block \
-    "$OMARCHY_PATH/bin/omarchy-system-shutdown" --inhibited || {
+    "$0" --inhibited || {
     status=$?
     omarchy-notification-send -u critical "Shutdown failed" "Could not complete shutdown. Please try again."
     exit "$status"

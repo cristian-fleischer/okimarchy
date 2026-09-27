@@ -109,6 +109,15 @@ pass "shutdown stays inhibited through preparation and the poweroff request"
 
 : >"$call_log"
 rm -f "$CALL_LOG.grace" "$CALL_LOG.poweroff"
+# Dev link/unlink can leave the user manager pointing at a removed checkout.
+OMARCHY_PATH="$test_tmp/removed-checkout" bash "$CALL_LOG.worker" || fail "shutdown uses its own script when the service environment is stale"
+[[ -f $CALL_LOG.poweroff ]] || fail "shutdown reaches poweroff with a stale service environment"
+[[ ! -f $CALL_LOG.inhibited ]] || fail "shutdown releases inhibition with a stale service environment"
+! grep -q '^omarchy-notification-send ' "$CALL_LOG" || fail "stale service environment sends no failure notification"
+pass "shutdown uses its own script when the service environment is stale"
+
+: >"$call_log"
+rm -f "$CALL_LOG.grace" "$CALL_LOG.poweroff"
 BLOCK_WINDOW_CLOSE=true bash "$CALL_LOG.worker" || fail "shutdown proceeds while window closing is blocked"
 for (( attempt = 0; attempt < 200; attempt++ )); do
   [[ -f $CALL_LOG.close-finished || -f $CALL_LOG.close-timeout ]] && break
