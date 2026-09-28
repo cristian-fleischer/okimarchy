@@ -330,8 +330,9 @@ Panel {
     return Model.rowSnapshot(list)
   }
 
-  // A row that outlives its node resolves to null, and every binding below
-  // already guards for that; a row that never held the node cannot dangle.
+  // A row that outlives its node resolves to null, or to a node PipeWire recreated
+  // under the same id and name; every binding below guards for null, and a row
+  // that never held the node cannot dangle.
   function nodeFor(row) {
     if (!row) return null
     for (var i = 0; i < nodes.length; i++) {
