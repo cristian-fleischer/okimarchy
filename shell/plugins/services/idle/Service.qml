@@ -267,14 +267,14 @@ Item {
     id: screensaverTimer
     interval: root.screensaverDelaySeconds * 1000
     repeat: false
-    onTriggered: root.launchScreensaver()
+    onTriggered: if (root.screensaverEnabled) root.launchScreensaver()
   }
 
   Timer {
     id: lockTimer
     interval: root.lockDelaySeconds * 1000
     repeat: false
-    onTriggered: if (root.idleEnabled && root.idledThisCycle) root.lockSystem("lock-timeout")
+    onTriggered: if (root.idleEnabled && root.idledThisCycle && root.lockEnabled) root.lockSystem("lock-timeout")
   }
 
   Timer {
