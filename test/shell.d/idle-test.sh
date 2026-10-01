@@ -41,6 +41,16 @@ assert(
   /id: lockTimer[\s\S]*?onTriggered: if \([^)]*root\.lockEnabled\) root\.lockSystem\("lock-timeout"\)/.test(serviceSource),
   'idle does not fire a pending lock once its timeout is set to 0'
 )
+assert(
+  /lockTimer\.interval = root\.lockDelaySeconds \* 1000\s*\n\s*lockTimer\.restart\(\)/.test(serviceSource) &&
+    !/interval: root\.lockDelaySeconds/.test(serviceSource),
+  'idle keeps a pending lock on its deadline when shell.json changes mid-cycle'
+)
+assert(
+  /screensaverTimer\.interval = root\.screensaverDelaySeconds \* 1000\s*\n\s*screensaverTimer\.restart\(\)/.test(serviceSource) &&
+    !/interval: root\.screensaverDelaySeconds/.test(serviceSource),
+  'idle keeps a pending screensaver on its deadline when shell.json changes mid-cycle'
+)
 
 assertDeepEqual(idle.eventParts({ data: 'a,b,c' }, 2), ['a', 'b', 'c'], 'idle parses raw event data')
 assertDeepEqual(

@@ -94,14 +94,22 @@ Item {
     root.screensaverStartedThisCycle = false
     resetScreensaverWindows()
 
+    // Set this cycle's deadlines once: a bound interval would restart a pending
+    // timer from the moment shell.json changes, locking early or late.
     if (root.screensaverEnabled) {
       if (root.screensaverDelaySeconds === 0) launchScreensaver()
-      else screensaverTimer.restart()
+      else {
+        screensaverTimer.interval = root.screensaverDelaySeconds * 1000
+        screensaverTimer.restart()
+      }
     }
 
     if (root.lockEnabled) {
       if (root.lockDelaySeconds === 0) lockSystem("lock-timeout-immediate")
-      else lockTimer.restart()
+      else {
+        lockTimer.interval = root.lockDelaySeconds * 1000
+        lockTimer.restart()
+      }
     }
   }
 
@@ -265,14 +273,12 @@ Item {
 
   Timer {
     id: screensaverTimer
-    interval: root.screensaverDelaySeconds * 1000
     repeat: false
     onTriggered: if (root.screensaverEnabled) root.launchScreensaver()
   }
 
   Timer {
     id: lockTimer
-    interval: root.lockDelaySeconds * 1000
     repeat: false
     onTriggered: if (root.idleEnabled && root.idledThisCycle && root.lockEnabled) root.lockSystem("lock-timeout")
   }
