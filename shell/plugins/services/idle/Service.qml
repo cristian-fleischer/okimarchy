@@ -263,6 +263,9 @@ Item {
     return applyStayAwake(!value, true, "ipc")
   }
 
+  // With both timeouts at 0 the monitor stops reporting, so nothing else would end a running cycle.
+  onIdleTimersEnabledChanged: if (!idleTimersEnabled) cancelIdleCycle("idle-timers-disabled")
+
   IdleMonitor {
     id: idleMonitor
     enabled: root.idleEnabled && root.idleTimersEnabled

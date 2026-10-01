@@ -51,6 +51,10 @@ assert(
     !/interval: root\.screensaverDelaySeconds/.test(serviceSource),
   'idle keeps a pending screensaver on its deadline when shell.json changes mid-cycle'
 )
+assert(
+  /onIdleTimersEnabledChanged: if \(!idleTimersEnabled\) cancelIdleCycle\(/.test(serviceSource),
+  'idle ends a running cycle when both timeouts are set to 0'
+)
 
 assertDeepEqual(idle.eventParts({ data: 'a,b,c' }, 2), ['a', 'b', 'c'], 'idle parses raw event data')
 assertDeepEqual(
