@@ -148,6 +148,12 @@ assert_repaired comment
 grep -qxF '# managed by omarchy' <<<"$(result comment)" || fail "comments are preserved through the rewrite"
 pass "migration repairs a commented stack and preserves the comment"
 
+run_migration commented-include "# auth include system-auth
+$fingerprint_stack"
+(( migrate_rc == 0 )) || fail "a stack with a commented-out include migrates cleanly"
+assert_repaired commented-include
+pass "migration repairs a stack whose only include is commented out"
+
 run_migration fixed "$fixed_stack"
 [[ "$(result fixed)" == "$(printf '%s' "$fixed_stack")" ]] || fail "an already-fixed stack is left byte-for-byte unchanged"
 ! grep -q '^sudo ' "$test_dir/fixed.calls" || fail "an already-fixed stack triggers no privileged writes"

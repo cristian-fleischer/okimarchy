@@ -29,7 +29,7 @@ is_omarchy_vulnerable_stack() {
   local phase
 
   # Already fixed, or partially converted: leave it alone (also makes reruns no-op).
-  if grep -qE '(auth|account|password|session)[[:space:]]+include[[:space:]]+system-auth' "$file"; then
+  if grep -qE '^(auth|account|password|session)[[:space:]]+include[[:space:]]+system-auth' "$file"; then
     return 1
   fi
 
