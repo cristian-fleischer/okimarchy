@@ -18,20 +18,20 @@ migration="$ROOT/migrations/1788256455.sh"
 stub_bin="$test_dir/bin"
 mkdir -p "$stub_bin"
 
-# sudo stub: log, optionally refuse (SUDO_ALLOWED=0), and optionally make a
-# `tee` write vanish (WRITE_BREAKS=1) so the verification/restore path is
-# exercised. Otherwise run the real command so cp/tee act on the temp file.
+# sudo stub: log, optionally refuse (SUDO_ALLOWED=0), and optionally make the
+# `sed` rewrite empty the file and report success (WRITE_BREAKS=1) so the
+# verification/restore path is exercised. Otherwise run the real command so
+# cp/sed act on the temp file.
 cat >"$stub_bin/sudo" <<'STUB'
 #!/bin/bash
 printf 'sudo %s\n' "$*" >>"${CALL_LOG:?}"
-if [[ ${SUDO_ALLOWED:-1} != 1 ]]; then
+if [[ ${SUDO_ALLOWED:-1} != "1" ]]; then
   exit 1
+elif [[ ${WRITE_BREAKS:-0} == "1" && $1 == "sed" ]]; then
+  : >"${!#}"
+else
+  exec "$@"
 fi
-if [[ ${WRITE_BREAKS:-0} == 1 && $1 == tee ]]; then
-  cat >/dev/null
-  exit 0
-fi
-exec "$@"
 STUB
 chmod +x "$stub_bin"/*
 
