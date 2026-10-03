@@ -252,7 +252,7 @@ thumbnail_for() {
 # ffmpegthumbnailer leaves FFmpeg's automatic threading on, so a full-width fan
 # out of those would put a codec thread pool on every core at once.
 drain_pending_thumbnails() {
-  local video_jobs image_jobs pending_fd
+  local video_jobs image_jobs pending_fd queue_file queue_lock_fd worker_lock_fd
 
   export -f generate_thumbnail is_video_path
 
@@ -261,16 +261,37 @@ drain_pending_thumbnails() {
       image_jobs=$(( $(nproc) / 2 ))
       (( image_jobs > 0 )) || image_jobs=1
       (( image_jobs > 2 )) && image_jobs=2
-      # The caller may exit immediately after printing rows. Inherit an open
-      # queue fd so its EXIT trap can unlink the file without losing any jobs.
-      exec {pending_fd}<"$pending_file"
+      # Publish jobs before trying to own the pool. A contended refresh leaves
+      # its jobs for the current owner instead of throwing its queue away.
+      queue_file="$rows_cache_file.thumbnails.pending"
+      exec {queue_lock_fd}>"$rows_cache_file.thumbnails.queue.lock" || return
+      flock "$queue_lock_fd" || return
+      cat "$pending_file" >>"$queue_file"
+      exec {queue_lock_fd}>&-
       (
         exec {worker_lock_fd}>"$rows_cache_file.thumbnails.lock"
         flock -n "$worker_lock_fd" || exit 0
-        nice -n 10 ionice -c 3 xargs -0 -n 2 -P "$image_jobs" \
-          bash -c 'generate_thumbnail "$1" "$2"' _ <&"$pending_fd"
+        exec {queue_lock_fd}>"$rows_cache_file.thumbnails.queue.lock" || exit 1
+        while true; do
+          flock "$queue_lock_fd" || exit 1
+          if [[ ! -s $queue_file ]]; then
+            # Release ownership while publishing is still locked. A producer
+            # arriving after the empty check can then start the next pool.
+            exec {worker_lock_fd}>&-
+            exec {queue_lock_fd}>&-
+            break
+          fi
+          # Unlink the batch under the queue lock, then drain its open fd.
+          # Producers can publish the next batch while conversions run.
+          exec {pending_fd}<"$queue_file" || exit 1
+          rm -f "$queue_file"
+          flock -u "$queue_lock_fd"
+          # Converters must not inherit the publication lock's descriptor.
+          nice -n 10 ionice -c 3 xargs -0 -n 2 -P "$image_jobs" \
+            bash -c 'generate_thumbnail "$1" "$2"' _ <&"$pending_fd" {queue_lock_fd}>&-
+          exec {pending_fd}<&-
+        done
       ) >/dev/null 2>&1 &
-      exec {pending_fd}<&-
     else
       xargs -a "$pending_file" -0 -n 2 -P "$(nproc)" \
         bash -c 'generate_thumbnail "$1" "$2"' _ >/dev/null 2>&1 || true
