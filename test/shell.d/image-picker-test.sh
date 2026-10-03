@@ -151,10 +151,24 @@ assert(
 )
 assert(
   /model: visibleImages/.test(imagePickerQml) &&
-    /sourceSize: Qt\.size\(root\.expandedWidth, root\.expandedHeight\)/.test(imagePickerQml) &&
     /asynchronous: true\s*cache: false/.test(imagePickerQml),
   'image picker renders its window with bounded asynchronous decoding'
 )
+const sourceWidth = imagePickerQml.match(/sourceSize\.width: ([^\n]+)/)[1]
+const sourceHeight = imagePickerQml.match(/sourceSize\.height: ([^\n]+)/)[1]
+const decodeSize = new Function('root', 'Screen', `return [${sourceWidth}, ${sourceHeight}]`)
+for (const [scale, expected] of [
+  [1, [768, 475]],
+  [1.25, [960, 594]],
+  [1.5, [1152, 713]],
+  [2, [1536, 950]]
+]) {
+  assertDeepEqual(
+    decodeSize({ expandedWidth: 768, expandedHeight: 475 }, { devicePixelRatio: scale }),
+    expected,
+    `image picker decodes enough physical pixels at ${scale}x display scale`
+  )
+}
 assert(
   imagePickerQml.includes('(item.selected || root.neighborImagesEnabled)') &&
     /onStatusChanged: if \(item.selected && \(status === Image.Ready \|\| status === Image.Error\)\) root.neighborImagesEnabled = true/.test(imagePickerQml),

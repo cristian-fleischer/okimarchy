@@ -603,13 +603,15 @@ Item {
                 Image {
                   id: image
                   anchors.fill: parent
-                  // Even an uncached 6K wallpaper decodes at card size, off the
-                  // GUI thread. Departing cards release their images instead of
-                  // retaining every preview visited in a large collection.
+                  // Decode at the expanded card's physical size, off the GUI
+                  // thread. Keep that size during navigation to avoid reloads.
+                  // Departing cards release their images instead of retaining
+                  // every preview visited in a large collection.
                   // Queue the selected preview first; neighbors must not delay
                   // the image the user opened the picker to see.
                   source: (item.selected || root.neighborImagesEnabled) && item.thumbnailPath ? Util.fileUrl(item.thumbnailPath) : ""
-                  sourceSize: Qt.size(root.expandedWidth, root.expandedHeight)
+                  sourceSize.width: Math.ceil(root.expandedWidth * Screen.devicePixelRatio)
+                  sourceSize.height: Math.ceil(root.expandedHeight * Screen.devicePixelRatio)
                   fillMode: Image.PreserveAspectCrop
                   asynchronous: true
                   cache: false
