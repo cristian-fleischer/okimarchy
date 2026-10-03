@@ -210,7 +210,8 @@ Item {
     var newImages = ImagePickerModel.loadRows(rows)
 
     root.loadedImageRows = rows
-    root.selectedIndex = root.indexForSelectedImage(newImages)
+    var nextIndex = root.indexForSelectedImage(newImages)
+    root.selectedIndex = ImagePickerModel.nextSelectedIndexForFilter(newImages, nextIndex, root.filterText)
     root.neighborImagesEnabled = false
     root.imageArray = newImages
     root.imagesLoaded = true

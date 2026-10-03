@@ -82,6 +82,43 @@ for (const radius of [1, 8, 16]) {
 }
 
 const imagePickerQml = fs.readFileSync(path.join(root, 'shell/plugins/image-picker/ImagePicker.qml'), 'utf8')
+// Exercise the actual QML refresh handler: model-only filtering tests cannot
+// catch a row refresh selecting an image outside the active filter.
+const refreshHandler = imagePickerQml.match(/function loadRows\(rows, reveal\) \{[\s\S]*?\n  \}/)[0]
+const refreshRoot = {
+  filterText: 'dark',
+  selectedImage: '/themes/removed-dark.png',
+  requestSerial: 1,
+  indexForSelectedImage(images) { return picker.indexForSelectedImage(images, this.selectedImage) },
+  enableNeighborsWhenReady() {},
+  revealWhenSettled() {}
+}
+const refreshContext = {
+  root: refreshRoot,
+  ImagePickerModel: picker,
+  Qt: { callLater(callback) { callback() } }
+}
+require('vm').runInNewContext(`${refreshHandler}; loadRows`, refreshContext)
+const refreshRows = '/themes/light.png\n/themes/remaining-dark.png\n/themes/other-dark.png'
+refreshContext.loadRows(refreshRows, false)
+assertEqual(refreshRoot.selectedIndex, 1, 'filtered refresh selects a visible row after the selected theme is removed')
+assert(picker.visibleWindow(picker.matchingIndices(refreshRoot.imageArray, 'dark'), refreshRoot.selectedIndex, 8)
+  .some(item => item.imageIndex === refreshRoot.selectedIndex), 'filtered refresh has a selected delegate to start preview loading')
+refreshRoot.selectedImage = '/themes/other-dark.png'
+refreshContext.loadRows(refreshRows, false)
+assertEqual(refreshRoot.selectedIndex, 2, 'filtered refresh preserves a selected theme that still matches')
+refreshRoot.selectedImage = '/themes/light.png'
+refreshContext.loadRows(refreshRows, false)
+assertEqual(refreshRoot.selectedIndex, 1, 'filtered refresh moves a hidden selection to the first match')
+refreshRoot.filterText = 'missing'
+refreshContext.loadRows(refreshRows, false)
+assertEqual(refreshRoot.selectedIndex, -1, 'filtered refresh leaves no selection when nothing matches')
+refreshRoot.filterText = ''
+refreshContext.loadRows(refreshRows, false)
+assertEqual(refreshRoot.selectedIndex, 0, 'unfiltered refresh retains its first-row fallback')
+refreshContext.loadRows('', false)
+assertEqual(refreshRoot.selectedIndex, -1, 'empty refresh has no selected image')
+
 assert(
   /function preloadRows[\s\S]*if \(opened \|\| requestActive\) return/.test(imagePickerQml),
   'image picker ignores cache preloads while a request is visible'
