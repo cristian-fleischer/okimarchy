@@ -230,7 +230,7 @@ thumbnail_for() {
       rows_cacheable=false
 
       if [[ $prepare_only != true ]]; then
-        generate_thumbnail "$image" "$thumbnail" >/dev/null 2>&1 &
+        printf '%s\0%s\0' "$image" "$thumbnail" >>"$pending_file"
       fi
 
       printf '%s' "$image"
@@ -247,17 +247,34 @@ thumbnail_for() {
   printf '%s' "$thumbnail"
 }
 
-# Each vips run is single-threaded, so still images can fill every core.
+# Each vips run is single-threaded. Eager preparation can fill every core;
+# lazy preparation leaves CPU and I/O capacity for the interactive shell.
 # ffmpegthumbnailer leaves FFmpeg's automatic threading on, so a full-width fan
 # out of those would put a codec thread pool on every core at once.
 drain_pending_thumbnails() {
-  local video_jobs
+  local video_jobs image_jobs pending_fd
 
   export -f generate_thumbnail is_video_path
 
   if [[ -s $pending_file ]]; then
-    xargs -a "$pending_file" -0 -n 2 -P "$(nproc)" \
-      bash -c 'generate_thumbnail "$1" "$2"' _ >/dev/null 2>&1 || true
+    if [[ $lazy_thumbnails == true && $cache_only != true ]]; then
+      image_jobs=$(( $(nproc) / 2 ))
+      (( image_jobs > 0 )) || image_jobs=1
+      (( image_jobs > 2 )) && image_jobs=2
+      # The caller may exit immediately after printing rows. Inherit an open
+      # queue fd so its EXIT trap can unlink the file without losing any jobs.
+      exec {pending_fd}<"$pending_file"
+      (
+        exec {worker_lock_fd}>"$rows_cache_file.thumbnails.lock"
+        flock -n "$worker_lock_fd" || exit 0
+        nice -n 10 ionice -c 3 xargs -0 -n 2 -P "$image_jobs" \
+          bash -c 'generate_thumbnail "$1" "$2"' _ <&"$pending_fd"
+      ) >/dev/null 2>&1 &
+      exec {pending_fd}<&-
+    else
+      xargs -a "$pending_file" -0 -n 2 -P "$(nproc)" \
+        bash -c 'generate_thumbnail "$1" "$2"' _ >/dev/null 2>&1 || true
+    fi
   fi
 
   if [[ -s $pending_video_file ]]; then

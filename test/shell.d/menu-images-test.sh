@@ -151,3 +151,77 @@ while IFS=$'\t' read -r row_image row_thumbnail; do
     fail "image menu prints each image with its generated thumbnail"
 done <<<"$rows"
 pass "image menu prints its rows for the shell to hold"
+
+# Block converters behind a gate: printing lazy rows must neither await them
+# nor start one process per image. Repeated refreshes share one worker pool.
+lazy_images="$tmp/lazy-images"
+lazy_state="$tmp/lazy-state"
+mkdir -p "$lazy_images" "$lazy_state"
+for (( i = 0; i < 40; i++ )); do
+  printf 'image' >"$lazy_images/$i.png"
+done
+printf '0\n' >"$lazy_state/active"
+printf '0\n' >"$lazy_state/peak"
+cat >"$stub_bin/nproc" <<'EOF'
+#!/bin/bash
+echo "${FAKE_CORES:-2}"
+EOF
+cat >"$stub_bin/vipsthumbnail" <<'EOF'
+#!/bin/bash
+while (( $# > 0 )); do
+  if [[ $1 == "--path" ]]; then output=${2%%\[*}; break; fi
+  shift
+done
+exec 9>"$LAZY_STATE/lock"
+priority=$(ps -o ni= -p "$$")
+(( priority >= 10 )) || : >"$LAZY_STATE/priority-failed"
+[[ $(ionice -p "$$") == "idle" ]] || : >"$LAZY_STATE/priority-failed"
+flock 9
+active=$(<"$LAZY_STATE/active")
+active=$((active + 1))
+printf '%s\n' "$active" >"$LAZY_STATE/active"
+(( active <= $(<"$LAZY_STATE/peak") )) || printf '%s\n' "$active" >"$LAZY_STATE/peak"
+flock -u 9
+while [[ ! -f $LAZY_STATE/gate ]]; do sleep 0.02; done
+printf 'thumbnail' >"$output"
+flock 9
+active=$(<"$LAZY_STATE/active")
+printf '%s\n' "$((active - 1))" >"$LAZY_STATE/active"
+echo done >>"$LAZY_STATE/completed"
+EOF
+chmod +x "$stub_bin/nproc" "$stub_bin/vipsthumbnail"
+# Also release the gate on failure, so background fixtures cannot outlive us.
+trap 'touch "$lazy_state/gate"' EXIT
+
+for cores in 1 2 8; do
+  lazy_state="$tmp/lazy-state-$cores"
+  mkdir -p "$lazy_state"
+  printf '0\n' >"$lazy_state/active"
+  printf '0\n' >"$lazy_state/peak"
+  expected_workers=1
+  (( cores < 4 )) || expected_workers=2
+  for run in 1 2; do
+    rows=$(PATH="$stub_bin:$PATH" XDG_CACHE_HOME="$tmp/lazy-cache-$cores" LAZY_STATE="$lazy_state" FAKE_CORES="$cores" \
+      timeout 10 "$ROOT/bin/omarchy-menu-images" --lazy-thumbnails --print-rows "$lazy_images")
+    (( $(wc -l <<<"$rows") == 40 )) || fail "lazy image menu returns all rows before conversion"
+  done
+  for attempt in {1..100}; do
+    (( $(<"$lazy_state/active") == expected_workers )) && break
+    sleep 0.02
+  done
+  (( $(<"$lazy_state/active") == expected_workers && $(<"$lazy_state/peak") == expected_workers )) ||
+    fail "lazy image menu bounds repeated refreshes to $expected_workers workers on $cores cores"
+  [[ ! -e $lazy_state/completed ]] || fail "lazy image menu does not wait for conversion"
+  [[ ! -e $lazy_state/priority-failed ]] || fail "lazy image menu reserves CPU and I/O priority for the UI"
+  pass "lazy image menu opens with at most $expected_workers workers on $cores cores"
+
+  touch "$lazy_state/gate"
+  for attempt in {1..500}; do
+    if [[ -f $lazy_state/completed ]] && (( $(wc -l <"$lazy_state/completed") == 40 )); then break; fi
+    sleep 0.02
+  done
+  (( $(wc -l <"$lazy_state/completed") == 40 && $(<"$lazy_state/peak") == expected_workers )) ||
+    fail "lazy image menu completes the queue after its parent and queue path are gone"
+  pass "lazy image menu workers finish every queued thumbnail after the caller exits"
+done
+trap 'rm -rf "$tmp"' EXIT
