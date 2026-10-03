@@ -301,11 +301,11 @@ Panel {
     if (enabled && root.enabledDisplayCount <= 1) return
 
     // hyprctl keyword is rejected under the Lua config ("non-legacy parsers"),
-    // so drive the monitor through the hl.monitor eval API instead. Connector
-    // names come from hyprctl itself and match ^[A-Za-z0-9._-]+$.
+    // so drive the monitor through the hl.monitor eval API instead.
+    var output = '"' + name.replace(/[\\"]/g, "\\$&") + '"'
     var expr = enabled
-      ? 'hl.monitor({ output = "' + name + '", disabled = true })'
-      : 'hl.monitor({ output = "' + name + '", disabled = false, mode = "preferred", position = "auto", scale = "auto" })'
+      ? 'hl.monitor({ output = ' + output + ', disabled = true })'
+      : 'hl.monitor({ output = ' + output + ', disabled = false, mode = "preferred", position = "auto", scale = "auto" })'
     actionProc.command = ["hyprctl", "eval", expr]
     if (!actionProc.running) actionProc.running = true
   }
