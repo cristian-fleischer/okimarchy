@@ -61,6 +61,22 @@ LINKS
 [[ $(resolve) == "$physical" ]] || fail "easyeffects_sink resolves through the port links to the card"
 pass "easyeffects_sink resolves through its port links"
 
+# EasyEffects 8 playing into Bluetooth headphones: the live links win over a
+# settings file that still names the speakers.
+headphones=bluez_output.00_11_22_33_44_55.1
+reset_scenario
+printf '301\t%s\tPipeWire\ts16le 2ch 48000Hz\tRUNNING\n' "$headphones" >>"$test_home/data/sinks"
+cat >"$test_home/data/links" <<LINKS
+ee_soe_output_level:output_FL
+  |-> $headphones:playback_FL
+ee_soe_output_level:output_FR
+  |-> $headphones:playback_FR
+LINKS
+mkdir -p "$test_home/.config/easyeffects/db"
+printf '[StreamOutputs]\noutputDevice=%s\n' "$physical" >"$test_home/.config/easyeffects/db/easyeffectsrc"
+[[ $(resolve) == "$headphones" ]] || fail "easyeffects_sink resolves through its port links to Bluetooth headphones"
+pass "easyeffects_sink resolves through its port links to Bluetooth headphones"
+
 # EasyEffects 8 idle: no links, but its settings name the output device.
 reset_scenario
 mkdir -p "$test_home/.config/easyeffects/db"
