@@ -16,13 +16,31 @@ stub_bin="$TMPDIR/bin"
 mkdir -p "$stub_bin"
 cat >"$stub_bin/sudo" <<'STUB'
 #!/bin/bash
+[[ ${REFUSE_SUDO:-0} != 1 ]] || exit 1
 exec "$@"
 STUB
 chmod +x "$stub_bin/sudo"
 reload_log="$TMPDIR/systemctl-calls"
+dropin_dst="$TMPDIR/fprintd.service.d/10-stop-timeout.conf"
+applied_dropin="$TMPDIR/applied-drop-in"
 cat >"$stub_bin/systemctl" <<STUB
 #!/bin/bash
 printf '%s\n' "\$*" >>"$reload_log"
+case "\$*" in
+  'show fprintd.service --property=NeedDaemonReload --value')
+    [[ \${FAIL_QUERY:-0} == 0 ]] || exit 1
+    if cmp -s "$dropin_dst" "$applied_dropin"; then
+      echo no
+    else
+      echo yes
+    fi
+    ;;
+  daemon-reload)
+    [[ \${FAIL_RELOAD:-0} == 0 ]] || exit 1
+    cp "$dropin_dst" "$applied_dropin"
+    ;;
+  *) exit 99 ;;
+esac
 STUB
 chmod +x "$stub_bin/systemctl"
 
@@ -32,7 +50,6 @@ chmod +x "$src"
 dst="$TMPDIR/system-sleep/fprintd-resume"
 dropin_src="$TMPDIR/10-stop-timeout.conf"
 printf '[Service]\nTimeoutStopSec=3s\n' >"$dropin_src"
-dropin_dst="$TMPDIR/fprintd.service.d/10-stop-timeout.conf"
 lock_pam="$TMPDIR/omarchy-lock-fingerprint"
 
 # omarchy-migrate runs each migration with `bash -euo pipefail`; match it.
@@ -43,8 +60,7 @@ run_migration() {
     OMARCHY_FPRINTD_STOP_TIMEOUT_SRC="$dropin_src" \
     OMARCHY_FPRINTD_STOP_TIMEOUT_DST="$dropin_dst" \
     OMARCHY_LOCK_FINGERPRINT_PAM="$lock_pam" \
-    bash -euo pipefail "$migration" >/dev/null ||
-    fail "migration exits clean"
+    bash -euo pipefail "$migration" >/dev/null
 }
 
 # The migration exits clean when its source is missing, so a hook moved
@@ -76,16 +92,38 @@ pass "migration installs the hook, executable"
 grep -qx "daemon-reload" "$reload_log" || fail "migration reloads systemd after installing the drop-in" "calls: $(<"$reload_log")"
 pass "migration installs the stop-timeout drop-in and reloads systemd"
 
-# Running twice must not fail (both now exist), must not touch them, and has
-# nothing to reload.
+rm -f "$dropin_dst"
+rm -f "$applied_dropin"
+: >"$reload_log"
+if FAIL_RELOAD=1 run_migration; then
+  fail "migration remains pending when daemon-reload fails"
+fi
+[[ -f $dropin_dst ]] || fail "reload failure occurs after the drop-in is installed"
+run_migration
+[[ $(grep -c '^daemon-reload$' "$reload_log") == 2 ]] || fail "migration retries reload even when the drop-in already exists"
+pass "migration retries a failed reload after installing the drop-in"
+
+# Existing files may precede an interrupted reload; preserve them and reload.
 printf 'sentinel\n' >>"$dst"
 printf '# sentinel\n' >>"$dropin_dst"
 : >"$reload_log"
 run_migration
 grep -q sentinel "$dst" || fail "migration leaves an existing hook alone"
 grep -q sentinel "$dropin_dst" || fail "migration leaves an existing drop-in alone"
-[[ ! -s $reload_log ]] || fail "migration does not reload systemd when nothing changed" "calls: $(<"$reload_log")"
+grep -qx "daemon-reload" "$reload_log" || fail "migration reloads existing configuration before completing" "calls: $(<"$reload_log")"
 pass "migration leaves existing files alone"
+
+: >"$reload_log"
+REFUSE_SUDO=1 run_migration || fail "later users finish an applied repair without sudo"
+if grep -qx "daemon-reload" "$reload_log"; then
+  fail "later users finish an applied repair without sudo"
+fi
+pass "later users finish an applied repair without sudo"
+
+if FAIL_QUERY=1 run_migration; then
+  fail "migration remains pending when reload state cannot be queried"
+fi
+pass "migration propagates reload-state query failure"
 
 # An unnumbered drop-in may belong to the administrator; never replace it.
 legacy="$TMPDIR/fprintd.service.d/stop-timeout.conf"
