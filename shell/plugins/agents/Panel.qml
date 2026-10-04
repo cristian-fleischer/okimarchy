@@ -24,7 +24,7 @@ Panel {
 
   property bool cursorActive: false
 
-  // Countdowns and "as of" ages read this instead of Date.now() so the
+  // Countdowns and "last updated" ages read this instead of Date.now() so the
   // panel keeps telling the truth while it sits open.
   property double nowMs: Date.now()
 
@@ -419,7 +419,7 @@ Panel {
 
   function otherTrouble(item) {
     var status = String(item && item.usageStatusText || "")
-    return status !== "" && !needsSignIn(item) ? status : ""
+    return status !== "" && status !== "Limits paused" && !needsSignIn(item) ? status : ""
   }
 
   // Sign an account that's already here in again, following along in the
@@ -499,10 +499,12 @@ Panel {
   // titled after its model, and a name like "Opus 5 (1M context)" would parse
   // as a one-minute window.
   function limitWindow(label, percent, resetAt, title) {
+    var reset = new Date(String(resetAt || "")).getTime()
+    var expired = isFinite(reset) && reset <= root.nowMs
     return {
       title: String(title || "") !== "" ? String(title) : windowTitle(label),
-      percent: Number(percent),
-      resetAt: String(resetAt || "")
+      percent: expired ? 0 : Number(percent),
+      resetAt: expired ? "" : String(resetAt || "")
     }
   }
 
@@ -1837,10 +1839,9 @@ Panel {
   component CompactLimit: Item {
     id: compact
     property var window: null
-    // Numbers kept past a failed check dim, and say how old they are on hover.
+    // The age of numbers kept past a failed check is shown only on hover.
     property bool stale: false
     property real fetchedAt: 0
-    opacity: stale ? 0.5 : 1.0
     readonly property var scoped: window && window.scoped ? window.scoped : []
     readonly property bool alarming: window && window.percent >= 0.9
     readonly property real resetMs: root.resetMsFor(window)
@@ -1858,8 +1859,8 @@ Panel {
         }
         if (compact.stale)
           lines.push(compact.fetchedAt > 0 && root.nowMs - compact.fetchedAt > 60000
-            ? "As of " + root.formatDuration(root.nowMs - compact.fetchedAt) + " ago"
-            : "Last known")
+            ? "Last updated " + root.formatDuration(root.nowMs - compact.fetchedAt) + " ago"
+            : compact.fetchedAt > 0 ? "Last updated less than a minute ago" : "Last updated time unavailable")
         for (var i = 0; i < compact.scoped.length; i++)
           lines.push(compact.scoped[i].title + ": " + Math.round(compact.scoped[i].percent * 100) + "% of its "
             + String(compact.window ? compact.window.title : "").toLowerCase() + " allowance")
