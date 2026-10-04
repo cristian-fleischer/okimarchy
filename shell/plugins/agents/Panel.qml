@@ -422,6 +422,10 @@ Panel {
     return status !== "" && status !== "Limits paused" && !needsSignIn(item) ? status : ""
   }
 
+  function pausedWithoutLimits(item) {
+    return !!item && item.usageStatusText === "Limits paused" && limitWindows(item).length === 0
+  }
+
   // Sign an account that's already here in again, following along in the
   // add view just like adding one.
   function signInAgain(p, account) {
@@ -1343,6 +1347,12 @@ Panel {
       wrapMode: Text.WordWrap
     }
 
+    UnavailableUsage {
+      visible: !section.multi && root.pausedWithoutLimits(section.provider)
+      width: parent.width
+      record: section.provider
+    }
+
     Column {
       visible: !section.multi && section.windows.length > 0
       width: parent.width
@@ -1448,6 +1458,11 @@ Panel {
         Column {
           width: parent.width
           spacing: Style.space(12)
+
+          UnavailableUsage {
+            width: parent.width
+            record: accountBlock.modelData
+          }
 
           Repeater {
             model: root.displayWindows({ limits: accountBlock.modelData.limits || [] })
@@ -1830,6 +1845,29 @@ Panel {
           onClicked: root.useAccount(head.owner, head.account)
         }
       }
+    }
+  }
+
+  // With no measured windows, leave a place to discover how to get usage.
+  component UnavailableUsage: Item {
+    id: unavailable
+    property var record: null
+    visible: root.pausedWithoutLimits(record)
+    implicitHeight: unavailableLabel.implicitHeight
+
+    Text {
+      id: unavailableLabel
+      text: "Usage unavailable"
+      color: root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+    }
+
+    HoverHandler { id: unavailableHover }
+
+    PanelToolTip {
+      visible: unavailableHover.hovered && unavailable.visible
+      text: unavailable.record ? String(unavailable.record.authHelpText || "Usage has not been updated yet.") : ""
     }
   }
 

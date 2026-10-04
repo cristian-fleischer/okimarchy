@@ -328,6 +328,14 @@ const start = source.indexOf('function windowIsLong')
 const end = source.indexOf('// The window that decides')
 assert(start > 0 && end > start, 'agents panel exposes its limit-window helpers')
 eval(source.slice(start, end).replaceAll('root.nowMs', 'panelRoot.nowMs'))
+eval(source.slice(source.indexOf('function needsSignIn'), source.indexOf('// Sign an account')))
+
+const paused = { usageStatusText: 'Limits paused', limits: [] }
+assertEqual(pausedWithoutLimits(paused), true, 'paused usage without a cache shows a recovery placeholder')
+assertEqual(otherTrouble(paused), '', 'paused usage never puts the confusing status in the header')
+assertEqual(pausedWithoutLimits({ ...paused, limits: [{ label: 'Session (5-hour)', percent: 0, resetsAt: '' }] }), false, 'cached usage replaces the recovery placeholder')
+assertEqual(pausedWithoutLimits({ usageStatusText: 'Sign-in expired', limits: [] }), false, 'expired sign-ins retain their sign-in action')
+assertEqual(pausedWithoutLimits(null), false, 'missing records do not show a paused-usage placeholder')
 
 assertDeepEqual(
   limitWindows({ limits: [
