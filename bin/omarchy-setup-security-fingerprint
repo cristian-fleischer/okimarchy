@@ -56,16 +56,6 @@ EOF
   fi
 }
 
-setup_lock_fingerprint_pam() {
-  echo "Configuring lock screen for fingerprint authentication..."
-  sudo tee /etc/pam.d/omarchy-lock-fingerprint >/dev/null <<'EOF'
-#%PAM-1.0
-auth       required                    pam_fprintd.so
-account    include                     system-local-login
-EOF
-}
-
-
 echo -e "\e[32mSetting up fingerprint scanner for authentication.\n\e[0m"
 
 # Bail before installing anything if there's no reader to talk to.
@@ -99,7 +89,11 @@ if sudo fprintd-enroll "$USER"; then
     # Editing the stacks up front would leave those machines pointing at
     # pam_fprintd with nothing to match.
     setup_pam_config
-    setup_lock_fingerprint_pam
+    "$OMARCHY_PATH/bin/omarchy-apply-lock"
+    if [[ ! -f /etc/pam.d/omarchy-lock-fingerprint ]]; then
+      echo "Fingerprint enrollment succeeded, but lock-screen configuration could not be confirmed. Run omarchy-apply-lock and try again." >&2
+      exit 1
+    fi
     echo -e "\e[32m\nPerfect! Fingerprint authentication is now configured.\e[0m"
     echo "You can use your fingerprint for sudo, polkit, and lock screen (Super + Ctrl + L)."
   else
