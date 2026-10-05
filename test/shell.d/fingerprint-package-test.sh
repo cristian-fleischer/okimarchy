@@ -49,10 +49,10 @@ case "$1" in
   *) printf 'pacman %s\n' "$*" >> "$CALL_LOG"; exit 99 ;;
 esac
 STUB
+# Both fail unless ENROLL_STATUS or VERIFY_STATUS says otherwise, stopping
+# before PAM. ENROLL_OUTPUT is what fprintd-enroll prints first.
 cat > "$scratch/bin/fprintd-enroll" <<'STUB'
 #!/bin/bash
-# Stop before verification/PAM; no host authentication files may be changed.
-# ENROLL_OUTPUT is what fprintd-enroll prints first.
 echo enroll >> "$CALL_LOG"
 [[ -z ${ENROLL_OUTPUT:-} ]] || printf '%s\n' "$ENROLL_OUTPUT"
 exit "${ENROLL_STATUS:-1}"
@@ -96,7 +96,7 @@ run_setup() {
     fail "setup stops on the simulated enrollment or installation failure"
   fi
   if grep -Eq '^(pam |apply-lock$|Unexpected privileged call)' "$CALL_LOG"; then
-    fail "setup does not change PAM or lock recovery after failed enrollment"
+    fail "setup does not change PAM or lock recovery after a failed enrollment, installation or verify"
   fi
 }
 
@@ -183,6 +183,17 @@ expected=$'  \u2713 Step 1 done. Keep lifting your finger and touching the senso
 ! grep -q 'Enroll result:' "$scratch/output" || fail "no raw fprintd result reaches the owner" "$(cat "$scratch/output")"
 grep -q 'Enrollment failed' "$scratch/output" || fail "a failed enrollment still fails setup" "$(cat "$scratch/output")"
 pass "enrollment results read as instructions, and a failed enrollment still fails setup"
+
+# A failed verify fails setup and leaves PAM and the lock screen alone; the
+# success path's order is checked above.
+: > "$CALL_LOG"
+if INSTALLED=$'libfprint-git\nfprintd\nusbutils' SCAN_TYPE=press ENROLL_STATUS=0 VERIFY_STATUS=1 \
+  OMARCHY_PATH="$scratch" "$setup_script" > "$scratch/output" 2>&1; then
+  fail "a failed verify fails setup" "$(cat "$scratch/output")"
+fi
+grep -qx verify "$CALL_LOG" && ! grep -Eq '^(pam |apply-lock$|Unexpected privileged call)' "$CALL_LOG" ||
+  fail "a failed verify leaves PAM and the lock screen alone" "$(cat "$CALL_LOG")"
+pass "a failed verify fails setup, leaving PAM and the lock screen alone"
 
 # The verify step's results, in fprintd-verify's own format (each with " (done)"
 # or " (not done)"), through the functions setup uses.
