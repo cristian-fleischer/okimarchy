@@ -167,13 +167,21 @@ fi
 
 echo -e "\e[32m\nLet's set up your right index finger as the first fingerprint.\e[0m"
 # A press sensor needs a touch for each sample; a swipe sensor a moving finger.
-if [[ $(fingerprint_reader scan-type) == "press" ]]; then
-  start="Touch the sensor." again="Keep lifting your finger and touching the sensor."
-  echo -e "Touch the sensor, lift your finger and touch it again, and keep going until it says Enrolled. A step can take a few touches.\n"
-else
-  start="Swipe your finger across the sensor." again="Swipe it again."
-  echo -e "Keep moving the finger around on sensor until it says Enrolled.\n"
-fi
+# When fprintd can't say which, the prompts name neither.
+case $(fingerprint_reader scan-type) in
+  press)
+    start="Touch the sensor." again="Keep lifting your finger and touching the sensor."
+    echo -e "Touch the sensor, lift your finger and touch it again, and keep going until it says Enrolled. A step can take a few touches.\n"
+    ;;
+  swipe)
+    start="Swipe your finger across the sensor." again="Swipe it again."
+    echo -e "Keep moving the finger around on sensor until it says Enrolled.\n"
+    ;;
+  *)
+    start="Touch or swipe the sensor." again="Touch or swipe it again."
+    echo -e "Touch or swipe the sensor, and keep going until it says Enrolled. A step can take a few tries.\n"
+    ;;
+esac
 
 # fprintd runs a duplicate check before enrolling on a reader that identifies,
 # which D-Bus doesn't say. Touch ID does, and its check needs no touch while

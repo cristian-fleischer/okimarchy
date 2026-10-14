@@ -151,19 +151,40 @@ fi
 pass "an inconclusive lock installer cannot report successful lock setup"
 
 # A press sensor, such as a Mac's Touch ID, takes a touch per sample, so setup
-# says to lift and touch again; a swipe sensor, or none fprintd can name, keeps
-# the moving-finger instruction.
+# says to lift and touch again; a swipe sensor keeps the moving-finger
+# instruction, and one fprintd can't name is told neither.
 press_text="Touch the sensor, lift your finger and touch it again, and keep going until it says Enrolled. A step can take a few touches."
 swipe_text="Keep moving the finger around on sensor until it says Enrolled."
-INSTALLED=$'libfprint-git\nfprintd\nusbutils' SCAN_TYPE=press run_setup
-grep -qF "$press_text" "$scratch/output" && ! grep -qF "$swipe_text" "$scratch/output" ||
-  fail "a press sensor is told to lift and touch again" "$(cat "$scratch/output")"
-for scan_type in swipe ""; do
-  INSTALLED=$'libfprint-git\nfprintd\nusbutils' SCAN_TYPE=$scan_type run_setup
-  grep -qF "$swipe_text" "$scratch/output" && ! grep -qF "$press_text" "$scratch/output" ||
-    fail "a ${scan_type:-unnamed} sensor keeps the moving-finger instruction" "$(cat "$scratch/output")"
-done
-pass "a press sensor is told to touch again, and any other keeps the moving-finger instruction"
+unnamed_text="Touch or swipe the sensor, and keep going until it says Enrolled. A step can take a few tries."
+check_instruction() {
+  INSTALLED=$'libfprint-git\nfprintd\nusbutils' SCAN_TYPE=$1 run_setup
+  local text
+  for text in "$press_text" "$swipe_text" "$unnamed_text"; do
+    if [[ $text == "$2" ]]; then
+      grep -qF "$text" "$scratch/output" || fail "$3" "$(cat "$scratch/output")"
+    else
+      ! grep -qF "$text" "$scratch/output" || fail "$3" "$(cat "$scratch/output")"
+    fi
+  done
+}
+check_instruction press "$press_text" "a press sensor is told to lift and touch again"
+check_instruction swipe "$swipe_text" "a swipe sensor keeps the moving-finger instruction"
+check_instruction "" "$unnamed_text" "a sensor fprintd can't name is told to touch or swipe"
+pass "each scan type gets its own instruction, and an unnamed one is told to touch or swipe"
+
+# The verify prompt names the reader's scan type, and neither when fprintd
+# can't say which, so a press reader is never told to swipe.
+check_verify_prompt() {
+  : > "$CALL_LOG"
+  INSTALLED=$'libfprint-git\nfprintd\nusbutils' SCAN_TYPE=$1 ENROLL_STATUS=0 VERIFY_STATUS=1 \
+    OMARCHY_PATH="$scratch" "$setup_script" > "$scratch/output" 2>&1 || true
+  grep -qF "Now let's verify that it's working correctly. $2" "$scratch/output" ||
+    fail "a ${1:-unnamed} sensor is asked to verify with: $2" "$(cat "$scratch/output")"
+}
+check_verify_prompt press "Touch the sensor."
+check_verify_prompt swipe "Swipe your finger across the sensor."
+check_verify_prompt "" "Touch or swipe the sensor."
+pass "the verify prompt names the scan type only when fprintd gives one"
 
 # fprintd-enroll's raw results become instructions. Touch ID's duplicate check
 # stage prints nothing; later stages count as steps, never touches, since one
