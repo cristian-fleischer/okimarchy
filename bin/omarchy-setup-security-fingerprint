@@ -186,8 +186,9 @@ esac
 # fprintd runs a duplicate check before enrolling on a reader that identifies,
 # which D-Bus doesn't say. Touch ID does, and its check needs no touch while
 # nothing is enrolled; any other reader's first stage counts, touched or not.
-# The name is the full_name of libfprint-git's Touch ID driver; if it changes,
-# Touch ID shows one step early.
+# The name is the driver's full_name in libfprint/drivers/aurora/aurora.c, which
+# omarchy-pkgs adds to libfprint-git in pkgbuilds/libfprint-git/aurora-apple-sep.patch.
+# If it changes there, Touch ID shows one step early.
 duplicate_check=0
 if [[ $(fingerprint_reader name) == "Apple secure enclave fingerprint sensor" ]]; then
   duplicate_check=1
