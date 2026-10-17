@@ -302,10 +302,11 @@ assert(!defaultById['install.ai.crush'], 'menu removes Crush from Install > AI')
 // Windows VM, whose guest can't run elsewhere, and the installers that need
 // x86_64 binaries (vendor builds for x86_64 alone, Windows games under Wine)
 // hide only off x86_64. Dropbox's x86_64 client runs under box64 on ARM, which
-// needs 4K pages, so it hides only where pages are larger. Any other `when:`
+// needs 4K pages, so it hides only where pages are larger. Spotify installs its
+// web player where its client can't run, so it never hides. Any other `when:`
 // here is a row that went back to vanishing once installed.
 const windowsGuard = 'omarchy-hw-x86'
-const x86OnlyInstalls = ['install.windows', 'install.browser.edge', 'install.service.spotify', 'install.gaming.minecraft', 'install.gaming.heroic', 'install.gaming.geforce-now', 'install.gaming.battlenet', 'install.gaming.lutris']
+const x86OnlyInstalls = ['install.windows', 'install.browser.edge', 'install.gaming.minecraft', 'install.gaming.heroic', 'install.gaming.geforce-now', 'install.gaming.battlenet', 'install.gaming.lutris']
 const fourKPageGuard = '[[ $(getconf PAGESIZE) == 4096 ]]'
 assertDeepEqual(
   defaultItems
@@ -323,6 +324,11 @@ assertEqual(
   defaultById['install.service.dropbox'].when,
   fourKPageGuard,
   'menu offers Dropbox wherever box64 can run it, on x86_64 and on ARM with 4K pages'
+)
+assert(
+  !defaultById['install.service.spotify'].when
+    && defaultById['install.service.spotify'].disabled.includes('applications/Spotify.desktop'),
+  'menu offers Spotify on every platform and dims it once its client or web player is installed'
 )
 assert(
   ['install.browser.zen', 'install.editor.vscode', 'install.gaming.steam', 'install.development.rust', 'install.windows'].every(
