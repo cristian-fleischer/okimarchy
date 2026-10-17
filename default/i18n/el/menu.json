@@ -855,7 +855,7 @@
     "label": "JavaScript"
   },
   "install.development.go": {
-    "label": "Μετάβαση"
+    "label": "Go"
   },
   "install.development.php": {
     "label": "PHP"
@@ -1066,7 +1066,7 @@
     "title": "Αφαίρεση"
   },
   "remove.development.go": {
-    "label": "Μετάβαση"
+    "label": "Go"
   },
   "remove.development.php": {
     "label": "PHP",

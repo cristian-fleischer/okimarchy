@@ -849,13 +849,13 @@
     "label": "Ruby on Rails"
   },
   "install.development.docker-dbs": {
-    "label": "Dokker DB"
+    "label": "Docker DB"
   },
   "install.development.javascript": {
     "label": "JavaScript"
   },
   "install.development.go": {
-    "label": "Mine"
+    "label": "Go"
   },
   "install.development.php": {
     "label": "PHP"
@@ -1066,7 +1066,7 @@
     "title": "Eemalda"
   },
   "remove.development.go": {
-    "label": "Mine"
+    "label": "Go"
   },
   "remove.development.php": {
     "label": "PHP",

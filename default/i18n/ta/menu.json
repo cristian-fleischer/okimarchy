@@ -855,7 +855,7 @@
     "label": "JavaScript"
   },
   "install.development.go": {
-    "label": "செல்"
+    "label": "Go"
   },
   "install.development.php": {
     "label": "PHP"
@@ -1066,7 +1066,7 @@
     "title": "நீக்கு"
   },
   "remove.development.go": {
-    "label": "செல்"
+    "label": "Go"
   },
   "remove.development.php": {
     "label": "PHP",

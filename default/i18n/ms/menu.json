@@ -855,7 +855,7 @@
     "label": "JavaScript"
   },
   "install.development.go": {
-    "label": "Pergi"
+    "label": "Go"
   },
   "install.development.php": {
     "label": "PHP"
@@ -1066,7 +1066,7 @@
     "title": "Buang"
   },
   "remove.development.go": {
-    "label": "Pergi"
+    "label": "Go"
   },
   "remove.development.php": {
     "label": "PHP",

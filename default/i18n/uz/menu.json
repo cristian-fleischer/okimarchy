@@ -855,7 +855,7 @@
     "label": "JavaScript"
   },
   "install.development.go": {
-    "label": "Oʻtish"
+    "label": "Go"
   },
   "install.development.php": {
     "label": "PHP"
@@ -1066,7 +1066,7 @@
     "title": "Olib tashlash"
   },
   "remove.development.go": {
-    "label": "Oʻtish"
+    "label": "Go"
   },
   "remove.development.php": {
     "label": "PHP",

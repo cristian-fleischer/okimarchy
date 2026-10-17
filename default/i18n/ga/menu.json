@@ -855,7 +855,7 @@
     "label": "JavaScript"
   },
   "install.development.go": {
-    "label": "Téigh"
+    "label": "Go"
   },
   "install.development.php": {
     "label": "PHP"
@@ -1066,7 +1066,7 @@
     "title": "Bain"
   },
   "remove.development.go": {
-    "label": "Téigh"
+    "label": "Go"
   },
   "remove.development.php": {
     "label": "PHP",

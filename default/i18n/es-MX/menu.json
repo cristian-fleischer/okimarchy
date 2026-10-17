@@ -855,7 +855,7 @@
     "label": "JavaScript"
   },
   "install.development.go": {
-    "label": "Ir"
+    "label": "Go"
   },
   "install.development.php": {
     "label": "PHP"
@@ -1066,7 +1066,7 @@
     "title": "Quitar"
   },
   "remove.development.go": {
-    "label": "Ir"
+    "label": "Go"
   },
   "remove.development.php": {
     "label": "PHP",
