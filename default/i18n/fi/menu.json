@@ -855,7 +855,7 @@
     "label": "JavaScript"
   },
   "install.development.go": {
-    "label": "Siirry"
+    "label": "Go"
   },
   "install.development.php": {
     "label": "PHP"
@@ -1066,7 +1066,7 @@
     "title": "Poista"
   },
   "remove.development.go": {
-    "label": "Siirry"
+    "label": "Go"
   },
   "remove.development.php": {
     "label": "PHP",
