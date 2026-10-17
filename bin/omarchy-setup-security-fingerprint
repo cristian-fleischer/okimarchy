@@ -132,7 +132,8 @@ verify_progress() {
     case ${line% (*)} in
       verify-match) echo "  ✓ Matched." ;;
       verify-no-match) echo "  ✗ No match." ;;
-      *) echo "  ✗ The check stopped." ;;
+      verify-disconnected) echo "  ✗ The reader was disconnected." ;;
+      *) echo "  ✗ The check stopped (${line% (*)})." ;;
     esac
   done
 }

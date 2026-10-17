@@ -277,7 +277,7 @@ pass "a failed sudo stops setup with a reason, before enrolling"
   'Enroll result: enroll-completed' | enroll_progress "Swipe it again." 1) == $'  Too fast. Swipe it again.\n  Too short. Swipe it again.\n  \u2713 Step 1 done. Swipe it again.\n  enroll-some-new-result\n  \u2713 Enrolled.' ]] ||
   fail "enrollment retries keep going, and an unknown result is shown"
 [[ $(printf '%s\n' 'Verify result: verify-too-fast (not done)' 'Verify result: verify-some-new-retry (not done)' \
-  'Verify result: verify-disconnected (done)' | verify_progress "Swipe it again.") == $'  Too fast. Swipe it again.\n  That one didn\'t read. Swipe it again.\n  \u2717 The check stopped.' ]] ||
+  'Verify result: verify-unknown-error (done)' | verify_progress "Swipe it again.") == $'  Too fast. Swipe it again.\n  That one didn\'t read. Swipe it again.\n  \u2717 The check stopped (verify-unknown-error).' ]] ||
   fail "any verify result that isn't done is a retry"
 pass "every retry keeps the step going, and only a finished failure says it stopped"
 
@@ -309,7 +309,6 @@ check_verify 'verify-swipe-too-short (not done)' '  Too short. Again.'
 check_verify 'verify-finger-not-centered (not done)' '  Not centered: use the middle of the sensor. Again.'
 check_verify 'verify-remove-and-retry (not done)' '  Lift your finger off the sensor, then: Again.'
 check_verify 'verify-too-fast (not done)' '  Too fast. Again.'
-for result in verify-disconnected verify-unknown-error; do
-  check_verify "$result (done)" $'  ✗ The check stopped.'
-done
+check_verify 'verify-disconnected (done)' $'  ✗ The reader was disconnected.'
+check_verify 'verify-unknown-error (done)' $'  ✗ The check stopped (verify-unknown-error).'
 pass "each enroll and verify result fprintd 1.94.5 sends reads as intended"
