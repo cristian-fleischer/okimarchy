@@ -479,7 +479,7 @@ check(m.workspace_id(hl.get_monitor("DP-2"), 1) == 21, "the remaining twin took 
 check(world.windows["0xb"].workspace == 22 and on(22) == "DP-2", "the remaining twin'"'"'s workspace moved to " .. world.windows["0xb"].workspace)
 check(world.windows["0xa"].workspace == 2 and on(2) == "eDP-1", "the unplugged twin'"'"'s workspace joined the laptop'"'"'s")
 
-load_module()
+m = load_module()
 world.handlers["config.reloaded"]()
 check(m.workspace_id(hl.get_monitor("DP-2"), 1) == 21, "a reload handed the remaining twin the other'"'"'s block")
 
