@@ -91,8 +91,8 @@ path_clear() {
 
 # Until the channel serves the seed, the openclaw package is still OpenClaw
 # itself, in /usr, as it was before this release. Until then that is the
-# OpenClaw a machine has: --check takes it as installed, --now installs it and
-# stops there, and the migration moves it to ~/.openclaw once the seed arrives.
+# OpenClaw a machine has: --check takes it as installed, and --now installs it
+# and stops there.
 package_is_openclaw() {
   [[ ! -r $seed/install-cli.sh || ! -r $seed/openclaw.tgz ]]
 }
@@ -102,14 +102,6 @@ package_is_openclaw() {
 # an installation to accept; the update that brings the seed back puts it right.
 moved_before() {
   [[ -e $runtime_command ]] || { [[ -L $command_path ]] && command_ours; }
-}
-
-# The migration that moves OpenClaw to ~/.openclaw ran once per user, and on a
-# machine without the package it found nothing to move and was marked done. An
-# install of the package that is OpenClaw itself after that runs it again, so it
-# waits for the seed and moves it when it arrives.
-rearm_move() {
-  omarchy-migrate --rearm 1792334754.sh
 }
 
 # While the package is OpenClaw itself its command is the one OpenClaw, and
@@ -314,7 +306,6 @@ case "$mode" in
       package_in_the_way
       exit 1
     fi
-    rearm_move
     if package_shadowed; then exit 1; fi
     exit 0
   fi
@@ -358,7 +349,6 @@ if package_is_openclaw; then
     package_in_the_way
     exit 1
   fi
-  rearm_move
   if package_shadowed; then exit 1; fi
   echo "OpenClaw runs from its package until an update brings the release that sets up the self-updating copy."
   exit 0

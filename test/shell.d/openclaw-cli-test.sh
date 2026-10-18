@@ -175,7 +175,6 @@ touch "$seed/openclaw.tgz"
 # Scratch copies of the actual scripts, with only the package's path and
 # /usr/local/bin swapped.
 mkdir -p "$test_tmp/usr-local-bin"
-cp "$ROOT/bin/omarchy-migrate" "$mock_bin/omarchy-migrate"
 for script in bin/omarchy-install-openclaw-cli migrations/1792334754.sh migrations/1790397381.sh; do
   sed -e "s|/usr/share/openclaw|$seed|g" -e "s|/usr/local/bin|$test_tmp/usr-local-bin|g" -e "s|/usr/bin/openclaw|$test_tmp/usr-bin/openclaw|g" \
     "$ROOT/$script" >"$mock_bin/${script##*/}"
@@ -200,16 +199,15 @@ mkdir -p "$test_tmp/usr-bin" "$test_tmp/tools"
 for tool in bash cat chmod cp cut env grep head jq ln mkdir mv readlink realpath rm sed sha256sum stat timeout touch true; do
   ln -s "$(type -P "$tool")" "$test_tmp/tools/$tool"
 done
-mkdir -p "$test_tmp/package-db"
 run() {
-  HOME="$test_home" OMARCHY_TEST_ROOT="$test_tmp" OMARCHY_PACKAGE_DB="$test_tmp/package-db" MISE_SHIMS_DIR='' MISE_DATA_DIR='' XDG_DATA_HOME='' PATH="$test_tmp/usr-bin:$mock_bin:$test_home/.local/bin:$test_tmp/tools" \
+  HOME="$test_home" OMARCHY_TEST_ROOT="$test_tmp" MISE_SHIMS_DIR='' MISE_DATA_DIR='' XDG_DATA_HOME='' PATH="$test_tmp/usr-bin:$mock_bin:$test_home/.local/bin:$test_tmp/tools" \
     "$@" >"$test_tmp/output" 2>&1
 }
 
 # omarchy update runs migrations on a fixed system PATH, without
 # /usr/local/bin, mise's shims or ~/.local/bin.
 run_update() {
-  HOME="$test_home" OMARCHY_TEST_ROOT="$test_tmp" OMARCHY_PACKAGE_DB="$test_tmp/package-db" MISE_SHIMS_DIR='' MISE_DATA_DIR='' XDG_DATA_HOME='' PATH="$mock_bin:$test_tmp/tools" \
+  HOME="$test_home" OMARCHY_TEST_ROOT="$test_tmp" MISE_SHIMS_DIR='' MISE_DATA_DIR='' XDG_DATA_HOME='' PATH="$mock_bin:$test_tmp/tools" \
     "$@" >"$test_tmp/output" 2>&1
 }
 
@@ -245,23 +243,16 @@ pass "a link Omarchy left behind is rewritten, and a missing runtime reseeded"
 # this release: it is installed, and nothing is seeded, linked or moved.
 new_home old-package
 mv "$seed" "$seed.old"
-moved_record="$test_home/.local/state/omarchy/migrations/1792334754.sh"
-mkdir -p "${moved_record%/*}"
-touch "$moved_record"
 run omarchy-install-openclaw-cli --check && fail "--check calls OpenClaw missing before its package is installed"
 OMARCHY_TEST_PACKAGE_COMMAND=1 run omarchy-install-openclaw-cli --now || fail "--now installs a package that is still OpenClaw itself" "$(cat "$test_tmp/output")"
 grep -Fxq "pkg-add openclaw" "$events" || fail "--now installs the package that is still OpenClaw" "$(cat "$events")"
 grep -q "runs from its package" "$test_tmp/output" || fail "--now says OpenClaw runs from its package for now" "$(cat "$test_tmp/output")"
-[[ ! -e $moved_record && -f ${moved_record%/*}/deferred/1792334754.sh ]] ||
-  fail "installing the package that is OpenClaw itself makes the migration wait to move it once the seed arrives"
 run omarchy-install-openclaw-cli --check || fail "--check takes a package that is still OpenClaw itself as installed"
 : >"$events"
 run omarchy-install-openclaw-cli --now || fail "--now accepts a package that is still OpenClaw itself" "$(cat "$test_tmp/output")"
 [[ ! -s $events && ! -e $test_home/.openclaw && ! -e $command ]] ||
   fail "a package that is still OpenClaw itself is left as it is: nothing seeded, linked or moved" "$(cat "$events")"
-touch "$moved_record"
 run omarchy-install-openclaw-cli --now || fail "--now accepts an installed package that is still OpenClaw itself" "$(cat "$test_tmp/output")"
-[[ ! -e $moved_record ]] || fail "accepting the package that is OpenClaw itself makes the migration move it once the seed arrives"
 # Its command is then the one OpenClaw, and one a session would run ahead of it
 # is refused as it is for the runtime.
 shims="$test_home/.local/share/mise/shims"
@@ -276,7 +267,7 @@ rm "$shims/openclaw"
 run omarchy-install-openclaw-cli --check || fail "--check takes the package again once nothing is ahead of it"
 rm "$test_tmp/usr-bin/openclaw"
 mv "$seed.old" "$seed"
-pass "a package that is still OpenClaw itself is the installation until the seed arrives, and the migration will move it"
+pass "a package that is still OpenClaw itself is the installation until the seed arrives"
 
 new_home broken
 OMARCHY_TEST_INSTALL_BROKEN=1 run omarchy-install-openclaw-cli --now && fail "a runtime that does not run is not a finished install"
@@ -778,8 +769,7 @@ run omarchy-install-openclaw-cli --now || fail "--now leaves a script of the use
   fail "--now leaves a script of the user's alone" "$(cat "$events")"
 pass "a gateway the user runs on Bun, or a script of their own on /usr/bin/node, is left alone"
 
-# The migration moves only machines that have the package, and waits for the
-# package that seeds.
+# The migration moves only machines that have the package, once it is the seed.
 new_home migration-none
 run bash -euo pipefail "$test_tmp/migration.sh" || fail "a machine without OpenClaw has nothing to move" "$(cat "$test_tmp/output")"
 [[ ! -s $events && ! -e $test_home/.openclaw ]] || fail "a machine without OpenClaw is untouched" "$(cat "$events")"
@@ -787,11 +777,8 @@ run bash -euo pipefail "$test_tmp/migration.sh" || fail "a machine without OpenC
 new_home migration-old
 touch "$test_tmp/package-installed"
 mv "$seed" "$seed.old"
-status=0
-OMARCHY_MIGRATION_DEFER="$test_tmp/defer-note" run bash -euo pipefail "$test_tmp/migration.sh" || status=$?
-(( status == 75 )) && grep -q "once the openclaw package that sets it up arrives" "$test_tmp/defer-note" ||
-  fail "an old package defers the migration, saying why, rather than failing the update" "status $status: $(cat "$test_tmp/output")"
-[[ ! -e $test_home/.openclaw ]] || fail "an old package leaves the home untouched"
+run bash -euo pipefail "$test_tmp/migration.sh" || fail "an old package does not stop the update" "$(cat "$test_tmp/output")"
+[[ ! -s $events && ! -e $test_home/.openclaw ]] || fail "an old package leaves the home untouched" "$(cat "$events")"
 mv "$seed.old" "$seed"
 
 new_home migration
@@ -809,7 +796,7 @@ new_home migration-foreign
 touch "$test_tmp/package-installed"
 printf '#!/bin/bash\n' >"$command"
 run bash -euo pipefail "$test_tmp/migration.sh" && fail "a migration that cannot finish stays pending"
-pass "the migration moves a packaged OpenClaw to its runtime, and defers until the package can seed it"
+pass "the migration moves a packaged OpenClaw to its runtime once the package is the seed"
 
 new_home migration-update
 touch "$test_tmp/package-installed"
