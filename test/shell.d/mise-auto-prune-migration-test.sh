@@ -58,6 +58,15 @@ in_home "$dotted_home" bash -euo pipefail "$migration" >/dev/null
 grep -q 'auto_prune' "$dotted_home/.config/mise/config.toml" && fail "migration drops a dotted-key copy of the setting"
 pass "migration finds the setting in either TOML form"
 
+# mise keeps its global config under XDG_CONFIG_HOME, so that's where setup wrote.
+xdg_home=$(new_home xdg "")
+xdg_config="$xdg_home/xdg/mise/config.toml"
+mkdir -p "$(dirname "$xdg_config")"
+printf '[settings.upgrade]\nauto_prune = false\n' >"$xdg_config"
+in_home "$xdg_home" env XDG_CONFIG_HOME="$xdg_home/xdg" bash -euo pipefail "$migration" >/dev/null
+grep -q 'auto_prune' "$xdg_config" && fail "migration drops the setting from a config under XDG_CONFIG_HOME"
+pass "migration finds the config where XDG_CONFIG_HOME puts it"
+
 chosen_home=$(new_home chosen $'[settings.upgrade]\nauto_prune = true\n')
 cp "$chosen_home/.config/mise/config.toml" "$test_tmp/chosen-before"
 in_home "$chosen_home" bash -euo pipefail "$migration" >/dev/null
