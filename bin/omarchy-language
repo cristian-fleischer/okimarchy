@@ -101,14 +101,20 @@ generate_locale() {
   fi
 }
 
-# Sets LANG for the next login, and for the apps opened from now on: they
-# start from the systemd user environment, which takes the new value at once.
-# Apps already running keep the language they started with.
+# Sets LANG for the next login, and for the apps opened from now on. uwsm-app
+# runs apps in a scope, which keeps the environment of whatever launched it:
+# Hyprland for bindings, the shell for the launcher. So Hyprland takes the new
+# value, its third argument passing it on to the systemd and D-Bus activation
+# environments services start from, and the shell is respawned from Hyprland
+# to inherit it. Apps already running keep the language they started with.
 apply_session_locale() {
   local locale=$1
   mkdir -p "$(dirname "$session_env")"
   printf '# The session language, set by omarchy-language (Setup > Language).\nexport LANG=%s\n' "$locale" >"$session_env"
-  dbus-update-activation-environment --systemd "LANG=$locale" >/dev/null 2>&1 || true
+
+  if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] && hyprctl eval "hl.env(\"LANG\", \"$locale\", true)" >/dev/null 2>&1; then
+    omarchy-restart-shell >/dev/null 2>&1 || true
+  fi
 }
 
 # A Chinese, Japanese or Korean language brings its input method and glyph
@@ -139,13 +145,13 @@ set_language() {
   name=$(name_for "$code")
 
   generate_locale "$code" "$locale"
-  apply_session_locale "$locale"
 
   # The choice is only persisted once the locale exists, so a cancelled
   # password prompt cannot leave the interface switched with LANG behind it.
   mkdir -p "$(dirname "$language_file")"
   echo "$code" >"$language_file"
   seed_typing "$code"
+  apply_session_locale "$locale"
 
   omarchy-notification-send -g  "$(omarchy-i18n language.changed "$name")" "$(omarchy-i18n language.newApps)"
 }
