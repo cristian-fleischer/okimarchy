@@ -50,9 +50,6 @@
   "system.reboot": {
     "label": "Reboot"
   },
-  "system.reboot-boot-menu": {
-    "label": "Reboot to Boot Menu"
-  },
   "system.shutdown": {
     "label": "Shutdown"
   },
