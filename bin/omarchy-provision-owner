@@ -7,11 +7,11 @@
 # Runs on tty1 via omarchy-provision-owner.service when /var/lib/omarchy/provisioning/pending
 # exists — the state a deferred-provisioning ISO install or omarchy-system-factory-reset leaves
 # behind. Asks for the user (the configurator's Step 2), creates it with the
-# groups system setup recorded, finalizes it offline from the stashed Node
-# tarball, re-keys LUKS from the throwaway install passphrase to the user's
-# password, and hands off to SDDM. A platform whose boot package owns its boot
-# chain prepares it, drops the install key's unlock from it and records the
-# kept key slot through omarchy-lifecycle-dispatch.
+# groups system setup recorded, finalizes it offline, re-keys LUKS from the
+# throwaway install passphrase to the user's password, and hands off to SDDM.
+# A platform whose boot package owns its boot chain prepares it, drops the
+# install key's unlock from it and records the kept key slot through
+# omarchy-lifecycle-dispatch.
 
 set -euo pipefail
 
@@ -1123,8 +1123,6 @@ reset_limine_config() {
 }
 
 cleanup_oem_state() {
-  # Keep groups + packages: omarchy-system-factory-reset stages the bundled Node
-  # tarball from these live copies when the factory snapshot predates it.
   rm -f "$PROVISIONING_DIR/pending" "$PROVISIONING_DIR/authorized_keys" "$PROVISIONING_DIR/setup-user" "$REKEY_STATE"
 
   rm -f /etc/systemd/system/multi-user.target.wants/omarchy-provision-owner.service

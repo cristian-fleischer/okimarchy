@@ -518,14 +518,6 @@ stage_full_reset() {
   # reset would restore that account. Scrub it once, in place.
   sanitize_factory_baseline "$top/@factory"
 
-  # Keep the Node tarball reachable for offline first-boot finalization.
-  if ! compgen -G "$next$PROVISIONING_DIR/packages/node-v*.tar.gz" >/dev/null; then
-    if compgen -G "$PROVISIONING_DIR/packages/node-v*.tar.gz" >/dev/null; then
-      install -d -m 755 "$next$PROVISIONING_DIR/packages"
-      cp "$PROVISIONING_DIR"/packages/node-v*.tar.gz "$next$PROVISIONING_DIR/packages/"
-    fi
-  fi
-
   install -d -m 755 "$next$PROVISIONING_DIR"
   touch "$next$PROVISIONING_DIR/pending" "$next$PROVISIONING_DIR/wipe-pending"
 
