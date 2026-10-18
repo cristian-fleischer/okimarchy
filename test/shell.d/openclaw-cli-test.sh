@@ -792,11 +792,39 @@ grep -q "^install-cli " "$events" && grep -Fxq "runtime gateway install --force"
 sed -n 's/^ExecStart=\([^ ]*\).*/\1/p' "$test_home/.config/systemd/user/openclaw-gateway.service" | grep -qx "$test_home/.openclaw/tools/node-v24.19.0/bin/node" ||
   fail "the migration leaves the gateway on the runtime's own Node, not the old package's system Node" "$(cat "$test_home/.config/systemd/user/openclaw-gateway.service")"
 
-new_home migration-foreign
+new_home migration-broken
 touch "$test_tmp/package-installed"
-printf '#!/bin/bash\n' >"$command"
-run bash -euo pipefail "$test_tmp/migration.sh" && fail "a migration that cannot finish stays pending"
+OMARCHY_TEST_INSTALL_BROKEN=1 run bash -euo pipefail "$test_tmp/migration.sh" && fail "a migration whose setup failed stays pending"
 pass "the migration moves a packaged OpenClaw to its runtime once the package is the seed"
+
+# An OpenClaw of the user's own in the way is theirs to move aside. The
+# migration changes nothing and finishes, so it does not stop every update.
+for case in command path gateway; do
+  new_home "migration-own-$case"
+  touch "$test_tmp/package-installed"
+  case $case in
+  command)
+    printf '#!/bin/bash\necho mine\n' >"$command"
+    chmod +x "$command"
+    ;;
+  path)
+    printf '#!/bin/bash\n' >"$test_tmp/usr-bin/openclaw"
+    chmod +x "$test_tmp/usr-bin/openclaw"
+    ;;
+  gateway)
+    mkdir -p "$test_home/.config/systemd/user"
+    printf 'ExecStart=/opt/node %s/openclaw/dist/index.js gateway\n' "$test_home" >"$test_home/.config/systemd/user/openclaw-gateway.service"
+    ;;
+  esac
+  run bash -euo pipefail "$test_tmp/migration.sh" ||
+    fail "an OpenClaw of the user's own does not stop the update ($case)" "$(cat "$test_tmp/output")"
+  grep -q "Leaving OpenClaw as it is" "$test_tmp/output" || fail "the migration says it left OpenClaw alone ($case)" "$(cat "$test_tmp/output")"
+  ! grep -q '^install-cli' "$events" && [[ ! -e $test_home/.openclaw ]] ||
+    fail "the migration sets nothing up beside an OpenClaw of the user's own ($case)" "$(cat "$events")"
+  rm -f "$test_tmp/usr-bin/openclaw"
+done
+grep -q mine "$test_home/../migration-own-command/.local/bin/openclaw" || fail "the user's own command is kept"
+pass "an OpenClaw of the user's own leaves the migration finished and changes nothing"
 
 new_home migration-update
 touch "$test_tmp/package-installed"
