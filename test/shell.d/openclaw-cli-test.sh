@@ -119,11 +119,12 @@ touch "$seed/openclaw.tgz"
 # /usr/local/bin swapped.
 mkdir -p "$test_tmp/usr-local-bin"
 cp "$ROOT/bin/omarchy-migrate" "$mock_bin/omarchy-migrate"
-for script in bin/omarchy-install-openclaw-cli migrations/1790397381.sh; do
+for script in bin/omarchy-install-openclaw-cli migrations/1792334754.sh migrations/1790397381.sh; do
   sed -e "s|/usr/share/openclaw|$seed|g" -e "s|/usr/local/bin|$test_tmp/usr-local-bin|g" -e "s|/usr/bin/openclaw|$test_tmp/usr-bin/openclaw|g" \
     "$ROOT/$script" >"$mock_bin/${script##*/}"
 done
-mv "$mock_bin/1790397381.sh" "$test_tmp/migration.sh"
+mv "$mock_bin/1792334754.sh" "$test_tmp/migration.sh"
+mv "$mock_bin/1790397381.sh" "$test_tmp/retired-migration.sh"
 chmod +x "$mock_bin/omarchy-install-openclaw-cli"
 
 new_home() {
@@ -187,14 +188,14 @@ pass "a link Omarchy left behind is rewritten, and a missing runtime reseeded"
 # this release: it is installed, and nothing is seeded, linked or moved.
 new_home old-package
 mv "$seed" "$seed.old"
-moved_record="$test_home/.local/state/omarchy/migrations/1790397381.sh"
+moved_record="$test_home/.local/state/omarchy/migrations/1792334754.sh"
 mkdir -p "${moved_record%/*}"
 touch "$moved_record"
 run omarchy-install-openclaw-cli --check && fail "--check calls OpenClaw missing before its package is installed"
 OMARCHY_TEST_PACKAGE_COMMAND=1 run omarchy-install-openclaw-cli --now || fail "--now installs a package that is still OpenClaw itself" "$(cat "$test_tmp/output")"
 grep -Fxq "pkg-add openclaw" "$events" || fail "--now installs the package that is still OpenClaw" "$(cat "$events")"
 grep -q "runs from its package" "$test_tmp/output" || fail "--now says OpenClaw runs from its package for now" "$(cat "$test_tmp/output")"
-[[ ! -e $moved_record && -f ${moved_record%/*}/deferred/1790397381.sh ]] ||
+[[ ! -e $moved_record && -f ${moved_record%/*}/deferred/1792334754.sh ]] ||
   fail "installing the package that is OpenClaw itself makes the migration wait to move it once the seed arrives"
 run omarchy-install-openclaw-cli --check || fail "--check takes a package that is still OpenClaw itself as installed"
 : >"$events"
@@ -644,3 +645,22 @@ run_update bash -euo pipefail "$test_tmp/migration.sh" || fail "the migration fi
 grep -q "^install-cli " "$events" && [[ $(readlink -- "$command") == "$runtime" ]] ||
   fail "the migration under omarchy update seeds the runtime and links the command" "$(cat "$events")"
 pass "the migration finishes under omarchy update, whose PATH has no ~/.local/bin"
+
+# 4.0.5 shipped the move as 1790397381 before the seed package and it stopped
+# every update (#15804), so that one now finishes everywhere and changes nothing.
+# The move is a migration of its own, which a machine that marked the old one
+# done still runs.
+for case in none old seeded; do
+  new_home "retired-$case"
+  [[ $case == none ]] || touch "$test_tmp/package-installed"
+  [[ $case != old ]] || mv "$seed" "$seed.old"
+  mkdir -p "$test_home/.config/systemd/user"
+  printf 'ExecStart=/usr/bin/node /usr/lib/node_modules/openclaw/dist/index.js gateway --port 18789\n' >"$test_home/.config/systemd/user/openclaw-gateway.service"
+  cp "$test_home/.config/systemd/user/openclaw-gateway.service" "$test_tmp/packaged-unit"
+  run bash -euo pipefail "$test_tmp/retired-migration.sh" || fail "the retired migration finishes ($case)" "$(cat "$test_tmp/output")"
+  [[ ! -s $events && ! -e $test_home/.openclaw ]] || fail "the retired migration changes nothing ($case)" "$(cat "$events")"
+  cmp -s "$test_tmp/packaged-unit" "$test_home/.config/systemd/user/openclaw-gateway.service" ||
+    fail "the retired migration leaves the packaged gateway alone ($case)"
+  [[ $case != old ]] || mv "$seed.old" "$seed"
+done
+pass "the retired migration finishes without moving OpenClaw, with or without the seed package"

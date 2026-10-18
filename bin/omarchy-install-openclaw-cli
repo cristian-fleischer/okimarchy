@@ -109,7 +109,7 @@ moved_before() {
 # install of the package that is OpenClaw itself after that runs it again, so it
 # waits for the seed and moves it when it arrives.
 rearm_move() {
-  omarchy-migrate --rearm 1790397381.sh
+  omarchy-migrate --rearm 1792334754.sh
 }
 
 # While the package is OpenClaw itself its command is the one OpenClaw, and
