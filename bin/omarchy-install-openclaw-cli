@@ -213,6 +213,48 @@ unsettled() {
     { [[ " ${running[*]} " == *" $1 "* ]] && ! systemctl --user is-active --quiet "openclaw-$1.service"; }
 }
 
+# The local gateway's own answer, on the port its service is started with. health
+# exits 0 while a gateway is still starting too, and a caller's OPENCLAW_GATEWAY_*
+# could point it at another one.
+gateway_answers() {
+  local out port
+  port=$(systemctl --user show -P ExecStart openclaw-gateway.service 2>/dev/null |
+    sed -n 's/.*argv\[\]=[^;]* --port[= ]\([0-9][0-9]*\).*/\1/p' | head -1)
+  out=$(env -u OPENCLAW_GATEWAY_URL -u OPENCLAW_GATEWAY_PORT -u OPENCLAW_GATEWAY_TOKEN -u OPENCLAW_GATEWAY_PASSWORD \
+    ${port:+OPENCLAW_GATEWAY_PORT="$port"} timeout -k 5 10 "$runtime_command" health --json --timeout 3000 2>/dev/null) &&
+    jq -e '.ok == true' <<<"$out" >/dev/null 2>&1
+}
+
+# Waits out systemd's restarts, for two minutes at most; a gateway that failed
+# or stopped is not coming back on its own.
+gateway_serves() {
+  local deadline=$((SECONDS + 120)) state
+  while ((SECONDS < deadline)); do
+    gateway_answers && return 0
+    state=$(systemctl --user show -P ActiveState openclaw-gateway.service 2>/dev/null) || state=failed
+    [[ $state == active || $state == activating || $state == reloading ]] || return 1
+    sleep 1
+  done
+  return 1
+}
+
+# A started gateway can still exit seconds later: a newer runtime refuses the
+# agent database an older OpenClaw left until doctor migrates it. So one that
+# is meant to be running has to answer, after one doctor run if need be.
+settle_gateway() {
+  gateway_serves && return 0
+  echo "Repairing OpenClaw's state for $prefix..."
+  if ! systemctl --user stop openclaw-gateway.service; then
+    echo "Could not stop the OpenClaw gateway service to repair it. Stop it, then run omarchy-install-openclaw-cli --now again." >&2
+    return 1
+  fi
+  "$runtime_command" doctor --fix --non-interactive </dev/null || true
+  systemctl --user start openclaw-gateway.service || true
+  gateway_serves && return 0
+  echo "The OpenClaw gateway does not answer after moving to $prefix. See: journalctl --user -u openclaw-gateway.service" >&2
+  return 1
+}
+
 # Upstream's installer rewrites a loaded gateway itself, but only warns when
 # the restart fails, so whatever is still unsettled is installed again from the
 # runtime, on the runtime's own Node, and then has to have settled.
@@ -226,7 +268,9 @@ rehome_services() {
       echo "Moving the OpenClaw $role service to $prefix..."
       "$runtime_command" "$role" install --force "${pin[@]}" || true
     fi
-    if unsettled "$role"; then
+    # Whether a gateway that was running is up is settle_gateway's to judge,
+    # through systemd's restart wait or after an exit doctor can repair.
+    if on_old_package "$(unit_path "$role")" || { [[ $role != gateway ]] && unsettled "$role"; }; then
       echo "Could not move the OpenClaw $role service to $prefix. Finish with: openclaw $role install --force" >&2
       return 1
     fi
@@ -237,6 +281,9 @@ rehome_services() {
     fi
     if [[ " ${enabled[*]} " != *" $role "* ]]; then
       systemctl --user disable "openclaw-$role.service" 2>/dev/null || true
+    fi
+    if [[ $role == gateway && " ${running[*]} " == *" gateway "* ]]; then
+      settle_gateway || return 1
     fi
     if systemctl --user is-active --quiet "openclaw-$role.service"; then
       rm -f "$stopped_dir/$role"
@@ -371,11 +418,24 @@ unit_removed() {
   done
 }
 
+# Whether the command the user manager runs for a service, drop-ins included and
+# whichever file it was loaded from, is the runtime's.
+manager_runs_runtime() {
+  local argv
+  argv=$(systemctl --user show -P ExecStart "openclaw-$1.service" 2>/dev/null | sed -n 's/.*argv\[\]=\([^;]*\) ;.*/\1/p' | head -1)
+  [[ -n $argv ]] && runs_runtime <(printf 'ExecStart=%s\n' "$argv")
+}
+
 for role in gateway node; do
   if [[ -e $stopped_dir/$role ]]; then
-    if ! unit_removed "$role" && ! systemctl --user is-active --quiet "openclaw-$role.service" && ! systemctl --user start "openclaw-$role.service"; then
-      echo "Could not start the OpenClaw $role service again. Start it with: systemctl --user start openclaw-$role.service" >&2
-      exit 1
+    if ! unit_removed "$role"; then
+      if ! systemctl --user is-active --quiet "openclaw-$role.service" && ! systemctl --user start "openclaw-$role.service"; then
+        echo "Could not start the OpenClaw $role service again. Start it with: systemctl --user start openclaw-$role.service" >&2
+        exit 1
+      fi
+      if [[ $role == gateway ]] && manager_runs_runtime gateway && ! settle_gateway; then
+        exit 1
+      fi
     fi
     rm -f "$stopped_dir/$role"
   fi

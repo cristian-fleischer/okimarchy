@@ -43,7 +43,23 @@ case "$2" in
     [[ -z ${OMARCHY_TEST_SYSTEMCTL_START_FAIL:-} ]] || exit 1
     touch "$HOME/active-$3"
     ;;
-  is-active) [[ -e $HOME/active-$4 ]] ;;
+  is-active) [[ -e $HOME/active-$4 ]] && ! [[ $4 == openclaw-gateway.service && -s $HOME/gateway-restarting ]] ;;
+  show)
+    if [[ $4 == ExecStart && -n ${OMARCHY_TEST_DROPIN_EXEC:-} ]]; then
+      echo "{ path=${OMARCHY_TEST_DROPIN_EXEC%% *} ; argv[]=$OMARCHY_TEST_DROPIN_EXEC ; ignore_errors=no }"
+    elif [[ $4 == ExecStart ]]; then
+      for dir in "$HOME/.config/systemd/user" "$HOME/Unit Files/systemd/user" "$HOME/.local/share/systemd/user"; do
+        [[ -e $dir/${*: -1} ]] || continue
+        exec=$(sed -n 's/^ExecStart=//p' "$dir/${*: -1}" | head -1)
+        echo "{ path=${exec%% *} ; argv[]=$exec ; ignore_errors=no }"
+        exit 0
+      done
+      echo
+    elif [[ -s $HOME/gateway-restarting ]]; then echo activating
+    elif [[ -e $HOME/active-${*: -1} ]]; then echo active
+    else echo failed
+    fi
+    ;;
   is-enabled) [[ -e $HOME/enabled-$4 ]] ;;
   disable)
     printf 'systemctl %s\n' "$*" >>"$OMARCHY_TEST_ROOT/events"
@@ -72,6 +88,8 @@ cat >"$mock_bin/systemd-analyze" <<'SH'
 #!/bin/bash
 printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user" "${XDG_DATA_HOME:-$HOME/.local/share}/systemd/user"
 SH
+# Waiting on a gateway takes no time here.
+printf '#!/bin/bash\n' >"$mock_bin/sleep"
 chmod +x "$mock_bin/"*
 
 # Stands in for upstream's install-cli.sh: it writes the command the way the
@@ -83,6 +101,15 @@ chmod +x "$mock_bin/"*
 # installer does that itself for a gateway it finds loaded. As upstream does
 # since 2026.9.6, a rewrite keeps the Node the unit already ran unless
 # --runtime-path pins one.
+# `health` answers while the gateway is active, except over a stale-agent-db in
+# the home: a newer runtime refuses that and exits until `doctor` migrates it
+# (OMARCHY_TEST_DOCTOR_CANNOT_FIX leaves it). A gateway-starting answers once
+# with health's own "still starting", which exits 0; a gateway-restarting holds
+# that many failed answers while systemd waits to restart the unit, counting
+# from the install when it starts as restarts-after-install; and with
+# OMARCHY_TEST_GATEWAY_URL_ANSWERS another gateway an OPENCLAW_GATEWAY_URL names
+# answers for it. A gateway-port is the one port the gateway listens on, where
+# health otherwise asks the configured 18789.
 cat >"$seed/install-cli.sh" <<'SH'
 printf 'install-cli %s%s\n' "$*" "${OPENCLAW_PROFILE:+ profile=$OPENCLAW_PROFILE}" >>"$OMARCHY_TEST_ROOT/events"
 prefix=$HOME/.openclaw
@@ -105,7 +132,37 @@ if [[ \${2:-} == "install" ]]; then
   printf 'ExecStart=%s $prefix/tools/node-v24.19.0/lib/node_modules/openclaw/dist/index.js %s\n' "\$node" "\$1" >"\$unit"
   [[ -z "\${OMARCHY_TEST_START_FAIL:-}" || ( "\$OMARCHY_TEST_START_FAIL" != 1 && "\$OMARCHY_TEST_START_FAIL" != "\$1" ) ]] || exit 1
   touch "\$HOME/active-openclaw-\$1.service" "\$HOME/enabled-openclaw-\$1.service"
+  [[ ! -e "\$HOME/restarts-after-install" ]] || mv "\$HOME/restarts-after-install" "\$HOME/gateway-restarting"
 fi
+case "\${1:-}" in
+  health)
+    if [[ -n "\${OMARCHY_TEST_GATEWAY_URL_ANSWERS:-}" && -n "\${OPENCLAW_GATEWAY_URL:-}" ]]; then
+      echo '{"ok":true}'
+      exit
+    fi
+    if [[ -e "\$HOME/gateway-port" && \$(cat "\$HOME/gateway-port") != "\${OPENCLAW_GATEWAY_PORT:-18789}" ]]; then
+      exit 1
+    fi
+    if [[ -e "\$HOME/gateway-starting" ]]; then
+      rm "\$HOME/gateway-starting"
+      echo '{"status":"starting"}'
+      exit
+    fi
+    if [[ -s "\$HOME/gateway-restarting" ]]; then
+      echo \$(( \$(cat "\$HOME/gateway-restarting") - 1 )) >"\$HOME/gateway-restarting"
+      [[ \$(cat "\$HOME/gateway-restarting") != 0 ]] || rm "\$HOME/gateway-restarting"
+      exit 1
+    fi
+    if [[ -e "\$HOME/stale-agent-db" ]]; then
+      rm -f "\$HOME/active-openclaw-gateway.service"
+      exit 1
+    fi
+    [[ -e "\$HOME/active-openclaw-gateway.service" ]] || exit 1
+    echo '{"ok":true}'
+    exit
+    ;;
+  doctor) [[ -n "\${OMARCHY_TEST_DOCTOR_CANNOT_FIX:-}" ]] || rm -f "\$HOME/stale-agent-db" ;;
+esac
 exec true "$prefix/tools/node-v24.19.0/lib/node_modules/openclaw/dist/entry.js" "\$@"
 EOF
 chmod 755 "$prefix/bin/openclaw"
@@ -402,8 +459,8 @@ new_home start-fails
 mkdir -p "$test_home/.config/systemd/user"
 printf 'ExecStart=/usr/bin/node /usr/lib/node_modules/openclaw/dist/index.js gateway --port 18789\n' >"$test_home/.config/systemd/user/openclaw-gateway.service"
 touch "$test_home/active-openclaw-gateway.service"
-OMARCHY_TEST_START_FAIL=1 run omarchy-install-openclaw-cli --now && fail "a moved gateway that does not start fails the install"
-grep -q "Could not move the OpenClaw gateway service" "$test_tmp/output" && grep -q "is not running now" "$test_tmp/output" ||
+OMARCHY_TEST_START_FAIL=1 OMARCHY_TEST_SYSTEMCTL_START_FAIL=1 run omarchy-install-openclaw-cli --now && fail "a moved gateway that does not start fails the install"
+grep -q "gateway does not answer after moving" "$test_tmp/output" && grep -q "is not running now" "$test_tmp/output" ||
   fail "a moved gateway that does not start is named, and so is its being stopped" "$(cat "$test_tmp/output")"
 pass "a gateway that was running is running again from the runtime, or the install fails saying it is stopped"
 
@@ -432,6 +489,123 @@ run omarchy-install-openclaw-cli --now || fail "--now finishes with a moved, sto
 [[ -e $test_home/active-openclaw-gateway.service && ! -e $test_home/.local/state/omarchy/openclaw-stopped/gateway ]] ||
   fail "a moved gateway a failed run stopped is started" "$(cat "$events")"
 pass "a gateway a failed run stopped after it was moved is started too"
+
+# A moved gateway can start and exit seconds later, refusing the agent database
+# an older OpenClaw left, so one that was running has to answer, and gets one
+# doctor run, with the gateway stopped, when it does not.
+for case in healthy stale stuck; do
+  new_home "gateway-$case"
+  mkdir -p "$test_home/.config/systemd/user"
+  printf 'ExecStart=/usr/bin/node /usr/lib/node_modules/openclaw/dist/index.js gateway --port 18789\n' >"$test_home/.config/systemd/user/openclaw-gateway.service"
+  touch "$test_home/active-openclaw-gateway.service" "$test_home/enabled-openclaw-gateway.service"
+  [[ $case == healthy ]] || touch "$test_home/stale-agent-db"
+  if [[ $case == stuck ]]; then
+    OMARCHY_TEST_DOCTOR_CANNOT_FIX=1 run omarchy-install-openclaw-cli --now && fail "a moved gateway that still does not answer fails the install"
+    grep -q "does not answer after moving" "$test_tmp/output" && [[ -e $test_home/.local/state/omarchy/openclaw-stopped/gateway ]] ||
+      fail "a moved gateway that still does not answer is named and kept for the next run" "$(cat "$test_tmp/output")"
+    rm "$test_home/stale-agent-db"
+    run omarchy-install-openclaw-cli --now || fail "the next run finishes once the gateway answers" "$(cat "$test_tmp/output")"
+    [[ ! -e $test_home/.local/state/omarchy/openclaw-stopped/gateway ]] || fail "a gateway that answers again drops its record"
+    continue
+  fi
+  run omarchy-install-openclaw-cli --now || fail "--now moves a running gateway ($case)" "$(cat "$test_tmp/output")"
+  if [[ $case == healthy ]]; then
+    ! grep -q '^runtime doctor' "$events" || fail "a moved gateway that answers is not doctored" "$(cat "$events")"
+    continue
+  fi
+  after=$(sed -n '/^runtime gateway install/,$p' "$events" | grep -e '^systemctl --user st' -e '^runtime doctor' || true)
+  [[ $after == $'systemctl --user stop openclaw-gateway.service\nruntime doctor --fix --non-interactive\nsystemctl --user start openclaw-gateway.service' ]] ||
+    fail "a moved gateway that does not answer is stopped, doctored and started" "$(cat "$events")"
+  [[ ! -e $test_home/stale-agent-db && -e $test_home/active-openclaw-gateway.service ]] || fail "a doctored gateway is running and answers"
+done
+pass "a moved gateway that was running answers again, after one doctor run if it needs one, or the install fails and keeps it for the next run"
+
+# Only the local gateway's own "ok" counts: health exits 0 while a gateway is
+# still starting, and a caller's OPENCLAW_GATEWAY_URL could name another one.
+# A unit systemd is about to restart is waited for, not doctored.
+moved_running_gateway() {
+  new_home "$1"
+  mkdir -p "$test_home/.config/systemd/user"
+  printf 'ExecStart=/usr/bin/node /usr/lib/node_modules/openclaw/dist/index.js gateway --port 18789\n' >"$test_home/.config/systemd/user/openclaw-gateway.service"
+  touch "$test_home/active-openclaw-gateway.service" "$test_home/enabled-openclaw-gateway.service"
+}
+moved_running_gateway gateway-starting
+touch "$test_home/gateway-starting"
+run omarchy-install-openclaw-cli --now || fail "--now waits for a gateway that is still starting" "$(cat "$test_tmp/output")"
+(( $(grep -c '^runtime health' "$events") >= 2 )) && ! grep -q '^runtime doctor' "$events" ||
+  fail "a gateway still starting is asked again rather than taken as serving, and is not doctored" "$(cat "$events")"
+moved_running_gateway gateway-elsewhere
+touch "$test_home/stale-agent-db"
+OPENCLAW_GATEWAY_URL=ws://elsewhere:18789 OMARCHY_TEST_GATEWAY_URL_ANSWERS=1 run omarchy-install-openclaw-cli --now ||
+  fail "--now repairs the local gateway whatever OPENCLAW_GATEWAY_URL names" "$(cat "$test_tmp/output")"
+grep -q '^runtime doctor' "$events" && [[ ! -e $test_home/stale-agent-db ]] ||
+  fail "another gateway answering for OPENCLAW_GATEWAY_URL does not pass for the local one" "$(cat "$events")"
+moved_running_gateway gateway-restarting
+echo 3 >"$test_home/restarts-after-install"
+run omarchy-install-openclaw-cli --now || fail "--now waits out a gateway systemd is restarting" "$(cat "$test_tmp/output")"
+(( $(grep -c '^runtime health' "$events") >= 3 )) && ! grep -q '^runtime doctor' "$events" ||
+  fail "a gateway systemd is restarting is waited for, not doctored" "$(cat "$events")"
+pass "only the local gateway's own answer counts, after a start or a restart in progress"
+
+# A gateway keeps its record until it answers, so another service failing
+# after it moved cannot leave a gateway that exited unrepaired.
+moved_running_gateway gateway-then-node
+printf 'ExecStart=/usr/bin/node /usr/lib/node_modules/openclaw/dist/index.js node\n' >"$test_home/.config/systemd/user/openclaw-node.service"
+touch "$test_home/active-openclaw-node.service" "$test_home/stale-agent-db"
+OMARCHY_TEST_START_FAIL=node run omarchy-install-openclaw-cli --now && fail "a node host that does not start fails the run"
+grep -q '^runtime doctor' "$events" && [[ ! -e $test_home/.local/state/omarchy/openclaw-stopped/gateway && -e $test_home/.local/state/omarchy/openclaw-stopped/node ]] ||
+  fail "the gateway is repaired and answers before its record goes, and the node host keeps its own" "$(cat "$events"; ls "$test_home/.local/state/omarchy/openclaw-stopped" 2>&1)"
+pass "a moved gateway answers before its record goes, even when another service then fails"
+
+# A record only repairs Omarchy's gateway: a unit the user has since replaced
+# with an OpenClaw of their own is left to them. And doctor never runs beside a
+# gateway that would not stop.
+new_home record-foreign-unit
+run omarchy-install-openclaw-cli --now || fail "--now sets OpenClaw up" "$(cat "$test_tmp/output")"
+mkdir -p "$test_home/.config/systemd/user" "$test_home/.local/state/omarchy/openclaw-stopped"
+printf 'ExecStart=/opt/node /home/someone/openclaw/dist/index.js gateway\n' >"$test_home/.config/systemd/user/openclaw-gateway.service"
+touch "$test_home/.local/state/omarchy/openclaw-stopped/gateway" "$test_home/active-openclaw-gateway.service" "$test_home/stale-agent-db"
+: >"$events"
+run omarchy-install-openclaw-cli --now || fail "--now finishes beside the user's own gateway" "$(cat "$test_tmp/output")"
+! grep -q '^runtime doctor\|^systemctl --user stop' "$events" || fail "a record does not stop or doctor a gateway the user replaced" "$(cat "$events")"
+new_home record-stop-fails
+run omarchy-install-openclaw-cli --now || fail "--now sets OpenClaw up" "$(cat "$test_tmp/output")"
+mkdir -p "$test_home/.config/systemd/user" "$test_home/.local/state/omarchy/openclaw-stopped"
+printf 'ExecStart=%s/.openclaw/tools/node-v24.19.0/bin/node %s/.openclaw/tools/node-v24.19.0/lib/node_modules/openclaw/dist/index.js gateway\n' "$test_home" "$test_home" >"$test_home/.config/systemd/user/openclaw-gateway.service"
+touch "$test_home/.local/state/omarchy/openclaw-stopped/gateway" "$test_home/active-openclaw-gateway.service" "$test_home/stale-agent-db"
+OMARCHY_TEST_STOP_FAIL=openclaw-gateway.service run omarchy-install-openclaw-cli --now && fail "a gateway that will not stop for its repair fails the run"
+! grep -q '^runtime doctor' "$events" && grep -q "Could not stop the OpenClaw gateway service to repair it" "$test_tmp/output" &&
+  [[ -e $test_home/.local/state/omarchy/openclaw-stopped/gateway ]] ||
+  fail "doctor does not run beside a gateway that would not stop, and its record stays" "$(cat "$events")"
+new_home record-relocated-unit
+run omarchy-install-openclaw-cli --now || fail "--now sets OpenClaw up" "$(cat "$test_tmp/output")"
+mkdir -p "$test_home/.local/share/systemd/user" "$test_home/.local/state/omarchy/openclaw-stopped"
+printf 'ExecStart=%s/.openclaw/tools/node-v24.19.0/bin/node %s/.openclaw/tools/node-v24.19.0/lib/node_modules/openclaw/dist/index.js gateway\n' "$test_home" "$test_home" >"$test_home/.local/share/systemd/user/openclaw-gateway.service"
+touch "$test_home/.local/state/omarchy/openclaw-stopped/gateway" "$test_home/stale-agent-db"
+run omarchy-install-openclaw-cli --now || fail "--now repairs Omarchy's gateway in another unit directory" "$(cat "$test_tmp/output")"
+grep -q '^runtime doctor' "$events" && [[ ! -e $test_home/stale-agent-db && ! -e $test_home/.local/state/omarchy/openclaw-stopped/gateway ]] ||
+  fail "a record repairs Omarchy's gateway wherever the user manager loaded its unit from" "$(cat "$events")"
+new_home record-dropin
+run omarchy-install-openclaw-cli --now || fail "--now sets OpenClaw up" "$(cat "$test_tmp/output")"
+mkdir -p "$test_home/.config/systemd/user" "$test_home/.local/state/omarchy/openclaw-stopped"
+printf 'ExecStart=%s/.openclaw/tools/node-v24.19.0/bin/node %s/.openclaw/tools/node-v24.19.0/lib/node_modules/openclaw/dist/index.js gateway\n' "$test_home" "$test_home" >"$test_home/.config/systemd/user/openclaw-gateway.service"
+touch "$test_home/.local/state/omarchy/openclaw-stopped/gateway" "$test_home/active-openclaw-gateway.service" "$test_home/stale-agent-db"
+: >"$events"
+OMARCHY_TEST_DROPIN_EXEC="/opt/node /home/someone/openclaw/dist/index.js gateway --port 19000" run omarchy-install-openclaw-cli --now ||
+  fail "--now finishes beside a drop-in that runs another OpenClaw" "$(cat "$test_tmp/output")"
+! grep -q '^runtime doctor\|^systemctl --user stop' "$events" ||
+  fail "a gateway a drop-in points at another OpenClaw is not stopped or doctored" "$(cat "$events")"
+new_home record-own-port
+run omarchy-install-openclaw-cli --now || fail "--now sets OpenClaw up" "$(cat "$test_tmp/output")"
+mkdir -p "$test_home/.config/systemd/user" "$test_home/.local/state/omarchy/openclaw-stopped"
+printf 'ExecStart=%s/.openclaw/tools/node-v24.19.0/bin/node %s/.openclaw/tools/node-v24.19.0/lib/node_modules/openclaw/dist/index.js gateway --port 19000\n' "$test_home" "$test_home" >"$test_home/.config/systemd/user/openclaw-gateway.service"
+touch "$test_home/.local/state/omarchy/openclaw-stopped/gateway" "$test_home/active-openclaw-gateway.service"
+echo 19000 >"$test_home/gateway-port"
+: >"$events"
+run omarchy-install-openclaw-cli --now || fail "--now finds a gateway on the port its service names" "$(cat "$test_tmp/output")"
+! grep -q '^runtime doctor\|^systemctl --user stop' "$events" && [[ ! -e $test_home/.local/state/omarchy/openclaw-stopped/gateway ]] ||
+  fail "a gateway serving on its service's own port is not taken for down" "$(cat "$events")"
+pass "a record repairs only Omarchy's gateway, and only once it has stopped"
 
 # One that will not start keeps its record and fails the run, rather than the
 # migration finishing with the gateway down.
