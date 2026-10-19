@@ -667,6 +667,23 @@ Item {
   property var iconCache: ({})
   property var iconQueue: []
   property string iconWanted: ""
+  property var iconRetried: ({})
+
+  function iconKeyFor(row) { return String(row.groupKey || row.source || row.app || "") }
+
+  // The launcher prunes old icons, so a cached path can go missing: resolve
+  // it again, once per source, so a file that will not load cannot loop.
+  function forgetIcon(rowKey) {
+    var at = rowIndexFor(rowKey)
+    if (at < 0) return
+    var row = toasts.get(at), key = iconKeyFor(row)
+    if (!key || iconRetried[key] || iconCache[key] !== row.stored_image) return
+    iconRetried[key] = true
+    delete iconCache[key]
+    for (var i = 0; i < toasts.count; i++)
+      if (iconKeyFor(toasts.get(i)) === key) toasts.setProperty(i, "stored_image", "")
+    wantIcon(toasts.get(at))
+  }
 
   function setFetchRemoteIcons(enabled) {
     // A request the user just disabled is cancelled, never accepted late.
@@ -686,7 +703,7 @@ Item {
     // A sender's file is kept; a live image:// handle dies with this shell, so
     // a durable icon is resolved for those too.
     if (String(row.image || "").indexOf("image://") !== 0 && String(row.image || "")) return
-    var key = String(row.groupKey || row.source || row.app || "")
+    var key = iconKeyFor(row)
     if (!key) return
     if (iconWanted === key) return
     if (iconCache[key] !== undefined) {
@@ -725,7 +742,7 @@ Item {
   function applyIcon(key, path) {
     for (var i = 0; i < toasts.count; i++) {
       var row = toasts.get(i)
-      if (String(row.groupKey || row.source || row.app || "") !== key) continue
+      if (iconKeyFor(row) !== key) continue
       if (row.stored_image === path) continue
       toasts.setProperty(i, "stored_image", path)
       var copy = {}
@@ -1200,6 +1217,9 @@ Item {
       if (service.liveKeys[key] !== pending || pending.held || !pending.row) return
       var row = pending.row
       pending.row = null
+      // An icon resolved while this row waited only reached rows already shown.
+      var icon = service.iconCache[service.iconKeyFor(row)]
+      if (icon) row.stored_image = icon
       var at = service.rowIndexFor(key)
       var snap = service.snapshot(), deckNow = service.deckHeight
       if (at >= 0) {
@@ -2179,6 +2199,7 @@ Item {
               hoverY: service.hoverY
               onActionInvoked: function(identifier) { service.invokeAction(model.key, identifier) }
               onOfferTaken: function(kind, value) { service.takeOffer(kind, value, model.key) }
+              onIconMissing: service.forgetIcon(model.key)
               now: service.nowTick
               expanded: service.expanded
                         && (service.stacking !== "source" || service.openDeck === Layout.deckKeyFor(model, service.stacking))

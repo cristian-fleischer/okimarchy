@@ -78,6 +78,7 @@ Item {
   signal replyRequested()
   signal replySent(string text)
   signal replyCancelled()
+  signal iconMissing()
 
   readonly property bool critical: row.urgency === 2
   readonly property color dimColor: Qt.darker(Commons.Color.notifications.text, 1.4)
@@ -373,7 +374,11 @@ Item {
           anchors.fill: parent
           visible: thumb.pictured
           source: thumb.best
-          onStatusChanged: if (status === Image.Error && source == thumb.sent) thumb.sentFailed = true
+          onStatusChanged: {
+            if (status !== Image.Error) return
+            if (source == thumb.sent) thumb.sentFailed = true
+            else if (source == thumb.resolved) card.iconMissing()
+          }
           // A photo fills its square; an app icon keeps its own shape.
           fillMode: thumb.photo ? Image.PreserveAspectCrop : Image.PreserveAspectFit
           // Constant, so the slot resizing never reloads the image.

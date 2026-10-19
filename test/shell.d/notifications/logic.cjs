@@ -309,7 +309,7 @@ function runIn(scope, ...names) {
 const capacityFunctions = ['pinDeckDisplay', 'showsOn', 'fullscreenOn', 'awayFrom', 'routeAround', 'rememberRecent', 'recentForPanel',
   'durationFor', 'liveCount', 'reserveLive', 'releaseLive', 'wantSenderImage', 'senderImageFor', 'finishSenderImage', 'pumpSenderImages',
   'nextKey', 'rowIndexFor', 'keyForOriginal', 'handleNotification', 'watchNotification', 'showRow', 'release', 'closeToast',
-  'finishClose', 'clearAll', 'clearDeck', 'dismissNewest', 'releaseHeld', 'restoreRows', 'actionsOf', 'dismissOne']
+  'finishClose', 'clearAll', 'clearDeck', 'dismissNewest', 'releaseHeld', 'restoreRows', 'actionsOf', 'dismissOne', 'iconKeyFor', 'forgetIcon']
 
 function newCapacityScope() {
   const toasts = { rows: [],
@@ -334,7 +334,7 @@ function newCapacityScope() {
     lowDuration: 5000, normalDuration: 8000, maxDuration: 30000,
     snoozedUntil: key => s.snoozes[key] || 0,
     liveSnoozes: () => Object.keys(s.snoozes).map(key => ({ key })),
-    storeProc: {}, storeBin: '', wantIcon: () => {},
+    storeProc: {}, storeBin: '', wantIcon: () => {}, iconCache: {}, iconRetried: {},
     lookForReply: () => {}, Security: S, Delivery,
     Store: { ...Store, write: () => {} },
     NotificationUrgency: { Critical: 2, Normal: 1, Low: 0 },
@@ -567,14 +567,31 @@ for (const held of [true, false]) { // Capacity: at most 100 live senders, held 
     assert.equal(s.liveCount(), 100)
     if (held) assert.equal(s.held.length, 100, 'replacement does not queue a second card')
   }
+  // An icon resolved while the rows waited reaches them when they are shown.
+  if (held) for (const key of s.held) s.iconCache[s.iconKeyFor(s.liveKeys[key].row)] = '/icons/held.png'
   s.pointerHolding = false
   s.releaseHeld()
   s.drainCallLater()
   assert.equal(s.toasts.count, 100)
+  if (held) assert.ok(s.toasts.rows.every(row => row.stored_image === '/icons/held.png'))
   const replacements = s.toasts.rows.filter(row => row.originalId === 1)
   assert.equal(replacements.length, 1)
   assert.equal(replacements[0].summary, 'Latest replacement')
   assert.equal(replacements[0].body, 'Synthetic body: Latest replacement')
+}
+
+{ // A pruned icon file is resolved again, once per source, on every card from it.
+  const s = newCapacityScope()
+  let wanted = 0
+  s.wantIcon = () => { wanted++ }
+  s.toasts.rows.push({ key: 'a', groupKey: 'app:x', stored_image: '/gone.png' },
+                     { key: 'b', groupKey: 'app:x', stored_image: '/gone.png' })
+  s.iconCache['app:x'] = '/gone.png'
+  s.forgetIcon('a')
+  s.forgetIcon('b')
+  assert.equal(wanted, 1)
+  assert.equal(s.iconCache['app:x'], undefined)
+  assert.ok(s.toasts.rows.every(row => row.stored_image === ''))
 }
 
 { // Visible replacements keep their position and expose only the latest sender's actions.
