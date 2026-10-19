@@ -34,7 +34,9 @@ BarIndicator {
     if (button === Qt.RightButton || root.sharingOffer) {
       if (root.fullService) root.notificationService.requestPanel("toggle", root.screenName)
     } else if (root.fullService && root.active) {
-      root.notificationService.letEverythingThrough()
+      // Source snoozes are resumed one by one from the panel.
+      if (root.dnd || root.notificationService.globalSnoozeUntil > 0) root.notificationService.letEverythingThrough()
+      else root.notificationService.requestPanel("open", root.screenName)
     } else {
       root.notificationService.setDoNotDisturb(!root.notificationService.doNotDisturb)
     }
