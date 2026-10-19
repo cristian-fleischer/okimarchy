@@ -3,10 +3,9 @@ import Quickshell
 import qs.Commons
 import qs.Ui
 
-// The notification indicator: a crossed-out bell under Do Not Disturb, a
-// sleeping bell while everything or some source is snoozed, and a sharing mark
-// while a detected screen share is waiting for a snooze decision. Click to
-// silence or resume; right-click for the notification panel.
+// The notification indicator: Do Not Disturb, snoozed, or a screen share
+// awaiting a snooze decision. Click to silence or resume; right-click for the
+// notification panel.
 BarIndicator {
   id: root
 
@@ -46,10 +45,8 @@ BarIndicator {
     return window && window.screen ? String(window.screen.name || "") : ""
   }
 
-  // Clicks, keybindings and IPC all ask the service, which closes the panel
-  // wherever it is open, or asks for one on a monitor. The indicator showing
-  // in the bar there answers. The panel is built the first time it is wanted
-  // on this monitor, and kept from then on.
+  // Clicks, keybindings and IPC all go through the service; the indicator on
+  // the requested monitor answers, building its panel the first time.
   Connections {
     target: root.fullService ? root.notificationService : null
     ignoreUnknownSignals: true
