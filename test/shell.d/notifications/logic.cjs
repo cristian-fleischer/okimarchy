@@ -58,6 +58,7 @@ for (const body of ['<img src="file:///etc/passwd">', '<svg><image href="https:/
   assert.equal(M.oneLine('&lt;img src="file:///etc/passwd"&gt; &lt;b class="literal"&gt;'), '<img src="file:///etc/passwd"> <b class="literal">')
   // Reverse only our own escaping; no fourth sender-decoding pass.
   assert.equal(M.oneLine('&amp;amp;amp;lt;b&amp;amp;amp;gt;'), '&lt;b&gt;')
+  assert.equal(M.oneLine('&#128512; &#x1F600;'), '\u{1F600} \u{1F600}')
 }
 
 // Parsers stay fast on hostile input, and a generated corpus never yields a

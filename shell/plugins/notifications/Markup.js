@@ -24,11 +24,11 @@ function decodeOnce(text) {
   return String(text || "")
     .replace(/&#(\d{1,7});/g, function(_, n) {
       var code = parseInt(n, 10)
-      return (code > 0 && code < 0x110000) ? String.fromCharCode(code) : _
+      return (code > 0 && code < 0x110000) ? String.fromCodePoint(code) : _
     })
     .replace(/&#x([0-9a-f]{1,6});/gi, function(_, n) {
       var code = parseInt(n, 16)
-      return (code > 0 && code < 0x110000) ? String.fromCharCode(code) : _
+      return (code > 0 && code < 0x110000) ? String.fromCodePoint(code) : _
     })
     .replace(/&([a-z]+);/gi, function(whole, name) {
       var hit = ENTITIES[String(name).toLowerCase()]
