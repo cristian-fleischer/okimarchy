@@ -76,13 +76,25 @@ assert(
   'bar stays mapped while hidden so revealing it does not rebuild the surface'
 )
 assert(
-  /exclusionMode: root\.barHidden \? ExclusionMode\.Ignore : ExclusionMode\.Auto/.test(barSource),
+  /exclusionMode: root\.barHidden \? ExclusionMode\.Ignore : ExclusionMode\.Normal/.test(barSource),
   'a hidden bar reserves no space for itself'
+)
+// The zone is explicit because the window spans its screen: Auto would
+// reserve all of it.
+assert(
+  /exclusiveZone: thickness/.test(barSource),
+  'the bar reserves exactly its strip, whatever the window size'
+)
+// The surface spans its screen, so parking it by the strip's thickness alone
+// would leave the rest of it on screen.
+assert(
+  /readonly property real parkDistance: root\.vertical \? implicitWidth : implicitHeight/.test(barSource),
+  'a hidden bar parks by the whole surface, not the strip'
 )
 for (const edge of ['top', 'bottom', 'left', 'right']) {
   assert(
-    new RegExp(`${edge}: root\\.barHidden && root\\.position === "${edge}" \\? -barWindow\\.thickness : 0`).test(barSource),
-    `a hidden bar parks past the ${edge} edge by its whole thickness`
+    new RegExp(`${edge}: root\\.barHidden && root\\.position === "${edge}" \\? -barWindow\\.parkDistance : 0`).test(barSource),
+    `a hidden bar parks its whole surface past the ${edge} edge`
   )
 }
 
@@ -313,9 +325,10 @@ assertDeepEqual(
   'vertical bars resolve free space along their vertical axis'
 )
 assertEqual(bar.nearestDropTarget([], { x: 10, y: 10 }, false), null, 'bar reports no insertion edge without targets')
+// The window spans its screen, so the strip, not the window, bounds a drop.
 assert(
-  /contentItem\.mapFromItem\(null, scenePoint\.x, scenePoint\.y\)[\s\S]*?return null/.test(barSource),
-  'bar rejects free-space drops after the pointer leaves the bar'
+  /if \(moduleRemoveDistance\(windowScreenPoint\(scenePoint, sourceWindow\)\) > 0\) return null/.test(barSource),
+  'bar rejects free-space drops after the pointer leaves the bar strip'
 )
 assert(
   /BarModel\.centerDropTarget\(onBar, root\.centerBoxDropRect\(box\), scenePoint, root\.vertical, sourceSlot\)/.test(barSource) &&
@@ -399,6 +412,39 @@ assert(
     /readonly property real alongLength: removalPending \? 0 :/.test(barSource),
   'a removed widget leaves the bar the moment it poofs, ahead of the layout write'
 )
+// A drag has to survive leaving the bar on an empty workspace. While nothing
+// holds keyboard focus, Hyprland picks a pointer target again on any surface
+// commit, and a pointer that has strayed onto another surface is pulled off
+// the bar mid-drag with a synthesized release. So the bar surface spans its
+// screen at all times and a live drag toggles only its input region, never
+// its size: resizing flashes the stale strip buffer stretched across the new
+// size.
+assert(
+  /readonly property bool dragActive: \(root\.barDragSource !== null && root\.sameWindow\(root\.barDragWindow, barWindow\)\) \|\|\s*\n\s*\(root\.barMoveActive && root\.sameWindow\(root\.barMoveWindow, barWindow\)\)/.test(barSource),
+  'a widget drag and a bar move on this surface both take the whole surface for input'
+)
+assert(
+  /mask: dragActive \? null : stripInputRegion/.test(barSource) &&
+    /Region \{\s*\n\s*id: stripInputRegion\s*\n\s*item: barStrip/.test(barSource),
+  'idle, only the strip takes input; a drag toggles the input region'
+)
+assert(
+  /implicitWidth: root\.vertical \? \(screen \? screen\.width : thickness\) : 0/.test(barSource) &&
+    /implicitHeight: root\.vertical \? 0 : \(screen \? screen\.height : thickness\)/.test(barSource) &&
+    !/implicit(Width|Height):[^\n]*dragActive/.test(barSource),
+  'the bar surface spans its screen unconditionally instead of resizing for a drag'
+)
+// Anchoring all four edges would void the exclusive zone (layer-shell
+// reserves space from the one anchored edge), dropping tiled windows behind
+// the bar.
+for (const edge of ['top', 'bottom', 'left', 'right']) {
+  assert(!new RegExp(`${edge}:[^\\n]*dragActive`).test(barSource), `a drag never changes the bar's ${edge} anchor`)
+}
+assert(
+  /function traySectionDropRect\(slot, window\) \{[\s\S]*?var reach = thicknessFor\(window\.screen\)/.test(barSource),
+  'the tray section reaches by the strip\'s thickness, not the window\'s'
+)
+
 assert(
   /function beginBarDrag\(sourceSlot, pressX, pressY\) \{[\s\S]*?commitBarRemoval\(\)/.test(barSource),
   'a new drag writes any removal still poofing first, so it starts from the layout as it will be'

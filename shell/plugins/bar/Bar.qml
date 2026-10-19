@@ -1014,12 +1014,9 @@ Item {
 
   function moduleDropAtScene(scenePoint, sourceSlot) {
     var sourceWindow = root.slotWindow(sourceSlot) || root.barDragWindow
-    if (sourceWindow && sourceWindow.contentItem) {
-      var barPoint = sourceWindow.contentItem.mapFromItem(null, scenePoint.x, scenePoint.y)
-      if (barPoint.x < 0 || barPoint.x > sourceWindow.contentItem.width ||
-          barPoint.y < 0 || barPoint.y > sourceWindow.contentItem.height)
-        return null
-    }
+    // A drop lands only over the bar strip. The window spans its whole
+    // screen, so its own bounds are not the bar's.
+    if (moduleRemoveDistance(windowScreenPoint(scenePoint, sourceWindow)) > 0) return null
 
     // The tray cannot go into its own drawer.
     var intoTraySection = !sourceSlot || !sourceSlot.hostsTraySection
@@ -1075,7 +1072,7 @@ Item {
       var section = { x: origin.x, y: origin.y, width: shown.width, height: shown.height }
       var corner = area.mapToItem(null, 0, 0)
       var tray = { x: corner.x, y: corner.y, width: area.width, height: area.height }
-      var reach = vertical ? window.contentItem.width : window.contentItem.height
+      var reach = thicknessFor(window.screen)
       return BarModel.sectionDropZone(section, reach, vertical, tray)
     } catch (e) {
       return null
@@ -1315,6 +1312,8 @@ Item {
 
   // How far past the bar the drag point sits, in screen coordinates: past
   // the strip its screen's bar surface draws, thickness deep along its edge.
+  // The strip, not the window, is the boundary: the window spans the whole
+  // screen (BarPanel).
   function moduleRemoveDistance(screenPoint) {
     var screen = barDragScreen
     if (!screen) return 0
@@ -1659,20 +1658,37 @@ Item {
     // instead of growing once the windows are laid out. The wait ends once, for
     // good: when the mode settles it, or after two seconds without one.
     visible: !remapGuard.remapping && (cutoutWaitOver || !cutoutPending)
-    exclusionMode: root.barHidden ? ExclusionMode.Ignore : ExclusionMode.Auto
+    // An explicit zone instead of Auto: the reserved area stays the strip's
+    // thickness though the window spans its screen.
+    exclusionMode: root.barHidden ? ExclusionMode.Ignore : ExclusionMode.Normal
+    exclusiveZone: thickness
+
+    // While this window's widget or bar-move drag is live, the whole surface
+    // takes input (mask below), so the pointer never leaves the bar surface
+    // however far the drag goes. That is what keeps the gesture alive: while
+    // nothing on the workspace holds keyboard focus (an empty workspace),
+    // Hyprland picks a pointer target again on a surface commit, and a
+    // pointer that has strayed onto another surface is pulled off the bar
+    // mid-drag, ending the gesture with a synthesized release.
+    // sameWindow, not identity: the drag records the QsWindow interface of
+    // the slot's window, which is not this PanelWindow object itself.
+    readonly property bool dragActive: (root.barDragSource !== null && root.sameWindow(root.barDragWindow, barWindow)) ||
+      (root.barMoveActive && root.sameWindow(root.barMoveWindow, barWindow))
 
     ScreenMoveRemap {
       id: remapGuard
       window: barWindow
     }
 
-    // Parked by its full thickness, which a notch floor may make more than
-    // barSize, so no strip of it stays on screen.
+    // Parked by the whole surface, which spans its screen, so none of it
+    // stays on screen: not the strip, however thick a notch floor makes it,
+    // nor the clear rest that a drag takes input on.
+    readonly property real parkDistance: root.vertical ? implicitWidth : implicitHeight
     margins {
-      top: root.barHidden && root.position === "top" ? -barWindow.thickness : 0
-      bottom: root.barHidden && root.position === "bottom" ? -barWindow.thickness : 0
-      left: root.barHidden && root.position === "left" ? -barWindow.thickness : 0
-      right: root.barHidden && root.position === "right" ? -barWindow.thickness : 0
+      top: root.barHidden && root.position === "top" ? -barWindow.parkDistance : 0
+      bottom: root.barHidden && root.position === "bottom" ? -barWindow.parkDistance : 0
+      left: root.barHidden && root.position === "left" ? -barWindow.parkDistance : 0
+      right: root.barHidden && root.position === "right" ? -barWindow.parkDistance : 0
     }
 
     anchors {
@@ -1704,26 +1720,58 @@ Item {
     // right section, leaves the indicator peek shut.
     property real peekEdge: 0
 
-    implicitWidth: root.vertical ? thickness : 0
-    implicitHeight: root.vertical ? 0 : thickness
-    color: root.transparent ? "transparent" : (root.glassy ? root.glassBackground : root.background)
+    // The surface spans its screen at all times, transparent past the strip
+    // it paints; a drag toggles only its input region. Growing the surface
+    // for a drag instead flashes the strip's stale buffer stretched across
+    // the new size until the next frame lands, and the size can't come from
+    // anchoring all four edges either, which would void the exclusive zone
+    // (layer-shell reserves space from the one anchored edge) and drop tiled
+    // windows behind the bar. Glassy blur stays on the strip: Hyprland's
+    // ignore_alpha leaves the clear rest of the surface unblurred.
+    implicitWidth: root.vertical ? (screen ? screen.width : thickness) : 0
+    implicitHeight: root.vertical ? 0 : (screen ? screen.height : thickness)
+    color: "transparent"
     surfaceFormat.opaque: false
     WlrLayershell.namespace: "omarchy-bar"
     WlrLayershell.layer: WlrLayer.Top
 
-    Loader {
-      anchors.fill: parent
-      sourceComponent: root.vertical ? verticalBar : horizontalBar
+    // Idle, only the strip takes input, so the clear expanse passes clicks
+    // through to the windows and desktop below.
+    mask: dragActive ? null : stripInputRegion
 
-      // A child of the loader, not a sibling of the sections: an ancestor stays
-      // hovered while the pointer is over a widget, where a sibling would lose
-      // hover to the section the pointer entered.
-      HoverHandler {
-        readonly property bool peeking: hovered && BarModel.peeksAt(point.position, barWindow.peekEdge, root.vertical)
-        onPeekingChanged: root.setBarHovered(peeking)
-        // Unplugging a monitor destroys its bar without a leave event, which
-        // would strand this surface's tally and hold the peek open for good.
-        Component.onDestruction: if (peeking) root.setBarHovered(false)
+    Region {
+      id: stripInputRegion
+      item: barStrip
+    }
+
+    // The bar itself, along its screen edge.
+    Item {
+      id: barStrip
+
+      x: root.position === "right" ? parent.width - barWindow.thickness : 0
+      y: root.position === "bottom" ? parent.height - barWindow.thickness : 0
+      width: root.vertical ? barWindow.thickness : parent.width
+      height: root.vertical ? parent.height : barWindow.thickness
+
+      Rectangle {
+        anchors.fill: parent
+        color: root.transparent ? "transparent" : (root.glassy ? root.glassBackground : root.background)
+      }
+
+      Loader {
+        anchors.fill: parent
+        sourceComponent: root.vertical ? verticalBar : horizontalBar
+
+        // A child of the loader, not a sibling of the sections: an ancestor stays
+        // hovered while the pointer is over a widget, where a sibling would lose
+        // hover to the section the pointer entered.
+        HoverHandler {
+          readonly property bool peeking: hovered && BarModel.peeksAt(point.position, barWindow.peekEdge, root.vertical)
+          onPeekingChanged: root.setBarHovered(peeking)
+          // Unplugging a monitor destroys its bar without a leave event, which
+          // would strand this surface's tally and hold the peek open for good.
+          Component.onDestruction: if (peeking) root.setBarHovered(false)
+        }
       }
     }
 
