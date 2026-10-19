@@ -38,19 +38,20 @@ A click tries, in order: the card's `omarchy-exec-argv` command; the sender's `d
 
 ## Persistence
 
-`helpers/store` keeps one file per notification under `~/.local/state/omarchy/notifications/`: `live/KEY.json` while on screen, moved to `history/<ms>-KEY.json` on close. History is capped at 100 entries and `historyHours` (default 24; `0` keeps none). Text with a verification code is redacted before writing. Rows keep `execArgv` and `glyph`, so a card restored after a shell restart clicks through like the live one; restored cards get a 20s grace. `quiet.json` holds Do Not Disturb, snoozes and the code exception; `icons/` is the icon helper's private cache, never read by the shell.
+`helpers/store` keeps one file per notification under `~/.local/state/omarchy/notifications/`: `live/KEY.json` while on screen, moved to `history/<ms>-KEY.json` on close. History is capped at 100 entries and `historyHours` (default 24; `0` keeps none). Text with a verification code is redacted before writing. Rows keep `execArgv` and `glyph`, so a card restored after a shell restart clicks through like the live one; restored cards get a 20s grace. `quiet.json` holds Do Not Disturb, snoozes and the code exception.
 
 ## Helper sandbox
 
 Helpers run under Bubblewrap when it works. Without a working sandbox, `store` and `kdeconnect` run directly as the user unless `requireSandbox` is set, in which case they are blocked; `icon` never runs unsandboxed, so cards fall back to a letter tile. `omarchy-shell notifications probe` reports the mode, and the preferences page says when icons are off.
 
-Icons resolve once per source: the sender's image, then a local or themed icon, then, with `fetchRemoteIcons`, the site's icon over HTTPS from a public address. User overrides go in `~/.config/omarchy/notifications/icons/`.
+Icons resolve once per source: the sender's image, then a local or themed icon (for a site, one named after it, else the browser's own), then the letter tile. User overrides go in `~/.config/omarchy/notifications/icons/`.
 
-- Lookup, download and decode are separate sandboxes. Lookup has no network and only names the site. Download is the only one with a network: it fetches up to two candidates, keeps bodies whose signature is a supported format, decodes nothing, writes nowhere, and cannot create Unix sockets (seccomp). Decode has no network.
-- Decoders are chosen by content signature, never name, extension or Content-Type. ImageMagick (`helpers/notification_images.py`) runs under `helpers/policy.xml`, which allows only PNG, JPEG, WebP and ICO (at most 64 frames) with memory, size and time limits. Local SVGs go through librsvg from stdin, so external references resolve to nothing; no SVG reaches Qt.
+- A site's icon is never fetched: the site name comes from the notification body and a browser is recognised by its self-asserted app name, so fetching would let any sender, a network-denied sandboxed app included, make the host contact a server of its choosing.
+- No helper sandbox has a network, and the icon lookup writes nowhere.
+- Decoders are chosen by content signature, never name or extension. ImageMagick (`helpers/notification_images.py`) runs under `helpers/policy.xml`, which allows only PNG, JPEG, WebP and ICO (at most 64 frames) with memory, size and time limits. Local SVGs go through librsvg from stdin, so external references resolve to nothing; no SVG reaches Qt.
 - A sender's image file is read by a forked child of the launcher under a 5s deadline and refused if empty, oversized, not a regular file, or on `/proc`, `/sys` or `/dev` (by path and filesystem type). The helper decodes a sealed memfd copy.
 - Helpers return raw pixels, never files. The launcher (`helpers/run`, outside the sandbox) reads at most one 128px RGBA image, encodes the PNG itself, and publishes `~/.cache/omarchy/notification-icons/<sha256>[-mono].png` (mounted by no sandbox) or, for a sender's image, a `data:image/png` URL. The shell accepts only a digest-named path in that directory or a data URL with a PNG header, from a launcher that exited cleanly.
-- Favicon pages are parsed with the stdlib HTML parser (linear time); one icon job gets 20s.
+- One icon job gets 20s.
 
 ## Silencing and snoozing
 
@@ -68,7 +69,7 @@ When the Hyprland portal starts a screen-share stream, the bell offers a timed s
 
 ## Preferences
 
-Preferences live in the `notifications` object of `~/.config/omarchy/shell.json`; every key is optional, and `Settings.js` holds defaults and valid values. The preferences page writes `displayMode`/`displayName`, `fullscreenOverlay`, `stacking`, `showCountdown` and `offerSnoozeWhenSharing`. Hand-edited keys: `edgeSpacing` (unset follows the theme's outer gap), `fontScale`, `actionsAlign`, `hideSettingsAction`, `snoozeDurations`, `wakeHour`, `smartRaise`, `codesBypassQuiet`, `timeFormat`, `sourceLimit`, `heldPerSource`, `recentCount`, `fetchRemoteIcons`, `requireSandbox`, `allowDefaultActionOnCardClick`, `historyHours`, `clipboardTimeout`. Colours come from the theme: `[notifications]` in `shell.toml` for cards, `[popups]` for the panel, Hyprland's `decoration:rounding` for corners.
+Preferences live in the `notifications` object of `~/.config/omarchy/shell.json`; every key is optional, and `Settings.js` holds defaults and valid values. The preferences page writes `displayMode`/`displayName`, `fullscreenOverlay`, `stacking`, `showCountdown` and `offerSnoozeWhenSharing`. Hand-edited keys: `edgeSpacing` (unset follows the theme's outer gap), `fontScale`, `actionsAlign`, `hideSettingsAction`, `snoozeDurations`, `wakeHour`, `smartRaise`, `codesBypassQuiet`, `timeFormat`, `sourceLimit`, `heldPerSource`, `recentCount`, `requireSandbox`, `allowDefaultActionOnCardClick`, `historyHours`, `clipboardTimeout`. Colours come from the theme: `[notifications]` in `shell.toml` for cards, `[popups]` for the panel, Hyprland's `decoration:rounding` for corners.
 
 ## The sender contract
 
