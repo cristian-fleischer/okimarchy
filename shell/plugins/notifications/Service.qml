@@ -127,12 +127,6 @@ Item {
     onTriggered: sandboxProbe.running = true
   }
 
-  // Which variant of a site's icon to ask for, from the card background.
-  readonly property bool lightTheme: {
-    var c = Commons.Color.notifications.background
-    return (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) > 0.5
-  }
-
   // ------------------------------------------------------------- displays
   //
   // "active" places a new deck on the focused output and keeps it there;
@@ -712,8 +706,7 @@ Item {
     var job = iconQueue.shift()
     iconWanted = job.key
     var args = iconBin.concat(["--key=" + job.key, "--app=" + job.app,
-                               "--app-icon=" + job.appIcon, "--source=" + job.source,
-                               "--scheme", service.lightTheme ? "light" : "dark"])
+                               "--app-icon=" + job.appIcon, "--source=" + job.source])
     iconProc.command = args
     iconProc.output = ""
     iconProc.overflow = false

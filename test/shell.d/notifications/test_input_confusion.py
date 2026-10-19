@@ -127,12 +127,11 @@ class Arguments(unittest.TestCase):
     self.runner = load_helper("run")
 
   def test_lookups_take_only_their_own_shapes(self):
-    fields, flags, scheme = self.runner.icon_lookup(
-        ["--key=-x", "--app=--fetch", "--app-icon=--sender-image", "--source=x\n--download",
-         "--scheme", "light", "--why"])
+    fields, why = self.runner.icon_lookup(
+        ["--key=-x", "--app=--fetch", "--app-icon=--sender-image", "--source=x\n--download", "--why"])
     self.assertEqual(fields, ["--key=-x", "--app=--fetch", "--app-icon=--sender-image", "--source=x\n--download"])
-    self.assertEqual((flags, scheme), ({"--why"}, "light"))
-    for bad in (["--sender-image", "--key=x"], ["--key", "x"], ["--scheme", "sepia"], ["--scheme"],
+    self.assertTrue(why)
+    for bad in (["--sender-image", "--key=x"], ["--key", "x"], ["--scheme", "dark"], ["--scheme=light"],
                 ["-x"], ["x"], ["--wh"]):
       with self.subTest(args=bad), self.assertRaises(ValueError):
         self.runner.icon_lookup(bad)
@@ -157,7 +156,6 @@ class Arguments(unittest.TestCase):
     self.assertEqual((captured["key"], captured["app"], captured["app_icon"], captured["source"]),
                      ("--fetch", "--sender-image", "-x", "--scheme=light"))
     self.assertFalse(captured["sender_image"])
-    self.assertEqual(captured["scheme"], "dark")
 
   def test_sender_path_spellings_are_refused_before_anything_is_opened(self):
     with patch.object(self.runner, "read_sender_file", lambda _p: self.fail("opened a refused path")):
@@ -187,7 +185,7 @@ class SiteIconsAreNeverFetched(unittest.TestCase):
   def test_fetch_and_download_modes_are_refused(self):
     icon = load_helper("icon")
     for mode in (["--fetch"], ["--download"], ["--fetched"], ["--download", "--source=example.com"]):
-      args = ["--key=web:example.com", "--source=example.com", "--scheme", "dark"] + mode
+      args = ["--key=web:example.com", "--source=example.com"] + mode
       with self.subTest(mode=mode):
         with self.assertRaises(ValueError):
           self.runner.icon_lookup(args)
@@ -210,8 +208,8 @@ class SiteIconsAreNeverFetched(unittest.TestCase):
             patch.object(self.runner, "mode_status", return_value=({"mode": "sandboxed"}, "/usr/bin/bwrap")), \
             patch.object(self.runner, "run_supervised", supervised), patch.object(sys, "stdout", io.StringIO()):
       self.assertEqual(self.runner.run_helper("icon", ["--key=web:app.slack.com", "--app=Google Chrome",
-                                                       "--app-icon=google-chrome", "--source=app.slack.com",
-                                                       "--scheme", "dark"], False, {}), 0)
+                                                       "--app-icon=google-chrome", "--source=app.slack.com"],
+                                                      False, {}), 0)
     [argv] = calls
     inner = argv[argv.index("/usr/bin/python3"):]
     self.assertIn("--unshare-all", argv)

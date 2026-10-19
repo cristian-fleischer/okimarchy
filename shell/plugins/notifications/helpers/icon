@@ -2,7 +2,7 @@
 # icon - work out what picture belongs to a notification.
 #
 #   run icon --key=web:app.slack.com --app="Google Chrome" \
-#            --app-icon=google-chrome --source=app.slack.com --scheme dark
+#            --app-icon=google-chrome --source=app.slack.com
 #   run icon --sender-image      (an image path on stdin; prints a data: URL)
 #
 # Prints pixels for the launcher, which publishes the PNG. Your own icons win,
@@ -309,7 +309,6 @@ def main(argv=None):
   ap.add_argument("--app", default="")
   ap.add_argument("--app-icon", default="")
   ap.add_argument("--source", default="")
-  ap.add_argument("--scheme", default="dark", choices=["dark", "light"])
   ap.add_argument("--why", action="store_true", help="print where it came from")
   ap.add_argument("--sender-image", action="store_true")
   args = ap.parse_args(argv)

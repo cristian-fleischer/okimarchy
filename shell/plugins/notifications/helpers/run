@@ -443,8 +443,8 @@ def run_helper(kind, args, required, environ, stdin_descriptor=None):
   if sender_image:
     icon_args = args
   else:
-    fields, flags, scheme = icon_lookup(args)
-    icon_args = fields + ["--scheme", scheme] + (["--why"] if "--why" in flags else [])
+    fields, why = icon_lookup(args)
+    icon_args = fields + (["--why"] if why else [])
   command = sandbox_command("icon", icon_args, bwrap, environ)
   code, output = run_supervised(command, clean_environment(), ICON_JOB_SECONDS,
                                 stdin_descriptor, ICON_OUTPUT_BYTES)
@@ -458,25 +458,18 @@ ICON_FIELDS = ("--key=", "--app=", "--app-icon=", "--source=")
 
 
 def icon_lookup(args):
-  """The only shapes a lookup may take: the four `--name=value` fields, an
-  optional `--why`, and a scheme. Values attach with `=`, so a dash-leading
-  value stays a value, and no caller argument reaches an internal mode."""
-  fields, flags, scheme, i = [], set(), "dark", 0
-  while i < len(args):
-    arg = args[i]
+  """The only shapes a lookup may take: the four `--name=value` fields and an
+  optional `--why`. Values attach with `=`, so a dash-leading value stays a
+  value, and no caller argument reaches an internal mode."""
+  fields, why = [], False
+  for arg in args:
     if arg.startswith(ICON_FIELDS):
       fields.append(arg)
     elif arg == "--why":
-      flags.add(arg)
-    elif arg == "--scheme" and i + 1 < len(args) and args[i + 1] in ("dark", "light"):
-      scheme = args[i + 1]
-      i += 1
-    elif arg in ("--scheme=dark", "--scheme=light"):
-      scheme = arg.split("=", 1)[1]
+      why = True
     else:
       raise ValueError("unexpected icon argument")
-    i += 1
-  return fields, flags, scheme
+  return fields, why
 
 
 def sealed_memfd(name, data):

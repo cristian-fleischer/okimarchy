@@ -189,15 +189,9 @@ def warm(items):
     return
   print("warming %d icons..." % len(wanted), file=sys.stderr)
   env = helper_environment()
-  try:
-    mode = subprocess.run(["omarchy-theme-color", "mode", "dark"], capture_output=True,
-                          text=True, check=False, timeout=5).stdout.strip()
-  except (OSError, subprocess.TimeoutExpired):
-    mode = ""
-  scheme = "light" if mode == "light" else "dark"
   for who in wanted.values():
     command = [HELPER, "icon", "--key=" + who["key"], "--app=" + who["app"],
-               "--app-icon=" + who["icon"], "--source=" + who["source"], "--scheme=" + scheme]
+               "--app-icon=" + who["icon"], "--source=" + who["source"]]
     try:
       bounded_output(command, timeout=55, env=env)
     except HELPER_ERRORS:
