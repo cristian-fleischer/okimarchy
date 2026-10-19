@@ -827,6 +827,20 @@ Item {
     }
   }
 
+  // The launcher bounds every helper (20s for an icon, 5s to read a sender's
+  // file), so this never fires in practice. It is there so that nothing
+  // unforeseen can hold either image queue for good.
+  Timer {
+    interval: 60000
+    running: iconProc.running
+    onTriggered: iconProc.running = false
+  }
+  Timer {
+    interval: 60000
+    running: senderImageProc.running
+    onTriggered: senderImageProc.running = false
+  }
+
   // Sender image files are decoded outside the shell, by the bounded icon
   // helper. Jobs belong to one snapshot, not a source: a replacement must not
   // inherit a late image.

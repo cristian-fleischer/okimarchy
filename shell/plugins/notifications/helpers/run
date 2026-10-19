@@ -120,19 +120,40 @@ def validated_bus_environment(environ):
 
 # Kernel interfaces, not files a sender could mean as a picture. They report
 # themselves as regular files (/proc/<pid>/environ is one, size 0), so they are
-# refused by where the opened file really is, wherever the path pointed.
+# refused by where the opened file really is, wherever the path pointed, and by
+# the type of filesystem it lives on, which a bind mount elsewhere cannot hide.
 PSEUDO_FILESYSTEMS = ("/proc/", "/sys/", "/dev/")
+PSEUDO_FILESYSTEM_TYPES = frozenset((
+    "proc", "sysfs", "devtmpfs", "devpts", "debugfs", "tracefs", "securityfs", "cgroup", "cgroup2",
+    "configfs", "pstore", "bpf", "efivarfs", "fusectl", "mqueue", "binfmt_misc", "hugetlbfs", "autofs"))
+SENDER_READ_SECONDS = 5
 
 
-def opened_in_pseudo_filesystem(fd):
+def filesystem_type(device):
+  wanted = "%d:%d" % (os.major(device), os.minor(device))
+  try:
+    with open("/proc/self/mountinfo", encoding="utf-8", errors="replace") as mounts:
+      for line in mounts:
+        fields = line.split()
+        if len(fields) > 4 and fields[2] == wanted and " - " in line:
+          return line.split(" - ", 1)[1].split()[0]
+  except OSError:
+    return None
+  return ""
+
+
+def opened_in_pseudo_filesystem(fd, info):
   try:
     real = os.readlink("/proc/self/fd/%d" % fd)
   except OSError:
     return True
-  return not real.startswith("/") or real.startswith(PSEUDO_FILESYSTEMS)
+  if not real.startswith("/") or real.startswith(PSEUDO_FILESYSTEMS):
+    return True
+  kind = filesystem_type(info.st_dev)
+  return kind is None or kind in PSEUDO_FILESYSTEM_TYPES
 
 
-def open_sender_image(stream):
+def sender_path(stream):
   raw_path = stream.read(SENDER_PATH_BYTES + 1)
   if len(raw_path) > SENDER_PATH_BYTES:
     raise ValueError("sender image path too long")
@@ -140,16 +161,123 @@ def open_sender_image(stream):
   if (not path or not os.path.isabs(path)
           or any(ord(character) < 32 or ord(character) == 127 for character in path)):
     raise ValueError("invalid sender image path")
+  return path
+
+
+def read_sender_file(path):
+  """Open, check and read the sender's file. Runs in a disposable child."""
   fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC)
   try:
     info = os.fstat(fd)
     if (not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= SENDER_IMAGE_BYTES
-            or opened_in_pseudo_filesystem(fd)):
+            or opened_in_pseudo_filesystem(fd, info)):
       raise ValueError("invalid sender image source")
+    os.set_blocking(fd, True)
+    chunks, size = [], 0
+    while size <= SENDER_IMAGE_BYTES:
+      chunk = os.read(fd, min(65536, SENDER_IMAGE_BYTES + 1 - size))
+      if not chunk:
+        break
+      chunks.append(chunk)
+      size += len(chunk)
+    if size > SENDER_IMAGE_BYTES:
+      raise ValueError("sender image grew too large")
+    return b"".join(chunks)
+  finally:
+    os.close(fd)
+
+
+def open_sender_image(stream, timeout=SENDER_READ_SECONDS):
+  """A sealed in-memory copy of the sender's file, for the helper's stdin.
+
+  Every filesystem operation on a path the sender chose happens in a forked
+  child under a deadline: on a stalled FUSE mount, lookup and open can block
+  however the file is opened, and only killing the child gets the launcher -
+  and the sender-image queue behind it - back. The launcher never touches the
+  path itself."""
+  path = sender_path(stream)
+  read_end, write_end = os.pipe()
+  pid = os.fork()
+  if pid == 0:
+    status = 1
+    try:
+      os.close(read_end)
+      # A reader stuck on a stalled mount must not hold the caller's pipes
+      # open after the launcher has given up on it.
+      null = os.open(os.devnull, os.O_RDWR)
+      for standard in (0, 1, 2):
+        os.dup2(null, standard)
+      data = read_sender_file(path)
+      view = memoryview(data)
+      while view:
+        view = view[os.write(write_end, view):]
+      status = 0
+    except BaseException:
+      pass
+    finally:
+      os._exit(status)
+  os.close(write_end)
+  status = None
+  try:
+    reader = os.fdopen(read_end, "rb", buffering=0)
+    with reader:
+      deadline = time.monotonic() + timeout
+      data = read_bounded(reader, SENDER_IMAGE_BYTES, deadline)
+    while status is None and time.monotonic() < deadline:
+      done, code = os.waitpid(pid, os.WNOHANG)
+      if done:
+        status = code
+      else:
+        time.sleep(0.01)
+  finally:
+    if status is None:
+      reap_killed(pid)
+  if status is None or os.waitstatus_to_exitcode(status) != 0:
+    raise ValueError("sender image unavailable")
+  fd = os.memfd_create("sender-image", os.MFD_CLOEXEC)
+  try:
+    os.write(fd, data)
+    os.lseek(fd, 0, os.SEEK_SET)
     return fd
   except BaseException:
     os.close(fd)
     raise
+
+
+def read_bounded(stream, limit, deadline):
+  import selectors
+  chunks, size = [], 0
+  with selectors.DefaultSelector() as selector:
+    selector.register(stream, selectors.EVENT_READ)
+    while True:
+      remaining = deadline - time.monotonic()
+      if remaining <= 0:
+        raise ValueError("sender image read timed out")
+      if not selector.select(remaining):
+        continue
+      chunk = os.read(stream.fileno(), 65536)
+      if not chunk:
+        return b"".join(chunks)
+      size += len(chunk)
+      if size > limit:
+        raise ValueError("sender image too large")
+      chunks.append(chunk)
+
+
+def reap_killed(pid):
+  try:
+    os.kill(pid, signal.SIGKILL)
+  except ProcessLookupError:
+    return
+  # A FUSE wait ends on SIGKILL. Anything that still does not is left to be
+  # reaped by init once the launcher exits, rather than waited on here.
+  for _ in range(100):
+    try:
+      if os.waitpid(pid, os.WNOHANG)[0]:
+        return
+    except ChildProcessError:
+      return
+    time.sleep(0.01)
 
 
 def python_helper(kind, args, root=SANDBOX_ROOT):
@@ -326,7 +454,8 @@ def run_supervised(argv, environ, timeout, stdin_descriptor=None, capture=None):
       deadline = time.monotonic() + timeout
       output = collect_output(proc, capture, deadline)
       return proc.wait(timeout=max(0.1, deadline - time.monotonic())), output
-    except (subprocess.TimeoutExpired, ValueError):
+    except BaseException:
+      # Whatever went wrong, the helper does not outlive the launcher's answer.
       stop_process_group(proc)
       raise
     finally:

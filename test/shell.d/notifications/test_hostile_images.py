@@ -126,13 +126,28 @@ class Policy(unittest.TestCase):
     self.assertEqual(allowed.returncode, 0, "the allowed path must work, or every refusal below is moot")
     self.assertTrue(allowed.stdout.startswith(b"P7\n"))
     self.assertEqual(self.convert("rsvg:-", svg).returncode, 0)
-    for source, data in (("label:secret", b""), ("caption:secret", b""), ("svg:-", svg), ("msvg:-", svg),
-                         ("mvg:-", b"viewbox 0 0 8 8 fill red rectangle 0,0 8,8"),
-                         ("text:-", b"secret"), ("gif:-", b"GIF89a"), ("@/etc/hostname", b"")):
-      with self.subTest(source=source):
-        result = self.convert(source, data)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(result.stdout, b"")
+    with tempfile.TemporaryDirectory() as temp:
+      listed = Path(temp) / "listed.png"
+      listed.write_bytes(png((8, 8)))
+      image_list = Path(temp) / "list.txt"
+      image_list.write_text(str(listed) + "\n")
+      # Real inputs for every denied coder: under ImageMagick's own policy each
+      # one converts, so a refusal under ours is the policy and not a bad file.
+      gif = subprocess.run([images.MAGICK, "-size", "8x8", "xc:red", "gif:-"], stdout=subprocess.PIPE,
+                           stderr=subprocess.DEVNULL, check=True).stdout
+      cases = (("label:secret", b""), ("caption:secret", b""), ("svg:-", svg), ("msvg:-", svg),
+               ("mvg:-", b"viewbox 0 0 8 8 fill red rectangle 0,0 8,8"), ("text:-", b"secret"),
+               ("gif:-", gif), ("@" + str(image_list), b""))
+      permissive = {"PATH": "/usr/bin", "LANG": "C.UTF-8"}
+      for source, data in cases:
+        with self.subTest(source=source):
+          control = subprocess.run([images.MAGICK, source, "-depth", "8", "pam:-"], input=data, env=permissive,
+                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False)
+          if control.returncode != 0:
+            self.skipTest("the system policy already refuses " + source)
+          result = self.convert(source, data)
+          self.assertNotEqual(result.returncode, 0)
+          self.assertEqual(result.stdout, b"")
 
   @needs_magick
   def test_decoded_output_is_bounded(self):
@@ -196,6 +211,63 @@ class Publishing(unittest.TestCase):
     with self.assertRaises(ValueError):
       self.runner.run_supervised(["/usr/bin/yes"], {"PATH": "/usr/bin"}, 10, None, 4096)
     self.assertLess(time.monotonic() - started, 5)
+
+
+class SenderFiles(unittest.TestCase):
+  def setUp(self):
+    self.runner = load_helper("run")
+
+  def stream(self, path):
+    import io
+    return io.BytesIO(str(path).encode())
+
+  def test_a_stalled_open_is_abandoned_at_the_deadline(self):
+    # A file on a stalled FUSE mount blocks lookup and open however the file is
+    # opened; the reader runs in a child the launcher kills at its deadline.
+    with patch.object(self.runner, "read_sender_file", lambda _path: time.sleep(3600)):
+      started = time.monotonic()
+      with self.assertRaises(ValueError):
+        self.runner.open_sender_image(self.stream("/stalled/image.png"), timeout=1)
+      self.assertLess(time.monotonic() - started, 4)
+
+  def test_the_copy_handed_on_is_sealed_in_memory(self):
+    with tempfile.TemporaryDirectory() as temp:
+      source = Path(temp) / "image.png"
+      source.write_bytes(png((8, 8)))
+      fd = self.runner.open_sender_image(self.stream(source))
+      try:
+        source.write_bytes(b"replaced afterwards")
+        self.assertTrue(os.readlink("/proc/self/fd/%d" % fd).startswith("/memfd:"))
+        self.assertEqual(os.read(fd, 65536), png((8, 8)))
+      finally:
+        os.close(fd)
+
+  def test_pseudo_filesystems_are_refused_by_type_wherever_they_are_mounted(self):
+    with tempfile.TemporaryDirectory() as temp:
+      source = Path(temp) / "image.png"
+      source.write_bytes(png((8, 8)))
+      fd = os.open(source, os.O_RDONLY)
+      try:
+        info = os.fstat(fd)
+        for kind, refused in (("sysfs", True), ("proc", True), ("debugfs", True), (None, True),
+                              ("ext4", False), ("btrfs", False), ("", False)):
+          with self.subTest(kind=kind), patch.object(self.runner, "filesystem_type", lambda _dev, k=kind: k):
+            self.assertEqual(self.runner.opened_in_pseudo_filesystem(fd, info), refused)
+      finally:
+        os.close(fd)
+    with open("/proc/self/environ", "rb") as environ:
+      self.assertEqual(self.runner.filesystem_type(os.fstat(environ.fileno()).st_dev), "proc")
+
+  def test_any_failure_while_supervising_stops_the_helper(self):
+    def broken(*_args):
+      raise OSError("selector failed")
+    with patch.object(self.runner, "collect_output", broken):
+      started = time.monotonic()
+      with self.assertRaises(OSError):
+        self.runner.run_supervised(["/usr/bin/sleep", "60"], {"PATH": "/usr/bin"}, 30, None, 4096)
+      self.assertLess(time.monotonic() - started, 10)
+    leftover = subprocess.run(["pgrep", "-f", "^/usr/bin/sleep 60$"], stdout=subprocess.PIPE, check=False)
+    self.assertEqual(leftover.stdout.strip(), b"", "the supervised child outlived the failure")
 
 
 class Unsandboxed(unittest.TestCase):
