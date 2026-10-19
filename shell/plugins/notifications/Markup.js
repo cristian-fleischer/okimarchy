@@ -1,10 +1,5 @@
-// Reading what senders actually put in a notification.
-//
-// The spec allows a small HTML subset in the body. Senders use it for things
-// the spec did not intend - Chrome glues a link to its own origin onto the
-// front of every message, which renders as a blue "app.slack.com" above text
-// you actually care about. So this does two jobs: work out where a
-// notification really came from, and render only what is safe to render.
+// Reading what senders put in a notification: where it really came from, and
+// rendering only the safe subset of the body markup the spec allows.
 .pragma library
 .import "Security.js" as Security
 
@@ -12,17 +7,10 @@ var ALLOWED = ["b", "i", "u", "s", "em", "strong"]
 
 var ENTITIES = { amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'", nbsp: " " }
 
-// Senders escape their text before handing it over - the spec says the body is
-// markup, so "Tom & Jerry" arrives as "Tom &amp; Jerry". Escaping that again
-// turns it into "&amp;amp;" and the reader sees "&amp;". Decode first, so
-// everything downstream is working with the text the sender meant.
+// The body is markup, so senders escape it ("Tom &amp; Jerry"); decode before
+// escaping again. Up to three passes, because relays stack escapes (KDE
+// Connect re-escapes a WhatsApp &quot; into &amp;quot;).
 function decodeEntities(text) {
-  // Twice over, because senders stack escapes. A WhatsApp message quoting
-  // someone arrives at the phone already carrying &quot;, KDE Connect escapes
-  // the whole body again on its way to the desktop, and what lands here is
-  // &amp;quot;. One pass turns that into &quot; and the card shows the entity
-  // rather than the quote mark. Bounded, and it stops as soon as a pass
-  // changes nothing.
   var out = Security.bounded(text, Security.MAX_BODY)
   for (var i = 0; i < 3; i++) {
     var once = decodeOnce(out)
@@ -55,9 +43,8 @@ function escapeAll(text) {
     .replace(/>/g, "&gt;")
 }
 
-// Put back only the tags we are willing to render. Everything the sender wrote
-// is escaped first, so anything not on this list survives as literal text -
-// which is how "<3" stays "<3" instead of vanishing into a broken tag.
+// Everything is escaped first, then only the allowed tags are put back, so
+// anything else ("<3") survives as literal text.
 function unescapeAllowed(text) {
   var out = text
   for (var i = 0; i < ALLOWED.length; i++) {
@@ -66,42 +53,31 @@ function unescapeAllowed(text) {
     out = out.replace(new RegExp("&lt;/" + tag + "&gt;", "gi"), "</" + tag + ">")
   }
   out = out.replace(/&lt;br\s*\/?&gt;/gi, "<br/>")
-  // Anchors keep their href, and nothing else: no target, no style, no event
-  // handlers smuggled through an attribute we did not ask about. And only if
-  // the scheme is one worth handing to the desktop - see linkable().
+  // Anchors keep only their href, and only when Security allows it: a click
+  // goes straight to the desktop URL handler, and the sender writes the label.
+  // A refused link keeps its text and loses its click.
   out = out.replace(/&lt;a\s+href=(?:&quot;|")([^"&]+)(?:&quot;|")[^&]*&gt;([\s\S]*?)&lt;\/a&gt;/gi,
                     function (whole, href, label) {
-                      return linkable(href) ? '<a href="' + Security.safeExternalUrl(href) + '">' + label + '</a>'
-                                            : label
+                      var safe = Security.safeExternalUrl(href)
+                      return safe ? '<a href="' + safe + '">' + label + '</a>' : label
                     })
   return out
 }
 
-// An href is written by whoever sent the notification, and a click on it goes
-// straight to the desktop's URL handler - which will open a local file for
-// file://, hand an smb:// path to a file manager, or start whichever app
-// claimed some custom scheme, with whatever parameters came with it. The label
-// is the sender's too, so it is free to read like a link to somewhere ordinary.
-// Three schemes are worth that trust. Anything else keeps its text and loses
-// its click: still readable, no longer a button to somewhere else.
-function linkable(url) { return !!Security.safeExternalUrl(url) }
 function hostname(value) { return Security.canonicalHostname(value) }
-function hostOf(url) { return Security.hostOf(url) }
 
-// A body that opens with a link to the sender's own origin is not a message
-// with a link in it - it is the sender labelling itself. Lift it out.
+// A browser body that opens with a link to the site's own origin is the site
+// labelling itself. Lift it out as the source.
 function liftSource(body) {
   var text = Security.bounded(body, Security.MAX_BODY)
   var m = text.match(/^\s*<a\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>\s*/i)
   if (!m) return { source: "", body: text }
-  // The href is the origin, and it has to be one: an http(s) URL whose host
-  // passes the same test every other link does. The label is the sender's text
-  // and never stands in for it - a `javascript:` or `data:` href labelled
-  // "bank.example" names nothing.
-  var host = hostOf(m[1])
+  // The origin is the href's host, which must pass the URL policy; the label
+  // is the sender's text and never stands in for it.
+  var host = Security.hostOf(m[1])
   if (!host) return { source: "", body: text }
-  // Only when the anchor is standing in for a source: its text is that host,
-  // or a bare domain. A real in-body link stays where the sender put it.
+  // Only when the label is that host or a bare domain; a real in-body link
+  // stays where the sender put it.
   var label = String(m[2]).trim()
   var looksLikeSource = label === host || /^[\w.-]+\.[a-z]{2,}$/i.test(label)
   if (!looksLikeSource) return { source: "", body: text }
@@ -115,9 +91,8 @@ function linkify(escaped) {
   })
 }
 
-// The body as it should be drawn: rich text with only the permitted subset,
-// newlines honoured, and bare URLs made clickable when the sender did not
-// already mark them up.
+// The body as drawn: the permitted subset, newlines honoured, and bare URLs
+// made clickable when the sender did not mark them up.
 function render(body) {
   var text = decodeEntities(body)
   var hadMarkup = /<\/?(a|b|i|u|s|em|strong|br)\b/i.test(text)
@@ -127,9 +102,9 @@ function render(body) {
   return out.replace(/\r?\n/g, "<br/>")
 }
 
-// Flatten to one line, for a card that is not the one being read.
-// Strip only what the rich renderer recognises as markup; <String> and <3
-// remain literal. Undo our escaping once, without decoding the sender again.
+// One line of plain text. Strip only what render() treats as markup (<String>
+// and <3 stay literal), then undo our own escaping once without decoding the
+// sender's text again.
 function oneLine(body) {
   var text = unescapeAllowed(escapeAll(decodeEntities(body)))
   return decodeOnce(text.replace(/<[^>]+>/g, " "))
@@ -137,96 +112,65 @@ function oneLine(body) {
     .trim()
 }
 
-// KDE Connect is a multiplexer: every notification on the phone arrives here
-// as one app called "KDE Connect", with the app it really came from in the
-// summary and "Sender: message" in the body. That summary is the most useful
-// thing about it - it is what the notification is really from, it finds the
-// right icon, and it is what "snooze this" has to mean. Snoozing the phone
-// would be snoozing everything on it.
+// KDE Connect forwards every phone notification as app "KDE Connect" with the
+// real app in the summary. That app is the source: snoozing the phone would
+// snooze everything on it.
 function forwardedApp(app, summary) {
   var text = String(summary || "")
   if (!isKdeConnect(app)) return { name: "", summary: text }
-  // "Pixel · Calendar": the phone first, the app second. The app is the half
-  // worth keeping; grouping by phone puts every app on it into one pile.
+  // "Pixel · Calendar": keep the app, not the phone.
   var m = text.match(/^(.{1,28}?)\s*[·|]\s*(.+)$/)
   if (m) text = m[2].trim()
-  // Everything else is the app name on its own. This used to require a single
-  // word, which quietly sent every multi-word app - "Amazon Shopping", "HSBC
-  // UAE", "Prime Video", "Samsung Health" - into one shared KDE Connect group
-  // where snoozing any of them snoozed the lot. A short summary with no
-  // sentence punctuation in it is a name, not a headline.
+  // A short summary without sentence punctuation is an app name, multi-word
+  // ones ("Prime Video") included.
   if (text && text.length <= 28 && !/[.!?:]$/.test(text)) return { name: text, summary: text }
   return { name: "", summary: text }
 }
 
-// Where a notification came from, in the terms a person would use. The
-// desktop-entry hint is the sender saying so itself and is trusted first;
-// Chrome is the awkward one, because every web app announces itself as
-// "Google Chrome" and only the lifted anchor tells them apart.
-// The names KDE Connect sends under, exactly. A substring match made any app
-// with "kdeconnect" somewhere in its name a phone multiplexer.
+// Exact names: a substring match made any app containing "kdeconnect" a
+// phone multiplexer.
 var KDE_CONNECT_NAMES = ["kde connect", "kdeconnect", "kdeconnectd", "org.kde.kdeconnect.daemon", "org.kde.kdeconnect"]
 function isKdeConnect(app) {
   return KDE_CONNECT_NAMES.indexOf(String(app || "").trim().toLowerCase()) >= 0
 }
 
-// Browsers announce every site as themselves and put the site's origin in a
-// leading anchor; that anchor is a source only from one of them. Any other
-// app's leading link is just a link in its message.
+// Only a browser's leading anchor names a site; any other app's is just a link.
 var BROWSERS = /^(google chrome|chromium|brave|brave browser|microsoft edge|vivaldi|opera|helium|firefox|zen|librewolf)$/i
 function isBrowser(app) {
   return BROWSERS.test(String(app || "").trim())
 }
 
-function identify(row, hints) {
+// Who a notification is from, and its summary and body with the sender's own
+// labelling taken off.
+function identify(row) {
   var app = String(row.app || "")
   var lifted = isBrowser(app) ? liftSource(row.body) : { source: "", body: Security.bounded(row.body, Security.MAX_BODY) }
   var forwarded = forwardedApp(app, row.summary)
-
-  var source = lifted.source || forwarded.name || app
-
-  var key
-  if (lifted.source) key = "web:" + lifted.source          // per site, not per browser
-  else if (forwarded.name) key = "kdeconnect:" + forwarded.name
-  else key = "app:" + slug(app)
-
   return {
-    source: source,
-    groupKey: key,
+    source: lifted.source || forwarded.name || app,
     body: lifted.body,
     summary: forwarded.summary || row.summary
   }
 }
 
-// The name of a thing, reduced to something that can be compared. Grouping on
-// the desktop-entry hint looked more principled and was worse in practice:
-// Chrome passes a per-session temp path ("file:///tmp/com.google.chrome.
-// scoped_dir.sadmdx/logo.png") so every notification became its own group, and
-// KDE Connect alternates between "kdeconnect" and
-// "org.kde.kdeconnect.daemon", splitting one app in two. The application's own
-// name is dull, stable, and the same every time.
+// Group on the app's own name, not the desktop-entry hint: Chrome puts a
+// per-session temp path there and KDE Connect alternates names.
 function slug(text) {
   return String(text || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
 }
 
-// The group key for a row that has already been through identify() once - a
-// row read back from the store, where the body no longer has the source anchor
-// on it. Everything the key needs was kept as fields, so it can be rebuilt
-// from those rather than by parsing the body a second time.
+// The group key, rebuilt from a row's fields: per site for a browser, per
+// forwarded app for KDE Connect, otherwise per app.
 function regroup(row) {
   var app = String(row.app || "")
   var source = String(row.source || "")
-  // A source with a dot in it is a hostname: the site is the sender, not the
-  // browser showing it.
   if (isBrowser(app) && source && source !== app && hostname(source)) return "web:" + hostname(source)
   if (isKdeConnect(app) && source && source !== app) return "kdeconnect:" + source
   return "app:" + slug(app)
 }
 
-// Qt's Text ignores `linkColor` for rich text - anchors come out in its own
-// default blue no matter what the property says - so the colour has to be in
-// the markup itself. It cannot be baked in at store time: a notification
-// written under one theme is read back under whatever theme is current.
+// Qt's Text ignores linkColor for rich text, so the colour goes in the markup.
+// Applied at draw time: the theme may have changed since the row was stored.
 function colourLinks(html, colour) {
   if (!colour) return String(html || "")
   return String(html || "").replace(/<a\s+href="([^"]*)"[^>]*>/gi,

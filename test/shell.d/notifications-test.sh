@@ -4,11 +4,8 @@ set -euo pipefail
 
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/base-test.sh"
 
-# The notification service's pure logic (shell/plugins/notifications/*.js):
-# markup and URL policy, code/link/phone detection, the store transforms, the
-# deck layout, delivery rules and settings. logic.cjs also runs the service's
-# own admission, close and replay functions out of Service.qml against a fake
-# ListModel and fake senders.
+# The plugin's JS modules, plus Service.qml's admission, close and replay
+# functions run against a fake ListModel and fake senders.
 require_command node
 
 if output=$(node "$SHELL_TEST_DIR/notifications/logic.cjs" 2>&1); then

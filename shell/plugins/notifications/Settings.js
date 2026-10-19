@@ -1,7 +1,5 @@
-// Notification preferences, read from the `notifications` object in
-// ~/.config/omarchy/shell.json. Every key is optional: a missing or invalid
-// value falls back to its default, so a hand edit can never leave the service
-// without one.
+// Notification preferences from the `notifications` object in shell.json.
+// Every key is optional; a missing or invalid value falls back to its default.
 .pragma library
 
 var DEFAULTS = {
@@ -57,8 +55,7 @@ function resolve(raw) {
       if (SNOOZE_CHOICES.indexOf(choice) >= 0 && snooze.indexOf(choice) < 0) snooze.push(choice)
     }
   }
-  // Empty means "none chosen", not "no snoozing": a menu with nothing in it
-  // is a dead end.
+  // Empty means "none chosen": an empty snooze menu is a dead end.
   if (!snooze.length) snooze = d.snoozeDurations.slice()
 
   return {
@@ -89,9 +86,8 @@ function resolve(raw) {
   }
 }
 
-// The minutes a snooze choice stands for, or the literal "tomorrow", which is
-// a time rather than a duration: when it lands depends on the clock now and on
-// the configured wake hour.
+// Seconds a snooze choice lasts. "tomorrow" means the next wake hour, at
+// least ten minutes away.
 function snoozeSeconds(choice, wakeHour, now) {
   var value = String(choice || "")
   if (value === "tomorrow") {

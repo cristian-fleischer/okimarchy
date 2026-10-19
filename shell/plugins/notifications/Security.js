@@ -1,7 +1,7 @@
 // The sole external-navigation policy. QML JS has no WHATWG URL constructor;
 // accept a deliberately narrow ASCII grammar, not every browser URL spelling.
 .pragma library
-var MAX_APP_NAME=256, MAX_SUMMARY=2048, MAX_BODY=32768, MAX_RAW_BODY=32768
+var MAX_APP_NAME=256, MAX_SUMMARY=2048, MAX_BODY=32768
 var MAX_ACTIONS=16, MAX_ACTION_LABEL=256, MAX_ACTION_ID=256, MAX_SOURCE=253
 var MAX_URL=4096, MAX_CODES=8, MAX_PHONE=64, MAX_HISTORY_ENTRY_BYTES=65536
 function bounded(value, max) { return typeof value === 'string' ? value.slice(0,max) : '' }
@@ -10,14 +10,8 @@ function canonicalHostname(raw) {
   if (typeof raw !== 'string' || raw.length > MAX_SOURCE) return ''
   var h=raw.toLowerCase().replace(/\.$/,'')
   if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(h)) return ''
-  // WHATWG host parsing treats a URL as a numeric (IPv4) address whenever its
-  // last label "looks like a number" - not only plain decimal ("127.0.0.1"),
-  // but also 0x-prefixed hex ("0x7f.0x0.0x0.0x1" -> 127.0.0.1) and
-  // leading-zero octal ("0177.0.0.1"), which a browser's URL parser (and any
-  // library replicating it) will canonicalise to a numeric/private address
-  // even though this label-shape check alone would pass it through as an
-  // ordinary hostname. Octal is already all-decimal-digit and so already
-  // matched by the plain digit alternative; hex needs its own alternative.
+  // WHATWG parses a numeric-looking last label (decimal, octal, 0x hex) as an
+  // IPv4 address, so "0x7f.0x0.0x0.0x1" would reach 127.0.0.1.
   if (/^(?:0x[0-9a-f]*|[0-9]+)$/i.test(h.split('.').pop())) return ''
   return h
 }
@@ -44,7 +38,6 @@ function safeMailtoUrl(raw) {
   var h=canonicalHostname(m[2]); return h ? 'mailto:'+m[1]+'@'+h : ''
 }
 function safeExternalUrl(raw) { return /^mailto:/i.test(raw) ? safeMailtoUrl(raw) : safeHttpUrl(raw) }
-function isAllowedScheme(raw) { return !!safeExternalUrl(raw) }
 function hostOf(raw) {
   var u=safeHttpUrl(raw), m=u.match(/^https?:\/\/([^/:?#]+)/)
   return m ? m[1] : ''
@@ -54,16 +47,10 @@ function openExternalUrl(raw) {
   return safe ? Qt.openUrlExternally(safe) : false
 }
 
-// The click command from omarchy-notification-send --exec, carried in the
-// omarchy-exec-argv hint as a JSON argv. This is a STRUCTURAL check only: it
-// fails closed on a malformed hint (not an array, a non-string or empty
-// program, or a leading-dash program that argv would read as an option) and
-// on anything past the bounds a notification may carry. It does not judge
-// intent - a well-formed ["bash","-c",...] is accepted. Which senders may set
-// this hint is a separate boundary: any session-bus process can, by the
-// freedesktop protocol's design (see docs/notifications.md), which is
-// equivalent to same-uid code execution. Run through Util.execArgv, the words
-// stay discrete arguments and are never re-parsed as a shell string.
+// The omarchy-exec-argv hint (omarchy-notification-send --exec). Structural
+// only: fails closed on a malformed or oversized argv or a leading-dash
+// program, but does not judge intent. Any session-bus sender may set it (see
+// docs/notifications.md); Util.execArgv never re-parses it as a shell string.
 function parseExecArgv(value) {
   if (Array.isArray(value)) {
     try { value = JSON.stringify(value) } catch (e) { return null }
@@ -82,8 +69,7 @@ function parseExecArgv(value) {
   return parsed
 }
 
-// The Nerd Font glyph from the omarchy-glyph hint: a mark for the icon slot,
-// never text worth more than a few code points.
+// The omarchy-glyph hint: a few code points for the icon slot.
 function safeGlyph(value) {
   var text = typeof value === "string" ? value : ""
   if (!text || text.length > 16 || /[\x00-\x1f\x7f-\x9f]/.test(text)) return ""

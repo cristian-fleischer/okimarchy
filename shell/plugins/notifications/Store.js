@@ -1,88 +1,65 @@
 // Pure functions over notifications: what to keep from one, how to write it
-// out, how to read it back. Nothing here touches the UI or the bus, so it can
-// be reasoned about (and later tested) on its own.
+// out, how to read it back.
 .pragma library
 .import "Security.js" as Security
 .import "Markup.js" as Markup
 .import "Detect.js" as Detect
 
-// Everything a card draws and a history entry needs. Read defensively: these
-// come off the bus from arbitrary senders.
+var QSIMAGE = /^image:\/\/qsimage\/[0-9]+\/[0-9]+$/
+
+// Everything a card draws and a history entry needs, read defensively from an
+// arbitrary sender.
 function snapshot(n, key, urgencyEnum) {
   var expire = Number(n.expireTimeout || 0)
   if (!isFinite(expire) || expire < 0) expire = 0
-  // An `-i some-icon` arrives as image = "image://icon/some-icon" with appIcon
-  // empty. That is a name to look up, not a picture the sender sent: treating
-  // it as one skipped icon resolution altogether, and handing the URL straight
-  // to an Image draws a broken-texture checkerboard for any name the icon
-  // theme does not have.
+  // `-i some-icon` arrives as image "image://icon/some-icon": a theme name to
+  // look up, not a picture (drawn raw it is a checkerboard). Pull the name out
+  // before the qsimage check discards it. An absolute path (Chromium's site
+  // icon) is kept only as input to the sender-image helper, never drawn raw.
   var img = Security.bounded(n.image, 256)
   var named = ""
-  // The name has to be pulled out before the qsimage-only shape check below,
-  // or that check throws it away first (it is never a qsimage handle) and
-  // "image://icon/kitty" is indistinguishable from having sent no icon at
-  // all - a real regression a prior ordering of these two checks had.
-  // Theme names still use the strict appIcon charset below. Absolute paths
-  // are retained only as input to the sender-image helper, never drawn raw.
   if (img.indexOf("image://icon/") === 0) {
     var iconPayload = img.substring("image://icon/".length)
-    if (iconPayload.charAt(0) === "/") {
-      // Chromium supplies its site icon this way. Keep the path for bounded
-      // helper decoding; Toast uses only the resulting PNG data URL.
-    } else {
+    if (iconPayload.charAt(0) !== "/") {
       named = iconPayload
       img = ""
     }
-  } else if (!/^image:\/\/qsimage\/[0-9]+\/[0-9]+$/.test(img)) {
+  } else if (!QSIMAGE.test(img)) {
     img = ""
   }
-  // Who actually sent it. The one identity that is never a guess: a terminal
-  // relaying a notification from something running inside it owns a window,
-  // and its pid says which one.
   var hints = n.hints || {}
-  var senderPid = Number(hints["sender-pid"] || 0) || 0
   var raw = { app: Security.bounded(n.appName, Security.MAX_APP_NAME), summary: Security.bounded(n.summary, Security.MAX_SUMMARY),
               body: Security.bounded(n.body, Security.MAX_BODY) }
-  // Who this is really from, and what the body says once the sender's own
-  // labelling has been taken off the front of it.
-  var id = Markup.identify(raw, n.hints)
-  // What the card can offer to do. Scanned from the lifted body, so a Chrome
-  // notification does not offer to open the site it announced itself with.
+  // The real source, and the body with the browser's origin anchor lifted off.
+  // Detection scans the lifted body so Chrome does not offer to open the site
+  // it announced itself with.
+  var id = Markup.identify(raw)
   var found = Detect.scan(id.summary, id.body)
-  // The click command omarchy-notification-send --exec carries. Kept as data so
-  // a card restored after a shell restart clicks through like the live one.
-  var parsedExec = Security.parseExecArgv(hints["omarchy-exec-argv"])
+  // The hint may arrive as a list, which normalise() would read as no string.
+  var argv = Security.parseExecArgv(hints["omarchy-exec-argv"])
   return normalise({
     key: key,
     originalId: n.id || 0,
-    senderPid: senderPid,
-    execArgv: parsedExec ? JSON.stringify(parsedExec) : "",
-    glyph: Security.safeGlyph(hints["omarchy-glyph"]),
+    // A terminal relaying a notification owns a window; its pid says which.
+    senderPid: Number(hints["sender-pid"] || 0) || 0,
+    execArgv: argv ? JSON.stringify(argv) : "",
+    glyph: hints["omarchy-glyph"],
     transient: hints["transient"] === true || hints["transient"] === 1,
-    app: Security.bounded(n.appName, Security.MAX_APP_NAME),
+    app: raw.app,
     appIcon: Security.bounded(n.appIcon || named, 256),
     summary: id.summary,
     body: id.body,
-    // What the sender actually sent, kept so a replay is faithful: the body
-    // above has had the source anchor lifted off the front of it, and
-    // re-sending that version loses the only thing that says which site it
-    // came from.
-    rawBody: Security.bounded(n.body, Security.MAX_BODY),
-    bodyRich: Markup.render(id.body),
-    bodyLine: Markup.oneLine(id.body),
+    // What the sender sent, so a replay keeps the source anchor.
+    rawBody: raw.body,
     source: id.source,
-    groupKey: id.groupKey,
     code: found.code,
     codes: found.codes,
-    replyPath: "",
-    replyTo: "",
     link: found.link,
     meeting: found.meeting,
     phone: found.phone,
     image: img,
     urgency: typeof n.urgency === "number" ? n.urgency : urgencyEnum.Normal,
     expireTimeout: expire,
-    duration: 0,
     ts: Date.now() / 1000
   })
 }
@@ -101,19 +78,13 @@ function applyTo(model, index, row) {
   }
 }
 
-// A restored row has no live sender behind it: its actions died with the last
-// shell, and re-arming the original timeout would make a notification from
-// before the restart expire instantly. It gets a short grace instead - long
-// enough to say "this arrived while the shell was down", short enough that a
-// restart does not leave yesterday's cards sitting on the screen. Critical
-// notifications still wait for you, because that is what critical means.
-var RESTORE_GRACE = 20000     // 20s for a notification that outlived its sender
+// A restored row has no live sender, and its original timeout has long run
+// out. It gets a short grace instead; critical still waits for you.
+var RESTORE_GRACE = 20000
 
-// Every field a row can have, with a default for each. A ListModel fixes its
-// roles from the first row it is handed and silently drops keys that row did
-// not carry - so one row restored from an older build could define the model
-// without `source`, and every notification for the rest of the session lost
-// it. Everything goes through normalise() so they all have every field.
+// Every field a row can have, with its default. A ListModel fixes its roles
+// from the first row it sees and silently drops keys that row lacked, so every
+// row goes through normalise() and carries every field.
 var SHAPE = {
   key: "", originalId: 0, senderPid: 0, execArgv: "", glyph: "", transient: false, app: "", appIcon: "", summary: "", body: "",
   bodyRich: "", bodyLine: "", rawBody: "", source: "", groupKey: "", image: "",
@@ -124,17 +95,11 @@ var SHAPE = {
 
 function normalise(row) {
   var out = {}
-  for (var k in SHAPE) out[k] = (row && row[k] !== undefined) ? row[k] : SHAPE[k]
-  // The group key is derived, never trusted. Rows written by an older build
-  // carry whatever the grouping rule was that week - and one of those rules
-  // keyed on Chrome's desktop-entry hint, which is a per-session temp path, so
-  // history came back holding one group per notification. Recomputing here
-  // means a change to the rule fixes what is already stored instead of only
-  // applying to whatever arrives next.
-  for (var field in SHAPE) {
-    if (typeof SHAPE[field] === "string") out[field] = Security.bounded(out[field], Security.MAX_BODY)
-    else if (typeof SHAPE[field] === "number") out[field] = typeof out[field] === "number" && isFinite(out[field]) ? out[field] : SHAPE[field]
-    else out[field] = out[field] === true
+  for (var k in SHAPE) {
+    var value = row ? row[k] : undefined
+    if (typeof SHAPE[k] === "string") out[k] = Security.bounded(value, Security.MAX_BODY)
+    else if (typeof SHAPE[k] === "number") out[k] = typeof value === "number" && isFinite(value) ? value : SHAPE[k]
+    else out[k] = value === true
   }
   out.app = out.app.slice(0, Security.MAX_APP_NAME)
   out.summary = out.summary.slice(0, Security.MAX_SUMMARY)
@@ -146,13 +111,13 @@ function normalise(row) {
   var argv = Security.parseExecArgv(out.execArgv)
   out.execArgv = argv ? JSON.stringify(argv) : ""
   out.codes = out.codes.split(" ").slice(0, Security.MAX_CODES).join(" ")
-  // qsimage holds in-process pixels. An icon-scheme absolute path is only
-  // a pending helper input; retaining it does not authorise Qt to open it.
-  var okQsimage = /^image:\/\/qsimage\/[0-9]+\/[0-9]+$/.test(out.image)
-  var okIconPath = out.image.indexOf("image://icon//") === 0
-                && out.image.indexOf("..") === -1
-  out.image = (okQsimage || okIconPath) ? out.image : ""
+  // qsimage is in-process pixels. An icon-scheme absolute path is only pending
+  // helper input; keeping it does not authorise Qt to open it.
+  var okIconPath = out.image.indexOf("image://icon//") === 0 && out.image.indexOf("..") === -1
+  out.image = (QSIMAGE.test(out.image) || okIconPath) ? out.image : ""
   out.stored_image = ""
+  // Derived fields are recomputed, never trusted: a stored row from an older
+  // build picks up today's rendering and grouping rules.
   out.bodyRich = Markup.render(out.body)
   out.bodyLine = Markup.oneLine(out.body)
   out.groupKey = Markup.regroup(out)
@@ -162,18 +127,9 @@ function normalise(row) {
 function restored(entry) {
   if (!entry || !entry.key) return null
   var row = normalise(entry)
-  // The Python store's persistence allowlist drops link/meeting/phone on
-  // write - deliberately: a stored notification is bounded source text, not
-  // a bundle of pre-authorized capabilities a future restore should get to
-  // assert. So they are recomputed here from the persisted summary/body
-  // with today's detectors, and normalise() below re-validates the result
-  // (the link, in particular, through today's Security.js policy) exactly
-  // as it would for a freshly-arrived notification - rather than trusting
-  // whatever a legacy on-disk entry happens to still carry in those fields.
-  // Never derives a code/OTP from restored text: if the original write
-  // redacted a secret, the persisted body is "[redacted]" and there is
-  // nothing in it to find; code/codes are intentionally left as normalise()
-  // set them from the entry, not recomputed.
+  // The store drops link/meeting/phone on write so a stored entry cannot
+  // assert capabilities. Recompute them from the text and re-validate. Codes
+  // are not recomputed: a redacted entry has nothing left to find.
   var found = Detect.scan(row.summary, row.body)
   row.link = found.link
   row.meeting = found.meeting
@@ -190,27 +146,20 @@ function parseList(text) {
     var value = JSON.parse(String(text || "[]"))
     if (!Array.isArray(value)) return []
     value = value.slice(0, 100)
-    for (var i = 0; i < value.length; i++) value[i] = normalise(revive(value[i]))
+    for (var i = 0; i < value.length; i++) {
+      // Image handles lived in the previous shell; read back they are broken
+      // boxes that also stop a real icon from being looked up.
+      value[i] = normalise(value[i])
+      value[i].image = ""
+    }
     return value
   } catch (e) {
     return []
   }
 }
 
-// A sender that hands over raw pixels rather than an icon name gets an
-// "image://qsimage/12/1" handle, which lives inside the running shell and dies
-// with it. Read back tomorrow it is a broken-image box - and worse, it looked
-// like the sender had provided a picture, so no icon was ever looked up. KDE
-// Connect does this for every notification it forwards, which is why phone
-// Slack had no Slack icon while desktop Slack did. Dropping the dead handle
-// puts those rows back in the queue for a real icon.
-function revive(row) {
-  if (row && String(row.image || "").indexOf("image://") === 0) row.image = ""
-  return row
-}
-
-// One writer, one queue. Two Processes racing on the same key would let the
-// close overtake the put and leave a live file with nothing to close it.
+// One writer, one queue: two Processes racing on a key could let a close
+// overtake its put.
 var _queue = []
 var _busy = false
 
@@ -224,15 +173,14 @@ function _pump(proc) {
   if (proc.policyReady === false || _busy || _queue.length === 0) return
   var job = _queue.shift()
   _busy = true
-  // bin is the helper's argv prefix: ["…/helpers/run", "store"].
   proc.command = [].concat(job.bin, [job.verb], job.args)
   proc.exited.connect(function done() {
     proc.exited.disconnect(done)
     _busy = false
     _pump(proc)
   })
-  // stdin has to be opened before the process starts, and closed after the
-  // payload, or the store sits waiting on an EOF that never comes.
+  // stdin must be open before start and closed after the payload, or the
+  // store waits forever for EOF.
   proc.stdinEnabled = !!job.payload
   proc.running = true
   if (job.payload) {
@@ -241,12 +189,12 @@ function _pump(proc) {
   }
 }
 
-// Persistence is a separate boundary. A secret-bearing notification keeps only
-// a placeholder: encoded variants, URLs and sender metadata cannot leak it.
+// A secret-bearing notification persists only as a placeholder, so encoded
+// variants, URLs and sender metadata cannot leak it.
 function sanitiseForPersistence(row) {
   var out = normalise(row)
-  // Preview text keeps literal markup. Strip it for detection so long attributes
-  // cannot push a code outside the keyword window in a legacy/raw-only entry.
+  // Strip literal markup before detection so long attributes cannot push a
+  // code outside the keyword window in a legacy/raw-only entry.
   var secret = out.codes || out.code || Detect.codes(
       Markup.decodeEntities(out.summary + " " + out.rawBody + " " + out.body)
         .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()).length
@@ -258,6 +206,6 @@ function sanitiseForPersistence(row) {
     out.bodyLine = out.body
     out.bodyRich = out.body
   }
-  out.replyPath = ""; out.replyTo = ""; out.image = ""; out.stored_image = ""
+  out.replyPath = ""; out.replyTo = ""; out.image = ""
   return out
 }

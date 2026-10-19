@@ -1,34 +1,28 @@
-// Whether a notification reaches the screen, and what it leaves behind when it
-// does not. Pure functions over a snapshot row (Store.snapshot), so the rules
-// can be exercised from Node without a compositor.
+// Whether a notification reaches the screen, and where the deck sits. Pure
+// functions over a snapshot row (Store.snapshot).
 .pragma library
 
 var CRITICAL = 2
 
-// Omarchy's own user-action toasts ("Theme changed") and bare-CLI critical
-// alerts get through Do Not Disturb and every snooze. The user just did
-// something, or a script is shouting on their behalf. Critical alone is not
-// enough: chat apps send critical to force visibility, and they set app_name
-// to their brand, which fails the notify-send half of this rule.
+// Omarchy's own action toasts and bare notify-send critical alerts get through
+// Do Not Disturb and every snooze. Critical alone is not enough: chat apps send
+// critical to force visibility, under their own app name.
 function bypassesQuiet(row) {
   var app = String((row && row.app) || "")
   if (app === "omarchy-action") return true
   return app === "notify-send" && Number(row.urgency) === CRITICAL
 }
 
-// A notification nobody looks back at: the freedesktop `transient` hint, or a
-// sender that did not bother naming itself. Silenced, these are dropped rather
-// than recorded as held.
+// Nobody looks back at these (the `transient` hint, or an unnamed sender), so
+// quiet drops them rather than holding them.
 function isEphemeral(row) {
   if (row && row.transient === true) return true
   var app = String((row && row.app) || "")
   return app === "notify-send" || app === "omarchy-action"
 }
 
-// Why this row is being kept off the screen: "silenced" under Do Not Disturb,
-// "snoozed" when everything or its source is snoozed, "" when it shows. A
-// verification code may be let through either, because it was asked for a
-// moment ago and expires in minutes.
+// "silenced", "snoozed", or "" when the row shows. A verification code may
+// pass either: it was asked for a moment ago and expires in minutes.
 function quietReason(row, state) {
   var reason = state.doNotDisturb ? "silenced"
              : (state.globalSnoozed || state.sourceSnoozed) ? "snoozed" : ""
@@ -38,9 +32,8 @@ function quietReason(row, state) {
   return reason
 }
 
-// A summary that opens with its own glyph ("󰂚  Silenced") already carries its
-// mark, so the card leaves the icon slot out rather than showing two. Two
-// spaces after the first code point is the convention Omarchy's senders use.
+// A summary that opens with its own glyph ("󰂚  Silenced": one code point, two
+// spaces) already carries its mark, so the card drops the icon slot.
 function summaryStartsWithGlyph(summary) {
   var text = String(summary || "").replace(/^\s+/, "")
   if (!text) return false
@@ -55,9 +48,8 @@ function summaryStartsWithGlyph(summary) {
   return spaces >= 2
 }
 
-// How thick the bar is on one screen (a notch floor can make a top bar thicker
-// on one screen only), or nothing when it is hidden. A bar without per-screen
-// sizes counts its configured size; a missing one, the default.
+// The bar's thickness on one screen (a notch can thicken it on one only), 0
+// when hidden, the default when there is no bar.
 function barThickness(bar, screenName, defaultBarSize) {
   if (!bar) return Number(defaultBarSize) || 0
   if (bar.barHidden) return 0
@@ -67,7 +59,7 @@ function barThickness(bar, screenName, defaultBarSize) {
 }
 
 // The deck hangs from the top-right corner, so it clears the bar only on the
-// two edges it touches. Everything else keeps the plain edge gap.
+// two edges it touches.
 function deckMargins(barPosition, thickness, gap) {
   var position = String(barPosition || "top")
   var edge = Number(gap)
