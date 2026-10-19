@@ -165,20 +165,19 @@ def bounded_output(command, limit=65536, timeout=5, env=None):
           proc.wait()
 
 
-def helper_policy():
-  """Icon fetching and sandbox policy, as the shell reports them. An
-  unavailable or malformed answer keeps the sandbox required."""
-  fetch, required = False, True
+def helper_environment():
+  """The sandbox policy, as the shell reports it. An unavailable or malformed
+  answer keeps the sandbox required."""
+  required = True
   try:
     probe = json.loads(bounded_output(["omarchy-shell", "notifications", "probe"]))
     security = probe.get("security", {})
     if (security.get("mode") in ("sandboxed", "direct", "blocked")
-        and isinstance(security.get("required"), bool)
-        and isinstance(probe.get("fetchRemoteIcons"), bool)):
-      fetch, required = probe["fetchRemoteIcons"], security["required"]
+        and isinstance(security.get("required"), bool)):
+      required = security["required"]
   except HELPER_ERRORS:
     pass
-  return fetch, dict(os.environ, OMARCHY_NOTIFICATIONS_REQUIRE_SANDBOX="1" if required else "0")
+  return dict(os.environ, OMARCHY_NOTIFICATIONS_REQUIRE_SANDBOX="1" if required else "0")
 
 
 def warm(items):
@@ -189,7 +188,7 @@ def warm(items):
   if not wanted:
     return
   print("warming %d icons..." % len(wanted), file=sys.stderr)
-  fetch, env = helper_policy()
+  env = helper_environment()
   try:
     mode = subprocess.run(["omarchy-theme-color", "mode", "dark"], capture_output=True,
                           text=True, check=False, timeout=5).stdout.strip()
@@ -200,7 +199,7 @@ def warm(items):
     command = [HELPER, "icon", "--key=" + who["key"], "--app=" + who["app"],
                "--app-icon=" + who["icon"], "--source=" + who["source"], "--scheme=" + scheme]
     try:
-      bounded_output(command + (["--fetch"] if fetch else []), timeout=55, env=env)
+      bounded_output(command, timeout=55, env=env)
     except HELPER_ERRORS:
       pass
 

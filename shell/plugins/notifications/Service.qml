@@ -64,7 +64,6 @@ Item {
   readonly property int sourceLimit: preferences.sourceLimit
   readonly property int heldPerSource: preferences.heldPerSource
   readonly property int recentCount: preferences.recentCount
-  readonly property bool fetchIcons: preferences.fetchRemoteIcons
   readonly property bool requireSandbox: preferences.requireSandbox
   readonly property string displayMode: preferences.displayMode
   readonly property string displayName: preferences.displayName
@@ -74,7 +73,6 @@ Item {
   // Deferred: the layout binding reads stacking, and retargeting from inside
   // that evaluation would be a binding loop.
   onStackingChanged: Qt.callLater(retarget)
-  onFetchIconsChanged: setFetchRemoteIcons(fetchIcons)
   onFullscreenOverlayChanged: hyprRefresh.restart()
 
   // An explicit codesBypassQuiet in shell.json wins over the panel's persisted toggle.
@@ -686,20 +684,6 @@ Item {
     wantIcon(toasts.get(at))
   }
 
-  function setFetchRemoteIcons(enabled) {
-    // A request the user just disabled is cancelled, never accepted late.
-    if (!enabled && iconProc.running && iconProc.fetchAllowed) {
-      iconProc.cancelled = true
-      iconProc.running = false
-    }
-    if (enabled) {
-      // A local-only lookup may have cached the browser fallback.
-      iconCache = ({})
-      for (var i = 0; i < toasts.count; i++) wantIcon(toasts.get(i))
-    }
-    pumpIcons()
-  }
-
   function wantIcon(row) {
     // A sender's file is kept; a live image:// handle dies with this shell, so
     // a durable icon is resolved for those too.
@@ -727,13 +711,9 @@ Item {
     if (!helperSettingsReady || iconProc.running || iconWanted !== "" || iconQueue.length === 0) return
     var job = iconQueue.shift()
     iconWanted = job.key
-    iconProc.job = job
-    iconProc.fetchAllowed = fetchIcons
-    iconProc.cancelled = false
     var args = iconBin.concat(["--key=" + job.key, "--app=" + job.app,
                                "--app-icon=" + job.appIcon, "--source=" + job.source,
                                "--scheme", service.lightTheme ? "light" : "dark"])
-    if (fetchIcons) args.push("--fetch")
     iconProc.command = args
     iconProc.output = ""
     iconProc.overflow = false
@@ -766,9 +746,6 @@ Item {
   Process {
     id: iconProc
     environment: service.helperEnvironment
-    property var job: null
-    property bool fetchAllowed: false
-    property bool cancelled: false
     // Capped: a helper flooding its pipe is cut off rather than buffered.
     property string output: ""
     property bool overflow: false
@@ -785,18 +762,10 @@ Item {
       }
     }
     onExited: function(code, status) {
-      var job = iconProc.job
-      var path = iconProc.cancelled || iconProc.overflow ? "" : service.trustedIconPath(iconProc.output, code)
-      if (!iconProc.cancelled) {
-        service.iconCache[service.iconWanted] = path
-        if (path) service.applyIcon(service.iconWanted, path)
-      }
-      if (job && (iconProc.cancelled || (!iconProc.fetchAllowed && service.fetchIcons))) {
-        if (service.iconQueue.length < 100) service.iconQueue.unshift(job)
-      }
+      var path = iconProc.overflow ? "" : service.trustedIconPath(iconProc.output, code)
+      service.iconCache[service.iconWanted] = path
+      if (path) service.applyIcon(service.iconWanted, path)
       service.iconWanted = ""
-      iconProc.job = null
-      iconProc.cancelled = false
       iconProc.output = ""
       iconProc.overflow = false
       Qt.callLater(service.pumpIcons)
@@ -2031,7 +2000,7 @@ Item {
     function probe(): string {
       return JSON.stringify({ toasts: toasts.count, fontScale: service.fontScale,
         doNotDisturb: service.doNotDisturb, expanded: service.expanded,
-        security: service.sandboxStatus, fetchRemoteIcons: service.fetchIcons,
+        security: service.sandboxStatus,
         allowDefaultActionOnCardClick: service.allowDefaultActionOnCardClick,
         stacking: service.stacking,
         sharingActive: service.sharingActive, sharingStreams: service.sharingStreams,
