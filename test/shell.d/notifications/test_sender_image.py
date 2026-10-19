@@ -56,21 +56,27 @@ class SenderImage(unittest.TestCase):
     i = (32 * width + 64) * 4
     self.assertEqual(tuple(rgba[i:i + 4]), (17, 83, 149, 255))
 
-  def test_png_becomes_self_contained_bounded_data_url_in_available_modes(self):
+  def sandbox_works(self):
     result = self.launch(["status"])
     self.assertEqual(result.returncode, 0, result.stderr)
-    status = json.loads(result.stdout)
-    modes = [(status["mode"], "0")]
-    if status["sandboxOperational"]:
-      modes.append(("required-sandbox", "1"))
+    return json.loads(result.stdout)["sandboxOperational"]
 
-    for index, (mode, required) in enumerate(modes):
-      with self.subTest(mode=mode):
+  def assert_decoded_only_in_sandbox(self, result, sandboxed):
+    if sandboxed:
+      self.assert_decoded_png(result)
+    else:
+      self.assertNotEqual(result.returncode, 0)
+      self.assertEqual(result.stdout, b"")
+
+  def test_png_becomes_self_contained_bounded_data_url_only_in_a_sandbox(self):
+    sandboxed = self.sandbox_works()
+    for index, required in enumerate(("0", "1")):
+      with self.subTest(required=required):
         source = self.make_png(f"sender-{index}.png")
         result = self.run_sender(source, required)
         source.unlink()
         self.assertFalse(source.exists())
-        self.assert_decoded_png(result)
+        self.assert_decoded_only_in_sandbox(result, sandboxed)
 
     self.assertEqual(list(self.home.rglob("*.png")), [])
 
@@ -84,7 +90,7 @@ class SenderImage(unittest.TestCase):
     source = self.make_png("after-fifo.png")
     accepted = self.run_sender(source)
     source.unlink()
-    self.assert_decoded_png(accepted)
+    self.assert_decoded_only_in_sandbox(accepted, self.sandbox_works())
 
   def test_unsafe_or_invalid_sources_emit_nothing(self):
     target = self.make_png("target.png")
