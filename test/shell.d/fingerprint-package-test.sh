@@ -195,10 +195,10 @@ for result in stage-passed stage-passed retry-scan stage-passed unknown-error; d
 done
 INSTALLED=$'libfprint-git\nfprintd\nusbutils' SCAN_TYPE=press READER_NAME='Apple secure enclave fingerprint sensor' \
   ENROLL_OUTPUT=$enroll_lines run_setup
-expected=$'  \u2713 Step 1 done. Keep lifting your finger and touching the sensor.
+expected=$'  ✓ Step 1 done. Keep lifting your finger and touching the sensor.
   That one didn\'t read. Keep lifting your finger and touching the sensor.
-  \u2713 Step 2 done. Keep lifting your finger and touching the sensor.
-  \u2717 Enrollment stopped. If you stopped before it said Enrolled, run this again and keep going.'
+  ✓ Step 2 done. Keep lifting your finger and touching the sensor.
+  ✗ Enrollment stopped. If you stopped before it said Enrolled, run this again and keep going.'
 [[ $(grep -E '^  ' "$scratch/output") == "$expected" ]] ||
   fail "enrollment results read as instructions, counting steps after the duplicate check" "$(cat "$scratch/output")"
 ! grep -q 'Enroll result:' "$scratch/output" || fail "no raw fprintd result reaches the owner" "$(cat "$scratch/output")"
@@ -223,9 +223,9 @@ source <(sed -n '/^fprintd_chatter()/,/^}/p;/^enroll_progress()/,/^}/p;/^verify_
 [[ $(printf '%s\n' 'Using device /net/reactivated/Fprint/Device/0' 'Listing enrolled fingers:' ' - #0: right-index-finger' \
   'Verify started!' 'Verifying: right-index-finger' 'Verify result: verify-retry-scan (not done)' \
   'Verify result: verify-finger-not-centered (not done)' 'Verify result: verify-match (done)' |
-  verify_progress "Touch again.") == $'  That one didn\'t read. Touch again.\n  Not centered: use the middle of the sensor. Touch again.\n  \u2713 Matched.' ]] ||
+  verify_progress "Touch again.") == $'  That one didn\'t read. Touch again.\n  Not centered: use the middle of the sensor. Touch again.\n  ✓ Matched.' ]] ||
   fail "verify results, retries included, read as instructions"
-[[ $(printf '%s\n' 'Verify result: verify-no-match (done)' | verify_progress "Touch again.") == $'  \u2717 No match.' ]] ||
+[[ $(printf '%s\n' 'Verify result: verify-no-match (done)' | verify_progress "Touch again.") == $'  ✗ No match.' ]] ||
   fail "a failed verify says so"
 pass "verify results read as instructions"
 
@@ -239,7 +239,7 @@ INSTALLED=$'libfprint-git\nfprintd\nusbutils' ENROLL_OUTPUT=$enroll_lines run_se
 [[ $(grep -c 'Step [0-9] done' "$scratch/output") == 3 ]] ||
   fail "a reader fprintd can't name has its first stage counted" "$(cat "$scratch/output")"
 [[ $(printf '%s\n' 'Enroll result: enroll-stage-passed' 'Enroll result: enroll-stage-passed' | enroll_progress "Again." 1) == \
-  $'  \u2713 Step 1 done. Again.' ]] || fail "with a duplicate check, the first stage is not a step"
+  $'  ✓ Step 1 done. Again.' ]] || fail "with a duplicate check, the first stage is not a step"
 pass "only a reader with a duplicate check leaves its first stage out of the steps"
 
 # sudo's own prompt comes first and is named as such; with sudo already
@@ -274,10 +274,10 @@ pass "a failed sudo stops setup with a reason, before enrolling"
 # says it stopped, and a result fprintd adds later is shown, not called a stop.
 [[ $(printf '%s\n' 'Enrolling right-index-finger finger.' 'Enroll result: enroll-stage-passed' 'Enroll result: enroll-too-fast' \
   'Enroll result: enroll-swipe-too-short' 'Enroll result: enroll-stage-passed' 'Enroll result: enroll-some-new-result' \
-  'Enroll result: enroll-completed' | enroll_progress "Swipe it again." 1) == $'  Too fast. Swipe it again.\n  Too short. Swipe it again.\n  \u2713 Step 1 done. Swipe it again.\n  enroll-some-new-result\n  \u2713 Enrolled.' ]] ||
+  'Enroll result: enroll-completed' | enroll_progress "Swipe it again." 1) == $'  Too fast. Swipe it again.\n  Too short. Swipe it again.\n  ✓ Step 1 done. Swipe it again.\n  enroll-some-new-result\n  ✓ Enrolled.' ]] ||
   fail "enrollment retries keep going, and an unknown result is shown"
 [[ $(printf '%s\n' 'Verify result: verify-too-fast (not done)' 'Verify result: verify-some-new-retry (not done)' \
-  'Verify result: verify-unknown-error (done)' | verify_progress "Swipe it again.") == $'  Too fast. Swipe it again.\n  That one didn\'t read. Swipe it again.\n  \u2717 The check stopped (verify-unknown-error).' ]] ||
+  'Verify result: verify-unknown-error (done)' | verify_progress "Swipe it again.") == $'  Too fast. Swipe it again.\n  That one didn\'t read. Swipe it again.\n  ✗ The check stopped (verify-unknown-error).' ]] ||
   fail "any verify result that isn't done is a retry"
 pass "every retry keeps the step going, and only a finished failure says it stopped"
 
