@@ -234,6 +234,9 @@
   "system.shutdownFailed": "Shutdown failed",
   "system.shutdownRetry": "Could not complete shutdown. Please try again.",
   "system.shuttingDown": "Shutting down",
+  "t3code.nightly": "Nightly",
+  "t3code.selectChannel": "Install T3 Code from which channel?",
+  "t3code.stable": "Stable",
   "tailscale.fileCount": {
     "one": "%1 file",
     "other": "%1 files"
