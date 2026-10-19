@@ -755,6 +755,8 @@ Item {
                                "--scheme", service.lightTheme ? "light" : "dark"])
     if (fetchIcons) args.push("--fetch")
     iconProc.command = args
+    iconProc.output = ""
+    iconProc.overflow = false
     iconProc.running = true
   }
 
@@ -771,14 +773,16 @@ Item {
     }
   }
 
-  // What the icon helper may hand back: a PNG it wrote into its own cache,
-  // and nothing else. Its output decides what an Image loads, so a confused
-  // or compromised helper must not be able to point the shell at another file.
-  readonly property string iconCacheDir: Quickshell.env("HOME") + "/.local/state/omarchy/notifications/icons/"
+  // What the icon helper may hand back: the path of a PNG the launcher built
+  // from decoded pixels and named by its digest, in a directory no sandboxed
+  // helper can write. Its output decides what an Image loads, so anything
+  // else, or anything from a helper that failed, is refused.
+  readonly property string iconCacheDir: Quickshell.env("HOME") + "/.cache/omarchy/notification-icons/"
+  readonly property int iconOutputLimit: 1024
   function trustedIconPath(text, exitCode) {
     var path = String(text || "").trim()
     if (exitCode !== 0 || path.length > 512 || path.indexOf(iconCacheDir) !== 0) return ""
-    return /^norm-[A-Za-z0-9._-]{1,200}\.png$/.test(path.slice(iconCacheDir.length)) ? path : ""
+    return /^[0-9a-f]{64}(-mono)?\.png$/.test(path.slice(iconCacheDir.length)) ? path : ""
   }
 
   Process {
@@ -787,32 +791,26 @@ Item {
     property var job: null
     property bool fetchAllowed: false
     property bool cancelled: false
-    // The answer needs both the output and the exit status, which arrive in
-    // either order. An exit whose output never finishes still answers, on the
-    // next tick, so the queue can never wait on it forever.
+    // Read in chunks and capped: a helper flooding its pipe is cut off rather
+    // than buffered. A Process delivers all of its output before it reports
+    // the exit, so the exit settles the job it belongs to.
     property string output: ""
-    property int exitCode: -1
-    property int pending: 0
+    property bool overflow: false
     running: false
-    onRunningChanged: if (running) { output = ""; exitCode = -1; pending = 2 }
-    onExited: function(code, status) {
-      if (pending <= 0) return
-      exitCode = code
-      if (--pending === 0) finish()
-      else Qt.callLater(function() { if (iconProc.pending > 0) { iconProc.pending = 0; iconProc.finish() } })
-    }
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        if (iconProc.pending <= 0) return
-        iconProc.output = String(text || "").slice(0, 1024)
-        if (--iconProc.pending === 0) iconProc.finish()
+    stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        if (iconProc.overflow) return
+        if (iconProc.output.length + chunk.length > service.iconOutputLimit) {
+          iconProc.overflow = true
+          iconProc.output = ""
+          iconProc.running = false
+        } else iconProc.output += chunk
       }
     }
-
-    function finish() {
+    onExited: function(code, status) {
       var job = iconProc.job
-      var path = iconProc.cancelled ? "" : service.trustedIconPath(iconProc.output, iconProc.exitCode)
+      var path = iconProc.cancelled || iconProc.overflow ? "" : service.trustedIconPath(iconProc.output, code)
       if (!iconProc.cancelled) {
         service.iconCache[service.iconWanted] = path
         if (path) service.applyIcon(service.iconWanted, path)
@@ -823,6 +821,8 @@ Item {
       service.iconWanted = ""
       iconProc.job = null
       iconProc.cancelled = false
+      iconProc.output = ""
+      iconProc.overflow = false
       Qt.callLater(service.pumpIcons)
     }
   }

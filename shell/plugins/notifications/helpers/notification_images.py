@@ -182,3 +182,51 @@ def encode_png(width, height, rgba):
           + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
           + chunk(b"IDAT", zlib.compress(raw, 9))
           + chunk(b"IEND", b""))
+
+
+# How a sandboxed helper hands decoded pixels to the trusted launcher: one
+# bounded JSON header line, then exactly width x height RGBA bytes. The
+# launcher builds the PNG the shell loads, so nothing the decoder wrote is
+# ever opened by Qt.
+PIXELS_HEADER_BYTES = 512
+
+
+def pack_pixels(width, height, rgba, mono=False, how=""):
+  header = {"width": width, "height": height, "mono": bool(mono), "how": str(how)[:128]}
+  return _header(header) + bytes(rgba)
+
+
+def pack_nothing(how=""):
+  return _header({"none": True, "how": str(how)[:128]})
+
+
+def _header(value):
+  import json
+  line = json.dumps(value, separators=(",", ":")).encode() + b"\n"
+  if len(line) > PIXELS_HEADER_BYTES:
+    raise ValueError("header too large")
+  return line
+
+
+def unpack_pixels(data, max_side):
+  """(width, height, rgba, mono, how), or (0, 0, b"", False, how) for no image."""
+  import json
+  end = data.find(b"\n", 0, PIXELS_HEADER_BYTES)
+  if end < 0:
+    raise ValueError("no header")
+  header = json.loads(data[:end].decode("ascii", "strict"))
+  if not isinstance(header, dict):
+    raise ValueError("bad header")
+  how = header.get("how", "")
+  how = how if isinstance(how, str) and len(how) <= 128 and how.isprintable() else ""
+  pixels = data[end + 1:]
+  if header.get("none") is True:
+    if pixels:
+      raise ValueError("unexpected pixels")
+    return 0, 0, b"", False, how
+  width, height, mono = header.get("width"), header.get("height"), header.get("mono")
+  if (type(width) is not int or type(height) is not int or type(mono) is not bool
+          or not 0 < width <= max_side or not 0 < height <= max_side
+          or len(pixels) != width * height * 4):
+    raise ValueError("bad pixels")
+  return width, height, bytes(pixels), mono, how

@@ -62,15 +62,15 @@ class Svg(unittest.TestCase):
       images.rasterize_svg(ENTITY_SVG, 512)
 
   @needs_magick
-  def test_local_svg_icons_come_back_as_cache_pngs(self):
+  def test_local_svg_icons_come_back_as_pixels(self):
     icon = load_helper("icon")
     with tempfile.TemporaryDirectory() as temp, patch.object(icon, "CACHE", temp):
       source = Path(temp) / "mark.svg"
       source.write_bytes(b'<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">'
                          b'<circle cx="16" cy="16" r="12" fill="red"/></svg>')
-      out = icon.normalise(str(source))
-      self.assertTrue(out.startswith(temp + os.sep) and out.endswith(".png"), out)
-      self.assertEqual(images.sniff(Path(out).read_bytes()), "PNG")
+      rgba, mono = icon.normalise(str(source))
+      self.assertEqual(len(rgba), 128 * 128 * 4)
+      self.assertEqual(tuple(rgba[(64 * 128 + 64) * 4:(64 * 128 + 64) * 4 + 4])[3], 255)
       source.write_bytes(b"not an svg")
       self.assertIsNone(icon.normalise(str(source)))
 
@@ -82,6 +82,14 @@ class Svg(unittest.TestCase):
 
 
 class Ico(unittest.TestCase):
+  def test_rejected_counts_never_reach_the_decoder(self):
+    def forbidden(*_args):
+      raise AssertionError("ImageMagick ran on a rejected icon")
+    with patch.object(images, "_magick", forbidden):
+      for count in (0, 65, 1024):
+        with self.subTest(count=count), self.assertRaises(ValueError):
+          images.decode(self.ico(count), ("ICO",), 2048, 2048 * 2048, 128)
+
   def ico(self, count):
     entry = png((4, 4))
     header = bytes([0, 0, 1, 0]) + count.to_bytes(2, "little")
@@ -105,12 +113,24 @@ class Policy(unittest.TestCase):
                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False).stdout.decode()
     self.assertIn(str(Path(images.POLICY_DIR) / "policy.xml"), listing)
 
+  def convert(self, source, data):
+    # PAM is the output the helpers are allowed, so a refusal here can only be
+    # the input coder's.
+    return subprocess.run([images.MAGICK, source, "-depth", "8", "pam:-"], input=data, env=images.ENVIRONMENT,
+                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False)
+
   @needs_magick
   def test_policy_denies_coders_the_helpers_never_use(self):
-    for source in ("label:secret", "caption:secret", "svg:-", "msvg:-", "text:/etc/hostname", "@/etc/hostname"):
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8"/></svg>'
+    allowed = self.convert("png:-", png((8, 8)))
+    self.assertEqual(allowed.returncode, 0, "the allowed path must work, or every refusal below is moot")
+    self.assertTrue(allowed.stdout.startswith(b"P7\n"))
+    self.assertEqual(self.convert("rsvg:-", svg).returncode, 0)
+    for source, data in (("label:secret", b""), ("caption:secret", b""), ("svg:-", svg), ("msvg:-", svg),
+                         ("mvg:-", b"viewbox 0 0 8 8 fill red rectangle 0,0 8,8"),
+                         ("text:-", b"secret"), ("gif:-", b"GIF89a"), ("@/etc/hostname", b"")):
       with self.subTest(source=source):
-        result = subprocess.run([images.MAGICK, source, "png:-"], input=b"<svg/>", env=images.ENVIRONMENT,
-                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False)
+        result = self.convert(source, data)
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(result.stdout, b"")
 
@@ -118,6 +138,64 @@ class Policy(unittest.TestCase):
   def test_decoded_output_is_bounded(self):
     with self.assertRaises(ValueError):
       images._bounded((129, 1, b""), 128)
+
+
+class Publishing(unittest.TestCase):
+  """The launcher, outside every sandbox, turns a helper's pixels into the PNG
+  the shell loads."""
+
+  def setUp(self):
+    self.temp = tempfile.TemporaryDirectory()
+    self.runner = load_helper("run")
+    self.published = Path(self.temp.name) / "published"
+    patcher = patch.object(self.runner, "PUBLISHED", self.published)
+    patcher.start()
+    self.addCleanup(patcher.stop)
+    self.addCleanup(self.temp.cleanup)
+
+  def test_icons_are_published_by_digest_and_rebuilt_from_pixels(self):
+    red = images.pack_pixels(128, 128, bytes((200, 0, 0, 255)) * (128 * 128), False, "theme")
+    blue = images.pack_pixels(128, 128, bytes((0, 0, 200, 255)) * (128 * 128), True, "theme")
+    first, second = self.runner.publish_icon(red, False, False), self.runner.publish_icon(blue, False, True)
+    self.assertRegex(first, r"/[0-9a-f]{64}\.png$")
+    self.assertRegex(second, r"/[0-9a-f]{64}-mono\.png\ttheme$")
+    self.assertEqual(self.runner.publish_icon(red, False, False), first, "one icon, one file")
+    data = Path(first).read_bytes()
+    self.assertEqual(images.sniff(data), "PNG")
+    self.assertEqual(Path(first).stat().st_mode & 0o777, 0o600)
+    self.assertEqual(self.runner.publish_icon(images.pack_nothing("none"), False, True), "\tnone")
+
+  def test_sender_images_come_back_as_data_urls_of_a_rebuilt_png(self):
+    url = self.runner.publish_icon(images.pack_pixels(16, 8, bytes(16 * 8 * 4)), True, False)
+    self.assertTrue(url.startswith("data:image/png;base64,iVBORw0KGgoAAAANSUhEUg"))
+    with self.assertRaises(ValueError):
+      self.runner.publish_icon(images.pack_nothing(), True, False)
+
+  def test_malformed_pixel_output_publishes_nothing(self):
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg"/>'
+    for output in (b"", svg, b"/home/user/.ssh/id_ed25519\n",
+                   b'{"width":4,"height":4,"mono":false}\n' + bytes(63),
+                   b'{"width":129,"height":1,"mono":false}\n' + bytes(129 * 4),
+                   b'{"width":1,"height":1,"mono":"yes"}\n' + bytes(4),
+                   b'{"none":true}\n' + svg, b"x" * 600):
+      with self.subTest(output=output[:40]), self.assertRaises(ValueError):
+        self.runner.publish_icon(output, False, False)
+    self.assertFalse(self.published.exists() and any(self.published.iterdir()))
+
+  def test_the_published_directory_is_outside_every_sandbox(self):
+    real = load_helper("run")
+    for kind, args in (("icon", ["--fetch"]), ("icon", ["--sender-image"]), ("store", ["restore"])):
+      command = real.sandbox_command(kind, args, "/usr/bin/bwrap", {})
+      mounted = [command[i + 1] for i, word in enumerate(command) if word in ("--bind", "--ro-bind")]
+      for path in mounted:
+        self.assertFalse(str(real.PUBLISHED).startswith(path.rstrip("/") + "/") or path.startswith(str(real.PUBLISHED)),
+                         (kind, path))
+
+  def test_a_flooding_helper_is_cut_off(self):
+    started = time.monotonic()
+    with self.assertRaises(ValueError):
+      self.runner.run_supervised(["/usr/bin/yes"], {"PATH": "/usr/bin"}, 10, None, 4096)
+    self.assertLess(time.monotonic() - started, 5)
 
 
 class Unsandboxed(unittest.TestCase):

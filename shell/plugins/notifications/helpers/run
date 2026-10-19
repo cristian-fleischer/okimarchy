@@ -25,7 +25,8 @@ from urllib.parse import unquote
 # Launched by its shebang, without -B: keep the sibling import from writing
 # __pycache__ into the Omarchy checkout the helpers live in.
 sys.dont_write_bytecode = True
-from notification_files import private_dir  # noqa: E402
+from notification_files import private_dir, write_bytes  # noqa: E402
+import notification_images as images  # noqa: E402
 
 
 # The helpers sit beside this file. Resolve through any symlinks (a dev
@@ -34,6 +35,12 @@ from notification_files import private_dir  # noqa: E402
 BASE = Path(__file__).resolve().parent
 HOME_DIR = Path.home()
 STATE = HOME_DIR / ".local/state/omarchy/notifications"
+# Icons the shell displays. Written only here, outside every sandbox, from
+# pixels a helper decoded; no helper mount reaches it.
+PUBLISHED = HOME_DIR / ".cache/omarchy/notification-icons"
+PUBLISHED_KEEP = 512
+ICON_OUTPUT_BYTES = images.PIXELS_HEADER_BYTES + 128 * 128 * 4
+SENDER_DATA_URL_CHARS = 131072
 BWRAP = Path("/usr/bin/bwrap")
 PYTHON = Path("/usr/bin/python3")
 HELPER_KINDS = frozenset(("store", "icon", "kdeconnect"))
@@ -270,7 +277,28 @@ def stop_process_group(proc):
     pass
 
 
-def run_supervised(argv, environ, timeout, stdin_descriptor=None):
+def collect_output(proc, limit, deadline):
+  """Read the child's stdout to EOF, at most `limit` bytes, before `deadline`."""
+  import selectors
+  chunks, size = [], 0
+  with selectors.DefaultSelector() as selector:
+    selector.register(proc.stdout, selectors.EVENT_READ)
+    while True:
+      remaining = deadline - time.monotonic()
+      if remaining <= 0:
+        raise subprocess.TimeoutExpired(proc.args, 0)
+      if not selector.select(remaining):
+        continue
+      chunk = os.read(proc.stdout.fileno(), 65536)
+      if not chunk:
+        return b"".join(chunks)
+      size += len(chunk)
+      if size > limit:
+        raise ValueError("helper output too large")
+      chunks.append(chunk)
+
+
+def run_supervised(argv, environ, timeout, stdin_descriptor=None, capture=None):
   handled_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
   previous = {}
 
@@ -288,14 +316,22 @@ def run_supervised(argv, environ, timeout, stdin_descriptor=None):
     # The child is a session leader so termination and deadlines reap its group.
     child_setup = partial(prepare_child, old_mask)
     proc = subprocess.Popen(argv, env=environ, preexec_fn=child_setup,
-                            stdin=stdin_descriptor, start_new_session=True)
+                            stdin=stdin_descriptor, start_new_session=True,
+                            stdout=subprocess.PIPE if capture else None)
     masked = False
     signal.pthread_sigmask(signal.SIG_SETMASK, old_mask)
     try:
-      return proc.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
+      if not capture:
+        return proc.wait(timeout=timeout)
+      deadline = time.monotonic() + timeout
+      output = collect_output(proc, capture, deadline)
+      return proc.wait(timeout=max(0.1, deadline - time.monotonic())), output
+    except (subprocess.TimeoutExpired, ValueError):
       stop_process_group(proc)
       raise
+    finally:
+      if proc.stdout:
+        proc.stdout.close()
   except WrapperInterrupted:
     if proc is not None:
       stop_process_group(proc)
@@ -354,9 +390,53 @@ def run_helper(kind, args, required, environ, stdin_descriptor=None):
     child_environment = direct_environment(kind, environ)
   # This is the sole actual-helper execution. A failure is returned directly;
   # it is never replayed in a less restricted mode.
-  # One icon job resolves one source; a slow or hostile site must not hold
-  # the icon queue for long.
-  return run_supervised(argv, child_environment, 20 if kind == "icon" else 45, stdin_descriptor)
+  if kind != "icon":
+    return run_supervised(argv, child_environment, 45, stdin_descriptor)
+  # One icon job resolves one source; a slow or hostile site must not hold the
+  # icon queue for long. Its output is pixels, bounded, which become a PNG here.
+  code, output = run_supervised(argv, child_environment, 20, stdin_descriptor, ICON_OUTPUT_BYTES)
+  if code != 0:
+    return code
+  sys.stdout.write(publish_icon(output, sender_image, "--why" in args))
+  return 0
+
+
+def publish_icon(output, sender_image, why):
+  """The PNG for a helper's pixels: a data: URL for a sender image, else a
+  file in PUBLISHED named by its own digest, so equal icons share one file and
+  a different icon can never overwrite it."""
+  import base64
+  import hashlib
+  width, height, rgba, mono, how = images.unpack_pixels(output, 128)
+  if sender_image:
+    if not width:
+      raise ValueError("no sender image")
+    url = "data:image/png;base64," + base64.b64encode(images.encode_png(width, height, rgba)).decode("ascii")
+    if len(url) > SENDER_DATA_URL_CHARS:
+      raise ValueError("sender image too large")
+    return url
+  suffix = "\t" + how if why else ""
+  if not width:
+    return suffix
+  png = images.encode_png(width, height, rgba)
+  folder = private_dir(PUBLISHED)
+  path = folder / (hashlib.sha256(png).hexdigest() + ("-mono" if mono else "") + ".png")
+  write_bytes(path, png)
+  prune_published(folder)
+  return str(path) + suffix
+
+
+def prune_published(folder):
+  try:
+    entries = sorted((entry.stat(follow_symlinks=False).st_mtime, entry.path)
+                     for entry in os.scandir(folder) if entry.name.endswith(".png"))
+  except OSError:
+    return
+  for _, path in entries[:-PUBLISHED_KEEP]:
+    try:
+      os.unlink(path)
+    except OSError:
+      pass
 
 
 def main(argv=None, environ=None):

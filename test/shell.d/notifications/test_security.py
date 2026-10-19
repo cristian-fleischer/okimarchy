@@ -419,13 +419,14 @@ class Raster(unittest.TestCase):
     with tempfile.TemporaryDirectory() as temp,patch.object(icon,'CACHE',temp):
       for name,data,mono in (('opaque.png',opaque,False),('glyph.png',glyph,True)):
         source=Path(temp)/name;source.write_bytes(data)
-        out=icon.normalise(str(source))
-        self.assertTrue(out.endswith('-mono.png')==mono,out)
-        w,h,rgba=notification_images.decode(Path(out).read_bytes(),('PNG',),128,128*128,128)
-        self.assertEqual((w,h),(128,128))
+        rgba,found_mono=icon.normalise(str(source))
+        self.assertEqual(found_mono,mono,name)
+        self.assertEqual(len(rgba),128*128*4)
         self.assertEqual(rgba[(64*128+64)*4+3],255)
-      corner=notification_images.decode(Path(icon.normalise(str(Path(temp)/'opaque.png'))).read_bytes(),('PNG',),128,128*128,128)[2]
+      corner=icon.normalise(str(Path(temp)/'opaque.png'))[0]
       self.assertEqual(corner[(4*128+4)*4+3],0)
+      # Normalising writes nothing: only the launcher publishes icons.
+      self.assertEqual(sorted(p.name for p in Path(temp).iterdir()),['glyph.png','opaque.png'])
       self.assertIsNone(icon.normalise(str(Path(temp)/'missing.png')))
 
 if __name__=='__main__':unittest.main()

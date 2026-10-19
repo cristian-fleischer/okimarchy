@@ -869,17 +869,19 @@ for (const u of ['https://example.com/', 'https://sub.example.co.uk/', 'https://
 }
 
 { // The shell trusts helper output only in the exact shapes the helper writes.
-  const scope = { iconCacheDir: '/home/u/.local/state/omarchy/notifications/icons/', String, Number }
+  const dir = '/home/u/.cache/omarchy/notification-icons/'
+  const scope = { iconCacheDir: dir, String, Number }
   vm.createContext(scope)
   vm.runInContext(extract(source, 'function trustedIconPath(text, exitCode)', '\n  Process {'), scope)
-  const ok = '/home/u/.local/state/omarchy/notifications/icons/norm-slack.png.png'
+  const digest = 'a'.repeat(64)
+  const ok = dir + digest + '.png'
   assert.equal(scope.trustedIconPath(ok + '\n', 0), ok)
+  assert.equal(scope.trustedIconPath(dir + digest + '-mono.png', 0), dir + digest + '-mono.png')
   assert.equal(scope.trustedIconPath(ok, 1), '', 'a failed helper answers nothing')
-  for (const bad of ['/home/u/.ssh/id_ed25519', '/home/u/.local/state/omarchy/notifications/icons/../../x.png',
-                     '/home/u/.local/state/omarchy/notifications/icons/norm-x.svg',
-                     '/home/u/.local/state/omarchy/notifications/icons/web-abc.png',
-                     '/home/u/.local/state/omarchy/notifications/icons/sub/norm-x.png',
-                     'file:///home/u/.local/state/omarchy/notifications/icons/norm-x.png', ok + 'x'.repeat(600)])
+  for (const bad of ['/home/u/.ssh/id_ed25519', dir + '../x.png', dir + digest + '.svg', dir + 'norm-slack.png',
+                     dir + 'A'.repeat(64) + '.png', dir + digest.slice(1) + '.png', dir + 'sub/' + digest + '.png',
+                     '/home/u/.local/state/omarchy/notifications/icons/' + digest + '.png',
+                     'file://' + ok, ok + 'x'.repeat(600)])
     assert.equal(scope.trustedIconPath(bad, 0), '', bad)
 
   const images = { liveKeys: { k: { senderImage: null } }, senderImageRevision: 0 }

@@ -154,7 +154,7 @@ def read_local_icon(path):
 
 
 def normalise(path):
-  """Render an icon to one consistent shape.
+  """Render an icon to one consistent shape: (rgba, mono) on a NORM square.
 
   Icons arrive in three habits: a full-bleed opaque square (Linear), a
   transparent glyph with no padding (Slack), a circle (Spotify). Drawn at the
@@ -206,17 +206,10 @@ def normalise(path):
     start = ((top + y) * NORM + left) * 4
     canvas[start:start + width * 4] = rgba[y * width * 4:(y + 1) * width * 4]
 
-  # The name carries the finding: a monochrome glyph is drawn in the theme's
-  # own text colour instead of as-is, and the drawing happens in QML, which
-  # cannot look at pixels. A suffix is the whole protocol.
-  dest = os.path.join(CACHE, "norm-" + slug(os.path.basename(path))
-                      + ("-mono" if mono else "") + ".png")
-  try:
-    os.makedirs(CACHE, exist_ok=True)
-    write_bytes(dest, images.encode_png(NORM, NORM, bytes(canvas)))
-  except Exception:
-    return None
-  return dest
+  # The finding travels with the pixels: a monochrome glyph is drawn in the
+  # theme's own text colour, and the drawing happens in QML, which cannot look
+  # at pixels. The launcher marks the file it publishes.
+  return bytes(canvas), mono
 
 
 def slug(text):
@@ -415,17 +408,15 @@ def normalised_remote_png(data):
   return images.encode_png(width, height, rgba)
 
 
-def sender_image_data_url(stream):
-  """Decode one bounded image stream without persisting or naming its source."""
+def sender_image_pixels(stream):
+  """Decode one bounded image stream to (width, height, rgba), never naming it."""
   data = stream.read(REMOTE_ICON_BYTES + 1)
   if len(data) > REMOTE_ICON_BYTES:
     raise ValueError("oversized image")
-  png = normalised_remote_png(data)
-  encoded = base64.b64encode(png).decode("ascii")
-  result = "data:image/png;base64," + encoded
-  if len(result) > SENDER_IMAGE_DATA_URL_CHARS:
-    raise ValueError("encoded image too large")
-  return result
+  width, height, rgba = images.decode(data, REMOTE_FORMATS, MAX_REMOTE_SIDE, MAX_REMOTE_PIXELS, NORM)
+  if width < 8 or height < 8:
+    raise ValueError("image too small")
+  return width, height, rgba
 
 
 def fetch_site(host, scheme):
@@ -636,21 +627,22 @@ def main(argv=None):
     if argv != ["--sender-image"]:
       return 2
     try:
-      result = sender_image_data_url(sys.stdin.buffer)
+      width, height, rgba = sender_image_pixels(sys.stdin.buffer)
     except Exception:
       return 1
-    sys.stdout.write(result)
+    sys.stdout.buffer.write(images.pack_pixels(width, height, rgba))
     return 0
   for field in ("key", "app", "app_icon", "source"):
     if len(getattr(args, field)) > 256: return 2
   private_dir(CACHE)
   path, how = resolve(args)
-  if path:
-    path = normalise(path)
-  if path:
-    sys.stdout.write(path + ("\t" + how if args.why else ""))
-  elif args.why:
-    sys.stdout.write("\t" + how)
+  found = normalise(path) if path else None
+  # Pixels, not a path: the launcher outside the sandbox writes the PNG the
+  # shell will load, somewhere no helper can write.
+  if found:
+    sys.stdout.buffer.write(images.pack_pixels(NORM, NORM, found[0], found[1], how))
+  else:
+    sys.stdout.buffer.write(images.pack_nothing(how))
   return 0
 
 
