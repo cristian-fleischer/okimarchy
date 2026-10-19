@@ -1,0 +1,201 @@
+#!/usr/bin/python3
+# kdeconnect - the phone's side of a notification, run as `run kdeconnect`.
+#
+#   list                          every phone notification, as JSON
+#   find APP BODY                 the object path of a repliable match
+#   reply PATH TEXT APP BODY      send a reply back to the phone, re-matched first
+#
+# KDE Connect posts phone notifications to the desktop bus like any other app,
+# and that is all the freedesktop spec can carry. But it also keeps an object
+# per notification on its own bus with the part the spec has no room for: a
+# replyId, and a sendReply method that puts text back into the conversation on
+# the phone. Matching the two is by app name and body text, because the desktop
+# notification carries no handle to the object.
+import json
+import os
+import subprocess
+import sys
+import time
+import re
+import selectors
+from notification_files import read_json, write_json
+
+BUS = "org.kde.kdeconnect"
+IFACE = "org.kde.kdeconnect.device.notifications.notification"
+
+# Only the explicitly named demo app can use the private, short-lived fixture.
+# It is never mixed into real-phone discovery or matched against another app.
+# The path matches the directory the sandbox launcher mounts for it.
+DEMO_APP = "Omarchy reply demo"
+STATE = os.path.expanduser("~/.local/state/omarchy/notifications/reply-demo")
+FIXTURE = os.path.join(STATE, "notification.json")
+REPLY_LOG = os.path.join(STATE, "reply.json")
+FIXTURE_MAX_AGE = 30 * 60
+
+
+def fixture():
+  row = read_json(FIXTURE)
+  if not isinstance(row, dict):
+    return []
+  token, created = row.get("token"), row.get("created")
+  title, text = row.get("title"), row.get("text")
+  if not isinstance(token, str) or not re.fullmatch(r"[0-9a-f]{32}", token):
+    return []
+  if not isinstance(created, (int, float)) or not 0 <= time.time() - created <= FIXTURE_MAX_AGE:
+    return []
+  if not isinstance(title, str) or not title.strip() or len(title) > 256:
+    return []
+  if not isinstance(text, str) or not text.strip() or len(text) > 4096:
+    return []
+  return [dict(appName=DEMO_APP, title=title, text=text, replyId=token,
+               ticker="%s: %s" % (title, text), path="demo:" + token)]
+
+
+def run(args):
+  # Bound output while receiving it, rather than after communicate allocated it.
+  with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as proc:
+    data = bytearray()
+    deadline = time.monotonic() + 5
+    with selectors.DefaultSelector() as selector:
+      selector.register(proc.stdout, selectors.EVENT_READ)
+      while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or not selector.select(remaining):
+          proc.kill(); proc.wait(); return ""
+        block = os.read(proc.stdout.fileno(), min(4096, 65537-len(data)))
+        if not block: break
+        data.extend(block)
+        if len(data) > 65536:
+          proc.kill(); proc.wait(); return ""
+    try:
+      proc.wait(timeout=max(.01, deadline-time.monotonic()))
+    except subprocess.TimeoutExpired:
+      proc.kill(); proc.wait(); return ""
+    return data.decode("utf-8", "replace") if proc.returncode == 0 else ""
+
+
+def paths():
+  tree = run(["busctl", "--user", "--", "tree", BUS])
+  out = []
+  for line in tree.splitlines():
+    for token in line.split():
+      if valid_path(token):
+        out.append(token)
+  return out[:100]
+
+
+def properties(path):
+  raw = run(["busctl", "--user", "--json=short", "--", "call", BUS, path,
+             "org.freedesktop.DBus.Properties", "GetAll", "s", IFACE])
+  try:
+    data = json.loads(raw)["data"][0]
+  except Exception:
+    return None
+  return {k: v.get("data") for k, v in data.items()}
+
+
+def listing():
+  out = []
+  for path in paths():
+    props = properties(path)
+    if props is None:
+      continue
+    props["path"] = path
+    out.append(props)
+  return out
+
+
+SMART = {"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
+         "\u2013": "-", "\u2014": "-", "\u2026": "..."}
+
+
+def normalise(text):
+  """Comparable text. Phones send typographic quotes and desktops rarely do,
+  and a body that differs only by a curly apostrophe is the same body."""
+  out = str(text or "")
+  for fancy, plain in SMART.items():
+    out = out.replace(fancy, plain)
+  return " ".join(out.split()).lower()
+
+
+def valid_path(path):
+  return isinstance(path, str) and len(path) <= 512 and bool(re.fullmatch(
+      r"/modules/kdeconnect/devices/[A-Za-z0-9_]+/notifications/[0-9]+", path))
+
+
+def find(app, body):
+  """No app-only guesses or ambiguous matches. Exact app and body required."""
+  want_app, want_body = normalise(app), normalise(body)
+  if not want_app or not want_body or len(want_body) > 32768 or len(want_app) > 256:
+    return None
+  notes = fixture() if want_app == normalise(DEMO_APP) else listing()
+  matches = [n for n in notes if n.get("replyId")
+             and normalise(n.get("appName")) == want_app
+             and want_body in (normalise(n.get("ticker")), normalise(n.get("text"))) ]
+  return matches[0] if len(matches) == 1 else None
+
+
+
+def main():
+  if len(sys.argv) < 2:
+    return 2
+  verb = sys.argv[1]
+
+  if verb == "list":
+    json.dump(listing(), sys.stdout, separators=(",", ":"))
+    return 0
+
+  if verb == "find":
+    app = sys.argv[2] if len(sys.argv) > 2 else ""
+    body = sys.argv[3] if len(sys.argv) > 3 else ""
+    note = find(app, body)
+    if note:
+      json.dump({"path": note["path"], "title": note.get("title", ""),
+                 "appName": note.get("appName", "")}, sys.stdout,
+                separators=(",", ":"))
+    return 0
+
+  if verb == "reply":
+    path, text = sys.argv[2], sys.argv[3]
+    if not text.strip() or len(text) > 4096 or "\x00" in text:
+      return 1
+    if len(sys.argv) != 6:
+      return 1
+    demo = bool(re.fullmatch(r"demo:[0-9a-f]{32}", path))
+    if not demo and not valid_path(path):
+      return 1
+    # Re-discover and re-match at send time, including the demo session token.
+    match = find(sys.argv[4], sys.argv[5])
+    if not match or match.get("path") != path:
+      return 1
+    if demo:
+      if normalise(sys.argv[4]) != normalise(DEMO_APP):
+        return 1
+      write_json(REPLY_LOG, {"created": time.time(), "session": path[5:], "text": text})
+      sys.stdout.write("saved the demo reply locally")
+      return 0
+    result = subprocess.run(["busctl", "--user", "--", "call", BUS, path, IFACE,
+                             "sendReply", "s", text],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=5)
+    if result.returncode != 0:
+      sys.stdout.write("reply failed")
+      return result.returncode
+    # Answered means dealt with, on the phone as well. Without this the
+    # notification is still live over there, KDE Connect forwards it again,
+    # and the card you just replied to reappears a moment later.
+    # Best effort: a reply that went through is a success even if the
+    # dismissal does not, and some senders do not offer one.
+    subprocess.run(["busctl", "--user", "--", "call", BUS, path, IFACE, "dismiss"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=5)
+    sys.stdout.write("sent")
+    return 0
+
+  return 2
+
+
+if __name__ == "__main__":
+  try:
+    sys.exit(main())
+  except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
+    sys.stderr.write("omarchy notifications kdeconnect: request rejected or service unavailable\n")
+    sys.exit(1)

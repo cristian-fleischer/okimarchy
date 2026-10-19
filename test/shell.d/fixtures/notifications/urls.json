@@ -1,0 +1,16 @@
+[
+  "https://paypal.com@evil.example",
+  "https://example.com/%250a",
+  "file:///etc/passwd",
+  "https://[::ffff:127.0.0.1]",
+  "https://0x7f.0x0.0x0.0x1/",
+  "http://127.0x/",
+  "http://0xa.0x0.0x0.0x1/",
+  "https://0x7f000001/",
+  "https://2130706433/",
+  "https://0177.0.0.1/",
+  "https://0177.00.00.01/",
+  "https://10.0.0x0.0x1/",
+  "https://10.0.00.01/",
+  "https://0X7F.0X0.0X0.0X1/"
+]

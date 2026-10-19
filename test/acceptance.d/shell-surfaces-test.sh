@@ -92,7 +92,16 @@ wait_until "notification popup opens" 15 layer_present "omarchy-notifications"
 wait_until "notification content is visible" 15 screen_contains "Acceptance notification"
 screenshot "success-notification-popup"
 omarchy-shell notifications dismissAll >/dev/null
-wait_until "notification popup closes" 15 layer_absent "omarchy-notifications"
+# The notification canvas stays mapped while idle; the card leaving is what
+# dismissal changes.
+notifications_cleared() { [[ $(omarchy-shell notifications count) == "0" ]]; }
+wait_until "notification popup closes" 15 notifications_cleared
+
+# The bar's notification indicator opens the notification panel.
+omarchy-shell notifications openPanel >/dev/null
+wait_until "notification panel opens" 15 screen_contains "Notifications"
+screenshot "success-notification-panel"
+omarchy-shell notifications closePanel >/dev/null
 
 # The menu's Apps submenu does the full launcher loop: open, search by
 # typing, launch the top hit.
