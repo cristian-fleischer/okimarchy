@@ -897,4 +897,83 @@ for (const u of ['https://example.com/', 'https://sub.example.co.uk/', 'https://
   assert.ok(job.image.startsWith('data:image/png;base64,iVBORw0KGgo'), 'a PNG is accepted')
 }
 
+{ // Round 5: misnamed and disguised input, and escapes, on the shell side.
+  // A NUL cannot travel in an argv; Qt would cut the argument short.
+  for (const argv of [['/usr/bin/printf\u0000ignored', '%s', 'x'], ['echo', 'safe\u0000TRUNCATED']]) {
+    assert.equal(S.parseExecArgv(JSON.stringify(argv)), null, JSON.stringify(argv))
+    const row = Store.snapshot({ appName: 'x', summary: 'y', hints: { 'omarchy-exec-argv': JSON.stringify(argv) } }, 'nul', { Normal: 1 })
+    assert.equal(row.execArgv, '')
+  }
+  // Shell syntax in a click command stays literal argument text.
+  const literal = ['printf', '%s|', '$(touch /tmp/x)', '`id`', 'a; rm -rf /', "q'uote", 'new\nline', '-dash']
+  assert.equal(JSON.stringify(S.parseExecArgv(JSON.stringify(literal))), JSON.stringify(literal))
+
+  // Only a browser's leading origin anchor names a site; only an http(s) href
+  // can be that origin; a label never stands in for it.
+  const id = (app, body, summary) => Store.snapshot({ appName: app, summary: summary || 'hi', body }, 'k', { Normal: 1 })
+  for (const href of ['javascript:alert(1)', 'data:text/html,hello', 'qrc:/x', 'file:///etc/passwd', 'https://bank.example']) {
+    const chat = id('Chat', '<a href="' + href + '">bank.example</a>message')
+    assert.equal(chat.groupKey, 'app:chat', 'a non-browser app keeps its own identity: ' + href)
+    assert.equal(chat.source, 'Chat')
+  }
+  for (const href of ['javascript:alert(1)', 'data:text/html,hello', 'qrc:/x', 'file:///etc/passwd', 'https://user@bank.example']) {
+    const chrome = id('Google Chrome', '<a href="' + href + '">bank.example</a>message')
+    assert.equal(chrome.groupKey, 'app:google-chrome', 'no origin from ' + href)
+  }
+  const real = id('Google Chrome', '<a href="https://app.slack.com/">app.slack.com</a>Dominic: hi')
+  assert.equal(real.groupKey, 'web:app.slack.com')
+  assert.equal(real.source, 'app.slack.com')
+  const mismatched = id('Chromium', '<a href="https://evil.example/">bank.example</a>hi')
+  assert.equal(mismatched.source, 'evil.example', 'the href, not the label, is the origin')
+  // A restored row cannot claim a site either unless it came from a browser.
+  assert.equal(Store.restored({ key: 'r', app: 'Chat', source: 'bank.example' }).groupKey, 'app:chat')
+  assert.equal(Store.restored({ key: 'r', app: 'Chromium', source: 'app.slack.com' }).groupKey, 'web:app.slack.com')
+
+  // KDE Connect is its exact names, not a substring.
+  for (const app of ['KDE Connect', 'kdeconnect', 'org.kde.kdeconnect.daemon'])
+    assert.equal(id(app, 'message', 'Pixel · Bank').groupKey, 'kdeconnect:Bank', app)
+  for (const app of ['not-kdeconnect-agent', 'mykdeconnect', 'KDE Connector'])
+    assert.equal(id(app, 'message', 'Pixel · Bank').groupKey.indexOf('kdeconnect:'), -1, app)
+
+  // Markup: only the safe subset survives, however it is spelled.
+  for (const body of ['<style>a{}</style>x', '<font color=red>x</font>', '&lt;img src="file:///etc/passwd"&gt;',
+                      '&amp;lt;img src=x&amp;gt;', '<b><i>x', '<img src=x', '<a href="qrc:/x">x</a>',
+                      '<a href="image://icon/x">x</a>', '<a href="javascript:alert(1)">x</a>', '<<img src=x>>'])
+    assert.ok(!/<(?:img|style|font|script|svg)\b|href="(?:qrc|image|javascript|file|data):/i.test(M.render(body)), body)
+
+  // The summary is plain text everywhere it is drawn.
+  const toast = fs.readFileSync(load.dir + '/Toast.qml', 'utf8')
+  const title = toast.indexOf('id: title')
+  assert.ok(/Text\.PlainText/.test(toast.slice(toast.lastIndexOf('Text {', title), title)), 'the summary renders as plain text')
+}
+
+{ // Sender data URLs: the exact shape the launcher writes, nothing else.
+  const scope = { liveKeys: { k: { senderImage: null } }, senderImageRevision: 0 }
+  vm.createContext(scope)
+  vm.runInContext(extract(source, 'function finishSenderImage(job, image)', 'function pumpSenderImages()'), scope)
+  const b64 = s => Buffer.from(s, 'latin1').toString('base64')
+  const pngHead = b64('\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01')
+  for (const url of ['data:image/png;base64,' + b64('<html></html>'), 'data:image/png;base64,' + b64('\xff\xd8\xff\xe0'),
+                     'data:image/png;base64,' + b64('BM6\x00'), ' data:image/png;base64,' + pngHead,
+                     'data:image/png;base64,' + pngHead + '\n', 'data:image/png;base64,' + pngHead + 'data:image/png;base64,AAAA',
+                     'data:image/svg+xml;base64,' + pngHead, 'data:image/png,' + pngHead]) {
+    const job = { key: 'k', image: '' }
+    scope.liveKeys.k.senderImage = job
+    scope.finishSenderImage(job, url)
+    assert.equal(job.image, '', url.slice(0, 50))
+  }
+}
+
+{ // Snooze lengths from IPC are finite and bounded before anything changes.
+  const scope = { maxSnoozeSeconds: 366 * 86400, Number, Math, isFinite }
+  vm.createContext(scope)
+  vm.runInContext(extract(source, 'function snoozeMinutes(value, fallback)', 'function snoozeSource('), scope)
+  for (const v of ['Infinity', '1e309', 'NaN', '-5', '0', '', 'abc'])
+    assert.equal(scope.snoozeMinutes(v, 60), 60, v)
+  assert.equal(scope.snoozeMinutes('1e308', 60), 366 * 1440, 'capped, not overflowed')
+  assert.equal(scope.snoozeMinutes('30', 60), 30)
+  const central = extract(source, 'function snoozeSource(groupKey, label, seconds, fromNow)', 'function unsnooze(groupKey)')
+  assert.ok(/isFinite\(seconds\)/.test(central) && /maxSnoozeSeconds/.test(central), 'snoozeSource bounds its own input')
+}
+
 console.log('notification logic: passed')

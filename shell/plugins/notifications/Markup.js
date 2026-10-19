@@ -94,18 +94,18 @@ function liftSource(body) {
   var text = Security.bounded(body, Security.MAX_BODY)
   var m = text.match(/^\s*<a\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>\s*/i)
   if (!m) return { source: "", body: text }
-  var label = String(m[2]).trim()
+  // The href is the origin, and it has to be one: an http(s) URL whose host
+  // passes the same test every other link does. The label is the sender's text
+  // and never stands in for it - a `javascript:` or `data:` href labelled
+  // "bank.example" names nothing.
   var host = hostOf(m[1])
-  // Only when the anchor is standing in for a source: its text is the host,
+  if (!host) return { source: "", body: text }
+  // Only when the anchor is standing in for a source: its text is that host,
   // or a bare domain. A real in-body link stays where the sender put it.
+  var label = String(m[2]).trim()
   var looksLikeSource = label === host || /^[\w.-]+\.[a-z]{2,}$/i.test(label)
   if (!looksLikeSource) return { source: "", body: text }
-  // The label is the sender's text too. It stands in only when the href was
-  // never a URL - if the href *is* one and its host does not survive the test,
-  // that is the case worth refusing, not worth papering over with the label.
-  var source = host || (/^[a-z]+:\/\//i.test(m[1]) ? "" : hostname(label))
-  if (!source) return { source: "", body: text }
-  return { source: source, body: text.slice(m[0].length) }
+  return { source: host, body: text.slice(m[0].length) }
 }
 
 function linkify(escaped) {
@@ -145,7 +145,7 @@ function oneLine(body) {
 // would be snoozing everything on it.
 function forwardedApp(app, summary) {
   var text = String(summary || "")
-  if (!/kde\s*connect/i.test(String(app || ""))) return { name: "", summary: text }
+  if (!isKdeConnect(app)) return { name: "", summary: text }
   // "Pixel · Calendar": the phone first, the app second. The app is the half
   // worth keeping; grouping by phone puts every app on it into one pile.
   var m = text.match(/^(.{1,28}?)\s*[·|]\s*(.+)$/)
@@ -163,9 +163,24 @@ function forwardedApp(app, summary) {
 // desktop-entry hint is the sender saying so itself and is trusted first;
 // Chrome is the awkward one, because every web app announces itself as
 // "Google Chrome" and only the lifted anchor tells them apart.
+// The names KDE Connect sends under, exactly. A substring match made any app
+// with "kdeconnect" somewhere in its name a phone multiplexer.
+var KDE_CONNECT_NAMES = ["kde connect", "kdeconnect", "kdeconnectd", "org.kde.kdeconnect.daemon", "org.kde.kdeconnect"]
+function isKdeConnect(app) {
+  return KDE_CONNECT_NAMES.indexOf(String(app || "").trim().toLowerCase()) >= 0
+}
+
+// Browsers announce every site as themselves and put the site's origin in a
+// leading anchor; that anchor is a source only from one of them. Any other
+// app's leading link is just a link in its message.
+var BROWSERS = /^(google chrome|chromium|brave|brave browser|microsoft edge|vivaldi|opera|helium|firefox|zen|librewolf)$/i
+function isBrowser(app) {
+  return BROWSERS.test(String(app || "").trim())
+}
+
 function identify(row, hints) {
   var app = String(row.app || "")
-  var lifted = liftSource(row.body)
+  var lifted = isBrowser(app) ? liftSource(row.body) : { source: "", body: Security.bounded(row.body, Security.MAX_BODY) }
   var forwarded = forwardedApp(app, row.summary)
 
   var source = lifted.source || forwarded.name || app
@@ -203,8 +218,8 @@ function regroup(row) {
   var source = String(row.source || "")
   // A source with a dot in it is a hostname: the site is the sender, not the
   // browser showing it.
-  if (source && source !== app && /\.[a-z]{2,}$/i.test(source)) return "web:" + source
-  if (/kde\s*connect/i.test(app) && source && source !== app) return "kdeconnect:" + source
+  if (isBrowser(app) && source && source !== app && hostname(source)) return "web:" + hostname(source)
+  if (isKdeConnect(app) && source && source !== app) return "kdeconnect:" + source
   return "app:" + slug(app)
 }
 

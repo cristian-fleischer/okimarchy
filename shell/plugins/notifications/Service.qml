@@ -450,9 +450,22 @@ Item {
 
   // `fromNow` re-snoozes rather than extends: "4 hours" from the panel means
   // back in four hours, not four hours after whatever was already left.
+  // The longest a snooze may run: anything past a year is a mistake, and an
+  // infinite one would persist as a null that restores to something else.
+  readonly property int maxSnoozeSeconds: 366 * 86400
+
+  // Minutes from IPC: a finite positive number, capped, else the default.
+  function snoozeMinutes(value, fallback) {
+    var minutes = Number(value)
+    if (!isFinite(minutes) || minutes <= 0) return fallback
+    return Math.min(minutes, maxSnoozeSeconds / 60)
+  }
+
   function snoozeSource(groupKey, label, seconds, fromNow) {
     var key = String(groupKey || "")
-    if (!key || !(seconds > 0)) return 0
+    seconds = Number(seconds)
+    if (!key || !isFinite(seconds) || seconds <= 0) return 0
+    seconds = Math.min(seconds, maxSnoozeSeconds)
     // Snoozing everything supersedes silencing: it is the same quiet with an
     // end on it, and the end is the point.
     if (key === globalKey) setDoNotDisturb(false)
@@ -1650,7 +1663,7 @@ Item {
   property var replyQueue: []
 
   function lookForReply(row) {
-    if (!/kde\s*connect/i.test(String(row.app || ""))) return
+    if (!Markup.isKdeConnect(row.app)) return
     var queue = replyQueue.slice()
     queue.push({ key: String(row.key || ""), source: String(row.source || ""),
                  body: String(row.bodyLine || row.body || ""), tries: 0 })
@@ -2038,7 +2051,7 @@ Item {
     function snooze(minutes: string): string {
       if (toasts.count === 0) return "nothing"
       var row = toasts.get(0)
-      var mins = Number(minutes) > 0 ? Number(minutes) : 60
+      var mins = service.snoozeMinutes(minutes, 60)
       var until = service.snoozeSource(String(row.groupKey || ""),
                                        String(row.source || row.app || ""), mins * 60)
       return until ? String(row.source || row.app) + " until " + new Date(until * 1000).toTimeString().slice(0, 5) : "no source"
@@ -2050,7 +2063,7 @@ Item {
         service.unsnooze(service.globalKey)
         return "awake"
       }
-      var mins = Number(minutes) > 0 ? Number(minutes) : 60
+      var mins = service.snoozeMinutes(minutes, 60)
       var until = service.snoozeSource(service.globalKey, "", mins * 60, true)
       return until ? "everything until " + new Date(until * 1000).toTimeString().slice(0, 5) : "no"
     }

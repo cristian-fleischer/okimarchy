@@ -75,7 +75,8 @@ function parseExecArgv(value) {
   try { parsed = JSON.parse(text) } catch (e) { return null }
   if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 32) return null
   for (var i = 0; i < parsed.length; i++) {
-    if (typeof parsed[i] !== "string" || parsed[i].length > MAX_URL) return null
+    // A NUL cannot travel in an argv: Qt would cut the argument short there.
+    if (typeof parsed[i] !== "string" || parsed[i].length > MAX_URL || parsed[i].indexOf("\u0000") >= 0) return null
   }
   if (!parsed[0] || parsed[0].charAt(0) === "-") return null
   return parsed
