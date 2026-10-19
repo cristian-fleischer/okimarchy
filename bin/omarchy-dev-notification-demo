@@ -197,8 +197,8 @@ def warm(items):
     mode = ""
   scheme = "light" if mode == "light" else "dark"
   for who in wanted.values():
-    command = [HELPER, "icon", "--key", who["key"], "--source", who["source"],
-               "--app", who["app"], "--app-icon", who["icon"], "--scheme", scheme]
+    command = [HELPER, "icon", "--key=" + who["key"], "--app=" + who["app"],
+               "--app-icon=" + who["icon"], "--source=" + who["source"], "--scheme=" + scheme]
     try:
       bounded_output(command + (["--fetch"] if fetch else []), timeout=55, env=env)
     except HELPER_ERRORS:
