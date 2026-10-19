@@ -300,8 +300,13 @@ Item {
   readonly property real restingBlock:
       headline.height + (hasBody ? column.spacing + bodyBox.restHeight : 0)
 
+  // A block shorter than the mark - a title with no body, mostly - is centred
+  // against it, as the mark is against a taller block. Measured at rest for
+  // the same reason the mark is.
+  readonly property real textOffset: Math.max(0, (thumb.height - restingBlock) / 2)
+
   readonly property real fixedHeight: plate.borderTop + plate.borderBottom
-      + contentPaddingY * 2 + Math.max(thumb.height, textBlock)
+      + contentPaddingY * 2 + Math.max(thumb.height, textOffset + textBlock)
 
   // The height this card's *state* implies. The deck lays out from this and
   // only this: feeding a rendered, mid-animation height back into the layout
@@ -390,7 +395,9 @@ Item {
         readonly property bool compact: glyphed && !card.hasBody
         readonly property real slot: Style.space(40)
         width: pictured || lettered ? slot : glyphed ? (compact ? glyphText.implicitWidth : slot) : 0
-        height: compact ? glyphText.implicitHeight : slot
+        // No mark, no height: an empty slot used to hold every card without
+        // one at the mark's height, under a title that sat at its top.
+        height: width > 0 ? (compact ? glyphText.implicitHeight : slot) : 0
         visible: width > 0
         // Centred against the text beside it, at its resting height: the body
         // opening on hover must not walk the mark down the card.
@@ -491,6 +498,7 @@ Item {
 
       Column {
         id: column
+        y: card.textOffset
         width: layout.width - (thumb.visible ? thumb.width + layout.spacing : 0)
         spacing: Style.space(3)
 
