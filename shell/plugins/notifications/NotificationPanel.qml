@@ -118,7 +118,7 @@ Item {
     var today = new Date(); today.setHours(0, 0, 0, 0)
     var then = new Date(when.getTime()); then.setHours(0, 0, 0, 0)
     var days = Math.round((then.getTime() - today.getTime()) / 86400000)
-    return days <= 0 ? "" : " +" + days
+    return days <= 0 ? "" : " +" + I18n.formatNumber(days)
   }
 
   // "28m", "3h", then the wake time itself.
