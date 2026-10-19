@@ -326,6 +326,11 @@ def run_helper(kind, args, required, environ, stdin_descriptor=None):
   status, bwrap = mode_status(required)
   if status["mode"] == "blocked":
     raise RuntimeError("sandbox required")
+  # Icons are hostile input end to end - a website's favicon, a file a sender
+  # points at - and decoding them is the riskiest thing these helpers do. That
+  # never runs unsandboxed: without a working sandbox the card shows a letter.
+  if kind == "icon" and status["mode"] != "sandboxed":
+    raise RuntimeError("image decoding needs the sandbox")
   if status["mode"] == "sandboxed":
     argv = sandbox_command(kind, args, bwrap, environ)
     child_environment = clean_environment()
@@ -334,7 +339,9 @@ def run_helper(kind, args, required, environ, stdin_descriptor=None):
     child_environment = direct_environment(kind, environ)
   # This is the sole actual-helper execution. A failure is returned directly;
   # it is never replayed in a less restricted mode.
-  return run_supervised(argv, child_environment, 45, stdin_descriptor)
+  # One icon job resolves one source; a slow or hostile site must not hold
+  # the icon queue for long.
+  return run_supervised(argv, child_environment, 20 if kind == "icon" else 45, stdin_descriptor)
 
 
 def main(argv=None, environ=None):

@@ -7,7 +7,13 @@ the matching native coder (`png:-`), so a file cannot talk its way into an
 SVG, MSL or text coder. Every run carries memory, size and time limits, reads
 from stdin, and returns raw RGBA through PAM, which this module checks before
 using. PNGs are written here, with zlib.
+
+The bundled policy.xml is forced on through MAGICK_CONFIGURE_PATH, inside the
+sandbox (where the system policy is not even mounted) and out of it: every
+coder, delegate, filter and @file read is denied except the ones above, PAM,
+and librsvg for local SVG icons.
 """
+import os
 import struct
 import subprocess
 import zlib
@@ -26,7 +32,11 @@ LIMITS = [
   "-limit", "list-length", "64", "-limit", "time", str(TIMEOUT), "-limit", "thread", "1",
 ]
 
-ENVIRONMENT = {"PATH": "/usr/bin", "LANG": "C.UTF-8", "OMP_NUM_THREADS": "1", "MAGICK_OCL_DEVICE": "OFF"}
+MAX_FRAMES = 64
+POLICY_DIR = os.path.dirname(os.path.realpath(__file__))
+
+ENVIRONMENT = {"PATH": "/usr/bin", "LANG": "C.UTF-8", "OMP_NUM_THREADS": "1", "MAGICK_OCL_DEVICE": "OFF",
+               "MAGICK_CONFIGURE_PATH": POLICY_DIR}
 
 
 def sniff(data):
@@ -42,6 +52,13 @@ def sniff(data):
   if data.startswith(b"\x00\x00\x01\x00"):
     return "ICO"
   return None
+
+
+def ico_count(data):
+  """The number of images an ICO header claims."""
+  if len(data) < 6:
+    raise ValueError("truncated icon")
+  return struct.unpack_from("<H", data, 4)[0]
 
 
 def _magick(args, data):
@@ -63,8 +80,8 @@ def frames(data, fmt):
   for line in out.decode("ascii", "strict").splitlines():
     width, height = (int(part) for part in line.split())
     sizes.append((width, height))
-  if not sizes:
-    raise ValueError("no frames")
+  if not sizes or len(sizes) > MAX_FRAMES:
+    raise ValueError("no frames or too many")
   return sizes
 
 
@@ -101,6 +118,10 @@ def decode(data, formats, max_side, max_pixels, out_side):
   fmt = sniff(data)
   if fmt not in formats:
     raise ValueError("unsupported image")
+  # ImageMagick's list-length limit does not bound an ICO's directory; the
+  # header's own count does, before any decoder sees it.
+  if fmt == "ICO" and not 0 < ico_count(data) <= MAX_FRAMES:
+    raise ValueError("too many icon frames")
   sizes = frames(data, fmt)
   if fmt != "ICO" and len(sizes) != 1:
     raise ValueError("animated or multi-frame image")
@@ -109,8 +130,33 @@ def decode(data, formats, max_side, max_pixels, out_side):
       raise ValueError("image too large")
   frame = max(range(len(sizes)), key=lambda i: sizes[i][0] * sizes[i][1])
   source = "%s:-[%d]" % (FORMATS[fmt], frame)
-  return parse_pam(_magick([*LIMITS, source, "-thumbnail", "%dx%d>" % (out_side, out_side),
-                            *_rgba_args()], data))
+  return _bounded(parse_pam(_magick([*LIMITS, source, "-thumbnail", "%dx%d>" % (out_side, out_side),
+                                     *_rgba_args()], data)), out_side)
+
+
+def _bounded(image, out_side):
+  if max(image[0], image[1]) > out_side:
+    raise ValueError("unexpected decoder output")
+  return image
+
+
+def looks_like_svg(data):
+  head = bytes(data[:4096]).lstrip().lower()
+  return head.startswith((b"<?xml", b"<svg", b"<!--")) and b"<svg" in bytes(data[:65536]).lower()
+
+
+def rasterize_svg(data, out_side):
+  """Render a local SVG icon to (width, height, rgba).
+
+  Read from stdin through librsvg, which then has no base location to resolve
+  an external image, stylesheet or entity against, so a file the SVG names is
+  never loaded; the policy denies every other coder it could reach for.
+  """
+  if not looks_like_svg(data):
+    raise ValueError("not an svg")
+  return _bounded(parse_pam(_magick([*LIMITS, "-background", "none", "-density", "192", "rsvg:-",
+                                     "-thumbnail", "%dx%d>" % (out_side, out_side), *_rgba_args()],
+                                    data)), out_side)
 
 
 def resize(width, height, rgba, new_width, new_height):

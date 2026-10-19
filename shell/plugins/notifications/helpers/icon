@@ -22,6 +22,7 @@ import stat
 import sys
 import time
 import urllib.parse
+from html.parser import HTMLParser
 import notification_images as images
 from notification_http import fetch as get, parse_url, public_hostname
 from notification_files import private_dir, write_bytes, write_json, read_json
@@ -49,6 +50,7 @@ MANIFEST_BYTES = 256 * 1024
 REMOTE_ICON_BYTES = 1024 * 1024
 CACHED_ICON_BYTES = 256 * 1024
 MAX_ICON_LINKS = 16
+MAX_PAGE_LINKS = 256
 MAX_MANIFESTS = 2
 MAX_MANIFEST_ICONS = 16
 MAX_ICON_REQUESTS = 6
@@ -160,11 +162,14 @@ def normalise(path):
   file's dimensions but how much of them the mark actually fills. This trims
   each one to its own content, fits it into a common canvas with a margin,
   and rounds the corners of the ones that carry their own background."""
-  if path.lower().endswith(".svg"):
-    return path                        # left to Qt, which renders SVG well
   try:
-    width, height, rgba = images.decode(read_local_icon(path), LOCAL_FORMATS, 2048,
-                                        2048 * 2048, WORKING_SIDE)
+    data = read_local_icon(path)
+    # An SVG is rasterised here too, never handed to Qt as-is: Qt's SVG
+    # renderer would load any file an <image> in it names.
+    if path.lower().endswith(".svg"):
+      width, height, rgba = images.rasterize_svg(data, WORKING_SIDE)
+    else:
+      width, height, rgba = images.decode(data, LOCAL_FORMATS, 2048, 2048 * 2048, WORKING_SIDE)
   except (OSError, ValueError):
     # If it cannot be read here, Qt very likely cannot either - a favicon
     # served as HTML, an .ico in a variant nobody supports. Handing the path
@@ -317,15 +322,34 @@ def https_candidate(raw, base):
   return url
 
 
+class LinkTags(HTMLParser):
+  """Collects <link> attributes. The stdlib parser is linear in the page; a
+  regex over raw HTML backtracked quadratically on a page of unclosed tags."""
+
+  def __init__(self):
+    super().__init__(convert_charrefs=True)
+    self.links = []
+
+  def handle_starttag(self, tag, attrs):
+    if tag == "link" and len(self.links) < MAX_PAGE_LINKS:
+      self.links.append({key.lower(): value or "" for key, value in attrs if key})
+
+  handle_startendtag = handle_starttag
+
+
 def icon_links(html, base, scheme):
   """Every valid HTTPS icon the page offers, best first."""
   if not isinstance(html, str):
     return []
+  parser = LinkTags()
+  try:
+    parser.feed(html)
+    parser.close()
+  except Exception:
+    pass
   out, themed = [], []
-  for m in re.finditer(r"<link\s+([^>]+)>", html, re.I):
+  for attrs in parser.links:
     try:
-      attrs = {key.lower(): value for key, value in
-               re.findall(r'(\w[\w-]*)\s*=\s*["\']([^"\']*)["\']', m.group(1))}
       rel = (attrs.get("rel") or "").lower()
       url = https_candidate(attrs.get("href"), base)
       if not url:
