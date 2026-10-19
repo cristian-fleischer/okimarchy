@@ -271,7 +271,7 @@ function newCapacityScope() {
   s.handleNotification(n);
   s.drainCallLater();
   const key = s.keyForOriginal(1), first = s.liveKeys[key].senderImage;
-  const png = 'data:image/png;base64,iVBORw0KGgo=';
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB';
   n.replace({ summary: 'Replacement icon' });
   s.drainCallLater();
   const replacement = s.liveKeys[key].senderImage;
@@ -866,6 +866,33 @@ for (const u of ['https://example.com/', 'https://sub.example.co.uk/', 'https://
   assert.equal(Settings.snoozeSeconds('tomorrow', 0, new Date(2026, 9, 19, 23, 58).getTime()), 600,
                'tomorrow is never less than ten minutes away')
   assert.equal(Settings.snoozeSeconds('nope', 8, now), 0)
+}
+
+{ // The shell trusts helper output only in the exact shapes the helper writes.
+  const scope = { iconCacheDir: '/home/u/.local/state/omarchy/notifications/icons/', String, Number }
+  vm.createContext(scope)
+  vm.runInContext(extract(source, 'function trustedIconPath(text, exitCode)', '\n  Process {'), scope)
+  const ok = '/home/u/.local/state/omarchy/notifications/icons/norm-slack.png.png'
+  assert.equal(scope.trustedIconPath(ok + '\n', 0), ok)
+  assert.equal(scope.trustedIconPath(ok, 1), '', 'a failed helper answers nothing')
+  for (const bad of ['/home/u/.ssh/id_ed25519', '/home/u/.local/state/omarchy/notifications/icons/../../x.png',
+                     '/home/u/.local/state/omarchy/notifications/icons/norm-x.svg',
+                     '/home/u/.local/state/omarchy/notifications/icons/web-abc.png',
+                     '/home/u/.local/state/omarchy/notifications/icons/sub/norm-x.png',
+                     'file:///home/u/.local/state/omarchy/notifications/icons/norm-x.png', ok + 'x'.repeat(600)])
+    assert.equal(scope.trustedIconPath(bad, 0), '', bad)
+
+  const images = { liveKeys: { k: { senderImage: null } }, senderImageRevision: 0 }
+  vm.createContext(images)
+  vm.runInContext(extract(source, 'function finishSenderImage(job, image)', 'function pumpSenderImages()'), images)
+  const job = { key: 'k', image: '' }
+  images.liveKeys.k.senderImage = job
+  const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><image href="/etc/x.png"/></svg>').toString('base64')
+  images.finishSenderImage(job, 'data:image/png;base64,' + svg)
+  assert.equal(job.image, '', 'an SVG labelled as a PNG is refused')
+  const pngHeader = Buffer.from('\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01', 'latin1').toString('base64')
+  images.finishSenderImage(job, 'data:image/png;base64,' + pngHeader)
+  assert.ok(job.image.startsWith('data:image/png;base64,iVBORw0KGgo'), 'a PNG is accepted')
 }
 
 console.log('notification logic: passed')

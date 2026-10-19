@@ -771,30 +771,59 @@ Item {
     }
   }
 
+  // What the icon helper may hand back: a PNG it wrote into its own cache,
+  // and nothing else. Its output decides what an Image loads, so a confused
+  // or compromised helper must not be able to point the shell at another file.
+  readonly property string iconCacheDir: Quickshell.env("HOME") + "/.local/state/omarchy/notifications/icons/"
+  function trustedIconPath(text, exitCode) {
+    var path = String(text || "").trim()
+    if (exitCode !== 0 || path.length > 512 || path.indexOf(iconCacheDir) !== 0) return ""
+    return /^norm-[A-Za-z0-9._-]{1,200}\.png$/.test(path.slice(iconCacheDir.length)) ? path : ""
+  }
+
   Process {
     id: iconProc
     environment: service.helperEnvironment
     property var job: null
     property bool fetchAllowed: false
     property bool cancelled: false
+    // The answer needs both the output and the exit status, which arrive in
+    // either order. An exit whose output never finishes still answers, on the
+    // next tick, so the queue can never wait on it forever.
+    property string output: ""
+    property int exitCode: -1
+    property int pending: 0
     running: false
+    onRunningChanged: if (running) { output = ""; exitCode = -1; pending = 2 }
+    onExited: function(code, status) {
+      if (pending <= 0) return
+      exitCode = code
+      if (--pending === 0) finish()
+      else Qt.callLater(function() { if (iconProc.pending > 0) { iconProc.pending = 0; iconProc.finish() } })
+    }
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
-        var job = iconProc.job
-        var path = iconProc.cancelled ? "" : String(text || "").trim()
-        if (!iconProc.cancelled) {
-          service.iconCache[service.iconWanted] = path
-          if (path) service.applyIcon(service.iconWanted, path)
-        }
-        if (job && (iconProc.cancelled || (!iconProc.fetchAllowed && service.fetchIcons))) {
-          if (service.iconQueue.length < 100) service.iconQueue.unshift(job)
-        }
-        service.iconWanted = ""
-        iconProc.job = null
-        iconProc.cancelled = false
-        Qt.callLater(service.pumpIcons)
+        if (iconProc.pending <= 0) return
+        iconProc.output = String(text || "").slice(0, 1024)
+        if (--iconProc.pending === 0) iconProc.finish()
       }
+    }
+
+    function finish() {
+      var job = iconProc.job
+      var path = iconProc.cancelled ? "" : service.trustedIconPath(iconProc.output, iconProc.exitCode)
+      if (!iconProc.cancelled) {
+        service.iconCache[service.iconWanted] = path
+        if (path) service.applyIcon(service.iconWanted, path)
+      }
+      if (job && (iconProc.cancelled || (!iconProc.fetchAllowed && service.fetchIcons))) {
+        if (service.iconQueue.length < 100) service.iconQueue.unshift(job)
+      }
+      service.iconWanted = ""
+      iconProc.job = null
+      iconProc.cancelled = false
+      Qt.callLater(service.pumpIcons)
     }
   }
 
@@ -827,7 +856,11 @@ Item {
 
   function finishSenderImage(job, image) {
     if (!job || !liveKeys[job.key] || liveKeys[job.key].senderImage !== job) return
-    if (image.length > 131072 || !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(image)) return
+    // The helper re-encodes every image as a PNG; anything else it prints is
+    // refused, PNG signature and header chunk included, so Qt can only ever
+    // read this with its PNG decoder.
+    if (image.length > 131072 || image.indexOf("data:image/png;base64,iVBORw0KGgoAAAANSUhEUg") !== 0
+        || !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(image)) return
     job.image = image
     senderImageRevision += 1
   }
