@@ -111,6 +111,20 @@ def validated_bus_environment(environ):
   }, bus
 
 
+# Kernel interfaces, not files a sender could mean as a picture. They report
+# themselves as regular files (/proc/<pid>/environ is one, size 0), so they are
+# refused by where the opened file really is, wherever the path pointed.
+PSEUDO_FILESYSTEMS = ("/proc/", "/sys/", "/dev/")
+
+
+def opened_in_pseudo_filesystem(fd):
+  try:
+    real = os.readlink("/proc/self/fd/%d" % fd)
+  except OSError:
+    return True
+  return not real.startswith("/") or real.startswith(PSEUDO_FILESYSTEMS)
+
+
 def open_sender_image(stream):
   raw_path = stream.read(SENDER_PATH_BYTES + 1)
   if len(raw_path) > SENDER_PATH_BYTES:
@@ -122,7 +136,8 @@ def open_sender_image(stream):
   fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC)
   try:
     info = os.fstat(fd)
-    if not stat.S_ISREG(info.st_mode) or info.st_size > SENDER_IMAGE_BYTES:
+    if (not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= SENDER_IMAGE_BYTES
+            or opened_in_pseudo_filesystem(fd)):
       raise ValueError("invalid sender image source")
     return fd
   except BaseException:

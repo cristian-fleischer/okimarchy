@@ -124,11 +124,23 @@ class SenderImage(unittest.TestCase):
     invalid = self.inputs / "invalid.png"
     invalid.write_bytes(b"not an image")
 
+    empty = self.inputs / "empty.png"
+    empty.write_bytes(b"")
+
+    # Kernel interfaces report themselves as regular files; they are refused
+    # by where the opened file really is, even through a symlinked directory.
+    proc_link = self.inputs / "proc"
+    proc_link.symlink_to("/proc/self", target_is_directory=True)
+
     for label, path in (
         ("symlink", symlink),
         ("directory", directory),
         ("oversized", oversized),
         ("invalid", invalid),
+        ("empty", empty),
+        ("proc", Path("/proc/self/environ")),
+        ("proc through a symlinked directory", proc_link / "environ"),
+        ("sys", Path("/sys/kernel/mm/transparent_hugepage/enabled")),
     ):
       with self.subTest(case=label):
         result = self.run_sender(path)
