@@ -252,7 +252,7 @@ class FetchingAndDecodingAreApart(unittest.TestCase):
     runner = load_helper("run")
     calls = []
 
-    def supervised(argv, environ, timeout, stdin=None, capture=None, pass_fds=()):
+    def supervised(argv, environ, timeout, stdin=None, capture=None, pass_fds=(), deadline=None):
       calls.append((argv, pass_fds))
       inner = argv[argv.index("/usr/bin/python3"):]
       if "--download" in inner:
@@ -278,6 +278,105 @@ class FetchingAndDecodingAreApart(unittest.TestCase):
         self.assertIn("--seccomp", argv)
         self.assertEqual(len(fds), 1)
         self.assertFalse(any(word == "--bind" for word in argv), "the download sandbox writes nowhere")
+
+
+class SeccompProgram(unittest.TestCase):
+  """Evaluate the download sandbox's filter the way the kernel would."""
+
+  @staticmethod
+  def evaluate(program, arch, nr, arg0):
+    import struct
+    data = struct.pack("<iI", nr, arch) + struct.pack("<Q", 0) + struct.pack("<Q", arg0)
+    ops = [struct.unpack("=HBBI", program[i:i + 8]) for i in range(0, len(program), 8)]
+    pc, acc = 0, 0
+    while True:
+      code, jt, jf, k = ops[pc]
+      if code == 0x20:
+        acc = struct.unpack_from("<I", data, k)[0]
+        pc += 1
+      elif code in (0x15, 0x35):
+        hit = acc == k if code == 0x15 else acc >= k
+        pc += 1 + (jt if hit else jf)
+      elif code == 0x06:
+        return k
+      else:
+        raise AssertionError("unexpected opcode %#x" % code)
+
+  def test_each_architecture(self):
+    runner = load_helper("run")
+    allow, kill, refuse = 0x7FFF0000, 0x80000000, 0x0005000D
+    for machine, (arch, socket_nr) in runner.SECCOMP_ARCH.items():
+      with self.subTest(machine=machine), patch.object(runner.os, "uname",
+                                                      lambda m=machine: os.uname_result(("", "", "", "", m))):
+        program = runner.no_unix_sockets_filter()
+        run = lambda a, nr, arg0: self.evaluate(program, a, nr, arg0)
+        self.assertEqual(run(arch, socket_nr, 1), refuse, "AF_UNIX")
+        self.assertEqual(run(arch, socket_nr, 2), allow, "AF_INET")
+        self.assertEqual(run(arch, socket_nr, 10), allow, "AF_INET6")
+        self.assertEqual(run(arch, 63, 1), allow, "another syscall")
+        self.assertEqual(run(0x40000003, socket_nr, 2), kill, "a foreign ABI")
+        for nr in (0x40000000, 0x40000000 | 41, 0x40000000 | 0x200):
+          self.assertEqual(run(arch, nr, 2), kill, "x32 %#x" % nr)
+
+
+class PhaseProtocol(unittest.TestCase):
+  def setUp(self):
+    self.runner = load_helper("run")
+    self.calls = []
+
+  def run_job(self, lookup_output, args=None):
+    def supervised(argv, environ, timeout, stdin=None, capture=None, pass_fds=(), deadline=None):
+      self.calls.append((argv[argv.index("/usr/bin/python3"):], deadline))
+      inner = argv[argv.index("/usr/bin/python3"):]
+      if "--download" in inner:
+        return 0, b'{"blobs":[]}\n'
+      if "--fetched" in inner:
+        return 0, images.pack_nothing("none")
+      return 0, lookup_output
+
+    with tempfile.TemporaryDirectory() as temp, patch.object(self.runner, "STATE", Path(temp) / "state"), \
+            patch.object(self.runner, "PUBLISHED", Path(temp) / "out"), \
+            patch.object(self.runner, "mode_status", return_value=({"mode": "sandboxed"}, "/usr/bin/bwrap")), \
+            patch.object(self.runner, "run_supervised", supervised), patch.object(sys, "stdout", io.StringIO()):
+      try:
+        self.runner.run_helper("icon", args or ["--key=web:source.test", "--source=source.test", "--fetch"], False, {})
+      except ValueError:
+        pass
+    return [next((a for a in inner if a in ("--download", "--fetched")), "lookup") for inner, _ in self.calls]
+
+  def test_a_lookup_cannot_choose_another_site_to_download(self):
+    phases = self.run_job(images.pack_nothing("fetch:other.test", fetch="other.test"))
+    self.assertNotIn("--download", phases)
+    downloads = [inner for inner, _ in self.calls if "--download" in inner]
+    self.assertEqual(downloads, [])
+
+  def test_the_downloaded_site_is_the_source(self):
+    self.run_job(images.pack_nothing("fetch:source.test", fetch="SOURCE.test."))
+    downloads = [inner for inner, _ in self.calls if "--download" in inner]
+    self.assertEqual(len(downloads), 0, "a differently spelled host is still not the source")
+    self.calls.clear()
+    self.run_job(images.pack_nothing("fetch:source.test", fetch="source.test"))
+    downloads = [inner for inner, _ in self.calls if "--download" in inner]
+    self.assertEqual(len(downloads), 1)
+    self.assertIn("--source=source.test", downloads[0])
+
+  def test_a_fetch_request_with_anything_after_it_is_refused(self):
+    phases = self.run_job(images.pack_nothing("fetch:source.test", fetch="source.test") + b"extra")
+    self.assertNotIn("--download", phases)
+
+  def test_every_phase_shares_one_deadline(self):
+    self.run_job(images.pack_nothing("fetch:source.test", fetch="source.test"))
+    deadlines = {deadline for _, deadline in self.calls}
+    self.assertEqual(len(deadlines), 1)
+    self.assertIsNotNone(deadlines.pop())
+
+  def test_a_phase_stops_at_the_job_deadline_not_its_own_limit(self):
+    import time
+    started = time.monotonic()
+    with self.assertRaises(subprocess.TimeoutExpired):
+      self.runner.run_supervised(["/usr/bin/sleep", "30"], {"PATH": "/usr/bin"}, 20, None, 4096, (),
+                                 time.monotonic() + 1)
+    self.assertLess(time.monotonic() - started, 6)
 
 
 class SandboxEscapes(unittest.TestCase):

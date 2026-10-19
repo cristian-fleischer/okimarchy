@@ -301,31 +301,34 @@ def python_helper(kind, args, root=SANDBOX_ROOT):
 # The download sandbox shares the host network, and with it the host's abstract
 # Unix sockets, which no filesystem mount can hide. This seccomp filter, a
 # classic BPF program in the form bwrap --seccomp reads, refuses to create any
-# AF_UNIX socket there and kills a syscall from any other ABI, so the 32-bit and
-# x32 entry points cannot go around it. Loopback stays reachable because DNS
+# AF_UNIX socket there and kills a syscall from any other ABI, so the 32-bit
+# entry point cannot go around it, and any x32 syscall (numbers with bit 30
+# set, which x86_64 reports under its own arch) is killed outright. Loopback stays reachable because DNS
 # often lives there (127.0.0.53); the HTTP client refuses non-public addresses.
-SECCOMP_ARCH = {"x86_64": (0xC000003E, 41, 0x40000000 | 41), "aarch64": (0xC00000B7, 198, 198)}
+SECCOMP_ARCH = {"x86_64": (0xC000003E, 41), "aarch64": (0xC00000B7, 198)}
+X32_SYSCALL_BIT = 0x40000000
 
 
 def no_unix_sockets_filter():
   machine = os.uname().machine
   if machine not in SECCOMP_ARCH:
     raise RuntimeError("no seccomp filter for " + machine)
-  arch, socket_nr, socket_x32 = SECCOMP_ARCH[machine]
-  ld, jeq, ret = 0x20, 0x15, 0x06
+  arch, socket_nr = SECCOMP_ARCH[machine]
+  ld, jeq, jge, ret = 0x20, 0x15, 0x35, 0x06
   allow, kill, refuse = 0x7FFF0000, 0x80000000, 0x00050000 | 13   # EACCES
   program = [
       (ld, 0, 0, 4),                 # 0  seccomp_data.arch
       (jeq, 1, 0, arch),             # 1  native ABI -> 3
       (ret, 0, 0, kill),             # 2
       (ld, 0, 0, 0),                 # 3  seccomp_data.nr
-      (jeq, 2, 0, socket_nr),        # 4  socket() -> 7
-      (jeq, 1, 0, socket_x32),       # 5  x32 socket() -> 7
-      (ret, 0, 0, allow),            # 6
-      (ld, 0, 0, 16),                # 7  args[0], the domain (low word)
-      (jeq, 0, 1, 1),                # 8  AF_UNIX -> 9, else 10
-      (ret, 0, 0, refuse),           # 9
-      (ret, 0, 0, allow),            # 10
+      (jge, 0, 1, X32_SYSCALL_BIT),  # 4  x32 (no aarch64 number is this high) -> 5, else 6
+      (ret, 0, 0, kill),             # 5
+      (jeq, 1, 0, socket_nr),        # 6  socket() -> 8
+      (ret, 0, 0, allow),            # 7
+      (ld, 0, 0, 16),                # 8  args[0], the domain (low word)
+      (jeq, 0, 1, 1),                # 9  AF_UNIX -> 10, else 11
+      (ret, 0, 0, refuse),           # 10
+      (ret, 0, 0, allow),            # 11
   ]
   import struct
   return b"".join(struct.pack("=HBBI", *op) for op in program)
@@ -474,7 +477,7 @@ def collect_output(proc, limit, deadline):
       chunks.append(chunk)
 
 
-def run_supervised(argv, environ, timeout, stdin_descriptor=None, capture=None, pass_fds=()):
+def run_supervised(argv, environ, timeout, stdin_descriptor=None, capture=None, pass_fds=(), deadline=None):
   handled_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
   previous = {}
 
@@ -496,6 +499,9 @@ def run_supervised(argv, environ, timeout, stdin_descriptor=None, capture=None, 
                             stdout=subprocess.PIPE if capture else None, pass_fds=pass_fds)
     masked = False
     signal.pthread_sigmask(signal.SIG_SETMASK, old_mask)
+    if deadline is not None:
+      # Measured from now, after the spawn, against the caller's whole budget.
+      timeout = max(0.1, min(timeout, deadline - time.monotonic()))
     try:
       if not capture:
         return proc.wait(timeout=timeout)
@@ -579,19 +585,21 @@ def run_helper(kind, args, required, environ, stdin_descriptor=None):
     lookup = fields + ["--scheme", scheme] + (["--why"] if "--why" in flags else [])
 
   def icon(icon_args, stdin, limit):
-    remaining = deadline - time.monotonic()
-    if remaining <= 1:
-      raise subprocess.TimeoutExpired("icon", 0)
-    if icon_args[:1] != ["--download"]:
-      return run_supervised(sandbox_command("icon", icon_args, bwrap, environ), clean_environment(),
-                            min(20, remaining), stdin, limit)
-    seccomp = sealed_memfd("download-seccomp", no_unix_sockets_filter())
+    seccomp = None
     try:
-      os.set_inheritable(seccomp, True)
-      return run_supervised(sandbox_command("icon", icon_args, bwrap, environ, seccomp), clean_environment(),
-                            min(20, remaining), stdin, limit, (seccomp,))
+      if icon_args[:1] == ["--download"]:
+        seccomp = sealed_memfd("download-seccomp", no_unix_sockets_filter())
+        os.set_inheritable(seccomp, True)
+      command = sandbox_command("icon", icon_args, bwrap, environ, seccomp)
+      # Checked after setup, and the phase is bounded by the job's deadline
+      # from the moment it spawns, so setup time counts against the budget.
+      if deadline - time.monotonic() <= 1:
+        raise subprocess.TimeoutExpired("icon", 0)
+      return run_supervised(command, clean_environment(), 20, stdin, limit,
+                            (seccomp,) if seccomp is not None else (), deadline)
     finally:
-      os.close(seccomp)
+      if seccomp is not None:
+        os.close(seccomp)
 
   # The lookup runs without a network either way; with --fetch it says which
   # site it would need, and the launcher fetches that separately.
@@ -602,8 +610,12 @@ def run_helper(kind, args, required, environ, stdin_descriptor=None):
   host = "" if sender_image or "--fetch" not in flags else images.requested_fetch(output)
   if host:
     # Downloading and decoding never share a sandbox: the one with the
-    # network decodes nothing, and the decoder never has a network.
-    host = public_hostname(host) or ""
+    # network decodes nothing, and the decoder never has a network. The lookup
+    # only asks; the site downloaded is always the notification's own source,
+    # and only for a well-formed answer with nothing after it.
+    expected = public_hostname(lookup_source(fields)) or ""
+    images.unpack_pixels(output, 128)
+    host = expected if host == expected else ""
     blobs = b'{"blobs":[]}\n'
     if host:
       try:
@@ -625,6 +637,12 @@ def run_helper(kind, args, required, environ, stdin_descriptor=None):
 
 
 ICON_FIELDS = ("--key=", "--app=", "--app-icon=", "--source=")
+
+
+def lookup_source(fields):
+  """The source a lookup was asked about: its last --source=, as argparse reads it."""
+  sources = [field[len("--source="):] for field in fields if field.startswith("--source=")]
+  return sources[-1] if sources else ""
 
 
 def icon_lookup(args):
