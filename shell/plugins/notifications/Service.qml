@@ -1,11 +1,5 @@
-// Notification service for the omarchy shell.
-//
-// This file IS the notification daemon: Quickshell's NotificationServer owns
-// org.freedesktop.Notifications on the session bus. Notifications stack into
-// decks (one per source by default) in the top-right corner, can be snoozed
-// per source or all at once, carry copyable codes, links and the sender's own
-// actions, and are recorded on disk so history and held-back messages survive
-// a shell restart. docs/notifications.md describes the system around it.
+// The notification daemon: Quickshell's NotificationServer owns
+// org.freedesktop.Notifications. docs/notifications.md describes the system.
 //
 // The engine began as Omapager, Copyright (c) 2026 Neil Jagdish Patel, under
 // the MIT License (https://github.com/omacom/omapager).
@@ -41,17 +35,13 @@ Item {
 
   // ------------------------------------------------------------- settings
   //
-  // Preferences live in the `notifications` object of shell.json, beside
-  // `idle` and `bar`. Settings.resolve fills in every default, so nothing below
-  // ever reads a missing key.
+  // shell.json's `notifications` object; Settings.resolve fills every default.
   readonly property var preferences: Settings.resolve(shell && shell.shellConfig ? shell.shellConfig.notifications : null)
 
   function setSetting(key, value) {
-    if (!shell || typeof shell.mutateShellConfig !== "function") return
-    shell.mutateShellConfig(function(config) {
-      if (!Util.isPlainObject(config.notifications)) config.notifications = {}
-      config.notifications[key] = value
-    })
+    var values = {}
+    values[key] = value
+    setSettings(values)
   }
 
   function setSettings(values) {
@@ -81,15 +71,13 @@ Item {
   readonly property string fullscreenOverlay: preferences.fullscreenOverlay
   readonly property bool offerSnoozeWhenSharing: preferences.offerSnoozeWhenSharing
 
-  // A layout change moves every card, so it goes through the scene clock.
   // Deferred: the layout binding reads stacking, and retargeting from inside
   // that evaluation would be a binding loop.
   onStackingChanged: Qt.callLater(retarget)
   onFetchIconsChanged: setFetchRemoteIcons(fetchIcons)
   onFullscreenOverlayChanged: hyprRefresh.restart()
 
-  // An explicit codesBypassQuiet in shell.json is an instruction; without one,
-  // the panel's key toggle (persisted with the quiet state) decides.
+  // An explicit codesBypassQuiet in shell.json wins over the panel's persisted toggle.
   readonly property var configuredCodesBypassQuiet: preferences.codesBypassQuiet
   onConfiguredCodesBypassQuietChanged: {
     if (configuredCodesBypassQuiet !== null) setCodesBypassQuiet(configuredCodesBypassQuiet)
@@ -103,10 +91,9 @@ Item {
 
   // ------------------------------------------------------------- helpers
   //
-  // The store, icon and KDE Connect helpers run under Bubblewrap when it
-  // works, and directly as the user otherwise - unless requireSandbox says
-  // they must not. Nothing runs until the shell config has been read, so a
-  // saved requireSandbox can never be bypassed during startup.
+  // Helpers run under Bubblewrap when it works, else directly unless
+  // requireSandbox forbids it. Nothing runs until the shell config has been
+  // read, so a saved requireSandbox cannot be bypassed during startup.
   property bool helperSettingsReady: false
   readonly property var helperEnvironment: ({
     OMARCHY_NOTIFICATIONS_REQUIRE_SANDBOX: !helperSettingsReady || requireSandbox ? "1" : "0"
@@ -142,9 +129,7 @@ Item {
     onTriggered: sandboxProbe.running = true
   }
 
-  // Which variant of a site's icon to ask for. Derived from the theme's own
-  // notification background: on a light card, the icon meant for light
-  // backgrounds is the one that reads.
+  // Which variant of a site's icon to ask for, from the card background.
   readonly property bool lightTheme: {
     var c = Commons.Color.notifications.background
     return (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) > 0.5
@@ -152,9 +137,8 @@ Item {
 
   // ------------------------------------------------------------- displays
   //
-  // "active" follows focus for a new deck and then keeps it where it is while
-  // focus moves; "specific" pins one output and keeps the choice while it is
-  // unplugged; "all" mirrors the deck on every output.
+  // "active" places a new deck on the focused output and keeps it there;
+  // "specific" pins one output; "all" mirrors the deck on every output.
   property string deckDisplayName: ""
   readonly property var displayNames: Quickshell.screens.map(function(screen) { return screen.name })
   readonly property string focusedDisplayName: {
@@ -185,10 +169,8 @@ Item {
 
   // ------------------------------------------------------------- quiet
   //
-  // A verification code is the one thing quiet cannot afford to swallow: it was
-  // asked for a moment ago and expires in minutes. Codes are only detected from
-  // a keyword next to a plausible shape, so this is a narrow hole, and the
-  // panel's key button closes it.
+  // A verification code was asked for a moment ago and expires in minutes, so
+  // by default it gets through quiet. The panel's key button closes that hole.
   property bool codesBypassQuiet: true
   function setCodesBypassQuiet(value) {
     if (!!value === codesBypassQuiet) return
@@ -206,9 +188,7 @@ Item {
     saveQuiet()
   }
 
-  // Turning notifications back on undoes every reason they were off: being
-  // silenced and having snoozed everything are the same promise from where
-  // the switch sits.
+  // Undoes both silencing and snoozing everything.
   function letEverythingThrough() {
     setDoNotDisturb(false)
     unsnooze(globalKey)
@@ -218,10 +198,8 @@ Item {
 
   // ---------------------------------------------------- screen sharing
   //
-  // The Hyprland portal names its PipeWire video streams alike for monitors,
-  // windows and regions. Watch their lifetime rather than frame activity,
-  // which screenshots and VNC also produce. Sharing never changes delivery by
-  // itself: it only offers a timed snooze.
+  // Watch the portal's PipeWire stream lifetime rather than frame activity,
+  // which screenshots and VNC also produce. Sharing only offers a timed snooze.
   readonly property var sharingCandidates: {
     var nodes = Pipewire.nodes.values, out = []
     for (var i = 0; i < nodes.length && out.length < 64; i++)
@@ -263,8 +241,7 @@ Item {
   // ------------------------------------------------------------- the bar
   //
   // The deck hangs from the top-right corner, so it clears the bar only when
-  // the bar is on the top or the right edge, by the bar's thickness on that
-  // screen, and not at all while the bar is hidden.
+  // the bar is on the top or right edge and visible.
   readonly property var barRef: shell && shell.bar ? shell.bar : null
   readonly property string barPosition: barRef ? String(barRef.position || "top") : "top"
   readonly property bool barVertical: barPosition === "left" || barPosition === "right"
@@ -277,19 +254,13 @@ Item {
   // ---------------------------------------------------- fullscreen windows
   //
   // Hyprland refuses direct scanout while any overlay-layer surface exists on
-  // a monitor, whether or not it draws anything, so an idle notification
-  // canvas makes every fullscreen game composite each frame.
-  //   "off"        - keep the canvas mapped
-  //   "all"        - step aside under any fullscreen window; come back for a card
-  //   "steam"      - the same, only under Steam games (class steam_app_<id>)
-  //   "all-away"   - never cover a fullscreen window: cards go to another
-  //                  display, or wait in Recent if there is none
-  //   "steam-away" - the same, only for Steam games
+  // a monitor, so an idle canvas makes fullscreen games composite each frame.
+  // "all"/"steam" step aside under fullscreen (Steam) windows until a card
+  // arrives; the "-away" variants send cards to another display instead.
   readonly property string fullscreenScope: fullscreenOverlay.indexOf("steam") === 0 ? "steam"
     : fullscreenOverlay.indexOf("all") === 0 ? "all" : ""
   readonly property bool fullscreenAway: fullscreenScope !== "" && /-away$/.test(fullscreenOverlay)
-  // Bumped once Hyprland's window snapshot has been refreshed, so bindings that
-  // read it through fullscreenOn() re-evaluate.
+  // Bumped after Hyprland's window snapshot refreshes, so fullscreenOn() re-evaluates.
   property int hyprRevision: 0
 
   // Per output, for `probe`: is the canvas mapped, stepping aside, showing cards?
@@ -328,8 +299,6 @@ Item {
     return false
   }
 
-  function stepsAsideOn(screen) { return screen ? fullscreenOn(String(screen.name)) : false }
-
   function awayFrom(name) { return fullscreenAway && fullscreenOn(name) }
   function routeAround(name) {
     if (!awayFrom(name)) return name
@@ -350,8 +319,7 @@ Item {
       }
     }
   }
-  // A game going fullscreen emits a burst of events: refresh once, then let the
-  // IPC answer land before bindings look at it again.
+  // Debounce a fullscreen burst, then let the IPC answer land before re-reading.
   Timer {
     id: hyprRefresh
     interval: 100
@@ -378,11 +346,8 @@ Item {
 
   // ------------------------------------------------------------- snooze
   //
-  // Silencing one source instead of the whole desktop. The key is the row's
-  // group key: per site for anything arriving through a browser
-  // ("web:app.slack.com"), per app for everything else - which is what "snooze
-  // Slack" has to mean where Slack is a tab. A snoozed notification is still
-  // recorded, so the panel can show what the quiet held back.
+  // Keyed by the row's group key: per site for browser notifications
+  // ("web:app.slack.com"), per app otherwise. Snoozed notifications are still recorded.
   property var snoozes: ({})        // groupKey -> { until: epoch seconds, label, since }
   property int snoozeRevision: 0
 
@@ -446,12 +411,9 @@ Item {
   }
 
   readonly property int snoozeCount: { snoozeRevision; return liveSnoozes().length }
-  readonly property bool anySnooze: { snoozeRevision; return snoozeCount > 0 || globalSnoozeUntil > 0 }
+  readonly property bool anySnooze: snoozeCount > 0 || globalSnoozeUntil > 0
 
-  // `fromNow` re-snoozes rather than extends: "4 hours" from the panel means
-  // back in four hours, not four hours after whatever was already left.
-  // The longest a snooze may run: anything past a year is a mistake, and an
-  // infinite one would persist as a null that restores to something else.
+  // Past a year is a mistake, and an infinite snooze would persist as null.
   readonly property int maxSnoozeSeconds: 366 * 86400
 
   // Minutes from IPC: a finite positive number, capped, else the default.
@@ -461,20 +423,19 @@ Item {
     return Math.min(minutes, maxSnoozeSeconds / 60)
   }
 
+  // `fromNow` re-snoozes rather than extending what was already left.
   function snoozeSource(groupKey, label, seconds, fromNow) {
     var key = String(groupKey || "")
     seconds = Number(seconds)
     if (!key || !isFinite(seconds) || seconds <= 0) return 0
     seconds = Math.min(seconds, maxSnoozeSeconds)
-    // Snoozing everything supersedes silencing: it is the same quiet with an
-    // end on it, and the end is the point.
+    // Snoozing everything supersedes silencing: the same quiet, with an end.
     if (key === globalKey) setDoNotDisturb(false)
     var from = fromNow ? Date.now() / 1000
                        : Math.max(Date.now() / 1000, snoozedUntil(key))
     var next = {}
     for (var k in snoozes) next[k] = snoozes[k]
-    // `since` is when this quiet period began, so the panel lists only what
-    // this snooze held, not one you ended last week.
+    // When this quiet period began, so the panel lists only what it held.
     var since = (next[key] && snoozedUntil(key)) ? Number(next[key].since || 0)
                                                  : Date.now() / 1000
     next[key] = { until: from + seconds, label: String(label || key), since: since }
@@ -505,8 +466,7 @@ Item {
     saveQuiet()
   }
 
-  // Silencing outlives a shell restart: nothing on screen says the desktop is
-  // quiet, so a silence that lifts itself on a reload cannot be relied on.
+  // Persisted: nothing on screen says the desktop is quiet, so a reload must not lift it.
   function saveQuiet() {
     Store.write(storeProc, storeBin, "quiet-save",
                 { snoozes: snoozes, dnd: doNotDisturb, silencedSince: silencedSince,
@@ -532,8 +492,7 @@ Item {
 
   // ------------------------------------------------------------- recent
   //
-  // A session-only reading stack of what reached the screen. Text snapshots,
-  // never the live Notification objects or their actions.
+  // Session-only text snapshots of what reached the screen, never live objects.
   property var recentRows: []
   readonly property int recentLimit: 20
 
@@ -573,8 +532,7 @@ Item {
 
   // ------------------------------------------------------- what was held
   //
-  // Read on demand: the panel is the only thing that asks, and it asks when
-  // it opens.
+  // Read on demand when the panel opens.
   property var heldRows: []
   property int heldRevision: 0
   readonly property int heldLimit: 80
@@ -597,8 +555,7 @@ Item {
 
   // ---------------------------------------------------- notification history
   //
-  // The full log on disk, newest first, redacted the same way on the way in.
-  // The store caps it at 100 and trims it by historyHours.
+  // The redacted log on disk, newest first, capped and aged out by the store.
   property var historyRows: []
   property int historyRevision: 0
   readonly property int historyLimit: 100
@@ -643,9 +600,8 @@ Item {
     return out
   }
 
-  // Every source being kept quiet right now, with what it has held. Sources
-  // snoozed by name come first with their own wake time; after them, while
-  // everything is quiet, the ones that actually held something.
+  // Sources snoozed by name first, then (while everything is quiet) any other
+  // source that held something.
   function quietSources(limit) {
     snoozeRevision; heldRevision
     var rows = [], seen = {}
@@ -671,9 +627,8 @@ Item {
 
   // ------------------------------------------------------------- state
   //
-  // The live Notification objects stay in a plain JS map, never in the model:
-  // a QObject in a ListModel role becomes a dangling pointer the moment the
-  // server destroys it, and the next read of that role takes the shell down.
+  // Live Notification objects stay in a JS map, never the model: a QObject in a
+  // ListModel role dangles once the server destroys it and crashes the next read.
   property var refs: ({})
   property int refsRevision: 0
   property int keySeed: 0
@@ -682,13 +637,11 @@ Item {
     id: toasts
     onCountChanged: { if (count === 0) service.deckDisplayName = "" }
   }
-  readonly property int toastCount: toasts.count
 
   // ------------------------------------------------------ live capacity
   //
-  // One reservation follows each row through held, deferred and visible
-  // states. Callbacks keep the reservation identity, so closing a row cannot
-  // resurrect it even if its key is reused.
+  // One reservation per row across held, deferred and visible states. Callbacks
+  // compare reservation identity, so a closed row cannot come back on key reuse.
   readonly property int maxLiveNotifications: 100
   property var liveKeys: Object.create(null)
 
@@ -710,9 +663,7 @@ Item {
 
   // ------------------------------------------------------------- icons
   //
-  // Resolved once per source and remembered, so a chatty sender does not spawn
-  // a lookup per message. The answer is written onto every row from that
-  // source and persisted, so history and restarts keep it.
+  // Resolved once per source, written onto its rows and persisted.
   property var iconCache: ({})
   property var iconQueue: []
   property string iconWanted: ""
@@ -732,16 +683,14 @@ Item {
   }
 
   function wantIcon(row) {
-    // A file the sender handed over is an icon we can keep; a live
-    // image://qsimage handle dies with this shell, so a durable icon is
-    // resolved for those too and kept in reserve.
+    // A sender's file is kept; a live image:// handle dies with this shell, so
+    // a durable icon is resolved for those too.
     if (String(row.image || "").indexOf("image://") !== 0 && String(row.image || "")) return
     var key = String(row.groupKey || row.source || row.app || "")
     if (!key) return
     if (iconWanted === key) return
     if (iconCache[key] !== undefined) {
-      // Write it onto the row in hand as well as onto the model: this runs
-      // before the row is inserted, so applyIcon cannot see it yet.
+      // Also onto the row in hand: it is not in the model yet.
       if (iconCache[key]) {
         row.stored_image = iconCache[key]
         applyIcon(key, iconCache[key])
@@ -786,10 +735,8 @@ Item {
     }
   }
 
-  // What the icon helper may hand back: the path of a PNG the launcher built
-  // from decoded pixels and named by its digest, in a directory no sandboxed
-  // helper can write. Its output decides what an Image loads, so anything
-  // else, or anything from a helper that failed, is refused.
+  // The helper's output decides what an Image loads, so only a digest-named PNG
+  // in the launcher's cache dir (unwritable by sandboxed helpers) is accepted.
   readonly property string iconCacheDir: Quickshell.env("HOME") + "/.cache/omarchy/notification-icons/"
   readonly property int iconOutputLimit: 1024
   function trustedIconPath(text, exitCode) {
@@ -804,9 +751,7 @@ Item {
     property var job: null
     property bool fetchAllowed: false
     property bool cancelled: false
-    // Read in chunks and capped: a helper flooding its pipe is cut off rather
-    // than buffered. A Process delivers all of its output before it reports
-    // the exit, so the exit settles the job it belongs to.
+    // Capped: a helper flooding its pipe is cut off rather than buffered.
     property string output: ""
     property bool overflow: false
     running: false
@@ -840,9 +785,8 @@ Item {
     }
   }
 
-  // The launcher bounds every helper (20s for an icon, 5s to read a sender's
-  // file), so this never fires in practice. It is there so that nothing
-  // unforeseen can hold either image queue for good.
+  // The launcher already bounds each helper; this only stops anything
+  // unforeseen from holding an image queue for good.
   Timer {
     interval: 60000
     running: iconProc.running
@@ -854,9 +798,8 @@ Item {
     onTriggered: senderImageProc.running = false
   }
 
-  // Sender image files are decoded outside the shell, by the bounded icon
-  // helper. Jobs belong to one snapshot, not a source: a replacement must not
-  // inherit a late image.
+  // Sender image files are decoded outside the shell. Jobs belong to one
+  // snapshot, so a replacement cannot inherit a late image.
   property var senderImageQueue: []
   property int senderImageRevision: 0
 
@@ -883,9 +826,8 @@ Item {
 
   function finishSenderImage(job, image) {
     if (!job || !liveKeys[job.key] || liveKeys[job.key].senderImage !== job) return
-    // The helper re-encodes every image as a PNG; anything else it prints is
-    // refused, PNG signature and header chunk included, so Qt can only ever
-    // read this with its PNG decoder.
+    // Only a base64 PNG (signature and IHDR checked) passes, so Qt can only
+    // read it with its PNG decoder.
     if (image.length > 131072 || image.indexOf("data:image/png;base64,iVBORw0KGgoAAAANSUhEUg") !== 0
         || !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(image)) return
     job.image = image
@@ -944,9 +886,7 @@ Item {
 
   // ------------------------------------------------------------- the deck
   //
-  // Expansion is pointer containment, not a click, and it survives a short
-  // trip outside: crossing the gap between two cards should not slam the deck
-  // shut.
+  // Expansion follows the pointer, with a grace period for crossing gaps.
   property bool pointerIn: false
   property bool expanded: false
   property string openDeck: ""
@@ -966,13 +906,9 @@ Item {
     }
   }
 
-  // Notifications that arrived while the deck was held open. A card appearing
-  // under the pointer moves everything below it by one place, which is
-  // maddening part-way through reading.
+  // New cards wait while the deck is held open, so nothing moves mid-read.
   property var held: []
 
-  // Held only while the pointer is genuinely on the open deck, or while an
-  // answer is being typed into one of its cards.
   function holding() { return (pointerIn && expanded) || replyingKey !== "" }
 
   function releaseHeld() {
@@ -1006,8 +942,7 @@ Item {
   }
   function pointerLeft() { collapseGrace.restart() }
 
-  // A card's target height comes from its state, never from what it measures
-  // mid-animation, so the layout moves on events rather than frames.
+  // Fed target heights, never mid-animation ones, so layout moves on events.
   function noteHeight(key, h) {
     if (Math.abs((heights[key] || 0) - h) < 0.5) return
     commit(function() { service.heights[key] = h })
@@ -1015,11 +950,8 @@ Item {
 
   // ------------------------------------------------------- the scene clock
   //
-  // One clock for the whole deck. Every card's position, scale, opacity and
-  // height is a function of where the layout wants it, where it was when that
-  // last changed, and how far through the move we are. Cards animate nothing
-  // themselves: a Behavior per card restarts every time its binding is
-  // retargeted, which played only the start of each curve and then jumped.
+  // One clock for the whole deck: each card interpolates from `was` to its
+  // placement by t. A Behavior per card would restart on every retarget.
   readonly property var sceneCurve: [0.21, 1.02, 0.73, 1.0, 1.0, 1.0]
   readonly property int sceneDuration: Style.duration(320)
 
@@ -1049,9 +981,8 @@ Item {
   readonly property real deckHeight: t >= 1 ? layout.height
                                             : deckWas + (layout.height - deckWas) * t
 
-  // Where everything is at this instant. Taken *before* the change: the layout
-  // is a binding on it, so afterwards "where it was" and "where it is going"
-  // are the same number and nothing moves.
+  // Taken *before* a change: afterwards the layout binding already points at
+  // the new target, so "was" and "to" would match and nothing would move.
   function snapshot() {
     var snap = {}
     for (var key in placements)
@@ -1060,8 +991,7 @@ Item {
     return snap
   }
 
-  // Anything that moves the deck goes through here: snapshot, change, then
-  // one move for all of it from the same instant.
+  // Snapshot, change, then one move for everything from the same instant.
   function commit(change) {
     var snap = snapshot(), deckNow = deckHeight
     change()
@@ -1070,8 +1000,7 @@ Item {
 
   function retarget(seedKey, seed, snap, deckNow) {
     if (!snap) { snap = snapshot(); deckNow = deckHeight }
-    // A card that just arrived has nowhere to have been, so it is told: under
-    // the bar, transparent. It comes down in the same move as everything else.
+    // A new card has no previous place, so the caller seeds one.
     if (seedKey) snap[seedKey] = seed
     deckWas = deckNow
     was = snap
@@ -1083,26 +1012,20 @@ Item {
   // A leaving card fades exactly where it was while the others close over it.
   function restingPlace(key) {
     var prev = was[key]
-    // front: true so it keeps its text on the way out rather than blanking
-    // for a frame.
+    // front: true keeps its text on the way out instead of blanking a frame.
     return { y: prev ? prev.y : 0, scale: prev ? prev.scale : 1, opacity: 0,
              height: prev ? prev.height : 0, z: 2000, front: true,
              hidden: false, count: 1 }
   }
 
-  // A leaving row keeps its place in the model until the move that closes the
-  // gap has finished, so the fade and the gap are one motion.
+  // Leaving rows stay in the model until the gap has closed.
   function sceneSettled() {
     var keys = []
     for (var key in leaving) keys.push(key)
     if (!keys.length) return
     for (var i = 0; i < keys.length; i++) finishClose(keys[i], leaving[keys[i]])
-    var snap = {}
-    for (var k in placements)
-      snap[k] = { y: placements[k].y, scale: placements[k].scale,
-                  opacity: placements[k].opacity, height: placements[k].height }
-    was = snap
     t = 1
+    was = snapshot()
   }
 
   readonly property var layout: {
@@ -1132,8 +1055,7 @@ Item {
     return out
   }
 
-  // Our own identity for a notification. The sender's id is reused (that is
-  // what replaces_id is for), so it identifies a slot, not an event.
+  // Our own identity: the sender's id is reused by replaces_id.
   function nextKey() {
     var key
     do {
@@ -1167,8 +1089,7 @@ Item {
       return
     }
     liveKeys[key].originalId = notification.id || 0
-    // Without this the object is destroyed as soon as this handler returns,
-    // taking the actions and the image with it.
+    // Otherwise the object is destroyed when this handler returns.
     notification.tracked = true
 
     var row = Store.snapshot(notification, key, NotificationUrgency)
@@ -1183,8 +1104,7 @@ Item {
       try { previous.tracked = false } catch (e) {}
     }
 
-    // Silenced or snoozed still means recorded, unless nobody would ever look
-    // back at it. It goes straight to history without being on screen.
+    // Quiet still records it (unless ephemeral), straight to history.
     var muted = Delivery.quietReason(row, {
       doNotDisturb: doNotDisturb,
       globalSnoozed: globalSnoozeUntil > 0,
@@ -1208,9 +1128,7 @@ Item {
     wantIcon(row)
     lookForReply(row)
 
-    // An update to something on screen goes through either way: it changes a
-    // card in place rather than moving anything. Only a genuinely new card
-    // waits while the deck is held, keeping its reservation the whole time.
+    // Only a new card waits while the deck is held; an update changes a card in place.
     if (service.holding() && service.rowIndexFor(key) < 0) {
       var pending = liveKeys[key]
       pending.row = row
@@ -1320,9 +1238,7 @@ Item {
 
   // ------------------------------------------------------------- departure
   //
-  // Marking a row as leaving rather than removing it: it keeps its slot in the
-  // model until the move finishes, and the layout stops giving it room at
-  // once, so the gap closes while it fades.
+  // A leaving row keeps its model slot but no layout room, so the gap closes as it fades.
   property var leaving: ({})
 
   function closeToast(key, reason) {
@@ -1363,9 +1279,7 @@ Item {
     return keys.length
   }
 
-  // One stack's worth of clearAll: the deck the pointer has open, or else the
-  // one the newest card sits in. In "all" mode there is one deck, so this is
-  // everything.
+  // The deck the pointer has open, else the newest card's.
   function clearDeck(reason) {
     var decks = layout.decks
     if (decks.length === 0) return 0
@@ -1379,7 +1293,6 @@ Item {
   }
 
   function dismissNewest() {
-    // Departing rows stay in the model until the scene settles.
     for (var i = 0; i < toasts.count; i++) {
       var key = String(toasts.get(i).key)
       if (leaving[key]) continue
@@ -1414,24 +1327,25 @@ Item {
 
   function invokeAction(key, identifier) {
     if (typeof identifier !== "string" || identifier.length > Security.MAX_ACTION_ID) return
+    invokeSenderAction(key, identifier)
+    closeToast(key, "activated")
+  }
+
+  function invokeSenderAction(key, identifier) {
     var ref = refs[key]
-    if (ref && ref.actions) {
-      for (var i = 0; i < Math.min(ref.actions.length, Security.MAX_ACTIONS); i++) {
-        if (String(ref.actions[i].identifier) === identifier) {
-          try { ref.actions[i].invoke() } catch (e) {}
-          break
-        }
+    if (!ref || !ref.actions) return false
+    for (var i = 0; i < Math.min(ref.actions.length, Security.MAX_ACTIONS); i++) {
+      if (String(ref.actions[i].identifier) === identifier) {
+        try { ref.actions[i].invoke(); return true } catch (e) { return false }
       }
     }
-    closeToast(key, "activated")
+    return false
   }
 
   // ------------------------------------------------------- source routing
   //
-  // Which open window is already showing the thing that notified you. Omarchy
-  // web apps write their host into their class ("chrome-web.whatsapp.com__-
-  // Default"); a tab in an ordinary browser only says so in its title. So the
-  // class first, because it is exact, and the title second, cautiously.
+  // Which open window already shows the source: web apps carry their host in
+  // the class (exact); a browser tab only in its title (cautious).
 
   // Whole words only: "slack" must not match "slackline".
   function wordIn(text, word) {
@@ -1489,9 +1403,7 @@ Item {
     return out
   }
 
-  // The window owned by the process that sent the notification - the one
-  // identity that is never a guess. A terminal relaying a notification from
-  // something running inside it is the case this matters for.
+  // The sender process's own window: the one identity that is never a guess.
   function windowForPid(pid) {
     var want = Number(pid || 0)
     if (!want) return null
@@ -1522,9 +1434,7 @@ Item {
         if (windows[i].wmClass.toLowerCase().indexOf(name) >= 0) found.push(windows[i])
       if (found.length) return mostRecent(found)
 
-      // No class carries it, so the site is a tab in a browser that named
-      // itself after something else. Browsers only: "slack" in an editor's
-      // title is a filename, not a place to go.
+      // A browser tab, then. Browsers only: "slack" in an editor's title is a filename.
       if (!smartRaise) return null
       var brands = brandsOf(name)
       for (var b = 0; b < brands.length; b++) {
@@ -1539,9 +1449,8 @@ Item {
       return null
     }
 
-    // Not a host - a phone-forwarded notification says "WhatsApp", not
-    // "web.whatsapp.com". Match whole labels of each web app's host, and
-    // native app classes, never anything shorter than four characters.
+    // Not a host (a phone forward says "WhatsApp"): match whole web-app host
+    // labels and native classes, never shorter than four characters.
     var slug = name.replace(/[^a-z0-9]+/g, "")
     if (slug.length < 4) return null
     found = []
@@ -1577,17 +1486,7 @@ Item {
       return
     }
 
-    var ref = refs[key]
-    var handled = false
-    if (allowDefaultActionOnCardClick && ref && ref.actions) {
-      for (var i = 0; i < Math.min(ref.actions.length, Security.MAX_ACTIONS); i++) {
-        if (String(ref.actions[i].identifier) === "default") {
-          try { ref.actions[i].invoke(); handled = true } catch (e) {}
-          break
-        }
-      }
-    }
-
+    var handled = allowDefaultActionOnCardClick && invokeSenderAction(key, "default")
     if (!handled && row) {
       // Source first, link last: a Slack message quoting a link is still a
       // Slack notification, and that link has its own button.
@@ -1603,9 +1502,8 @@ Item {
 
   // ------------------------------------------------------------- replying
   //
-  // A message forwarded from the phone can be answered from here. KDE Connect
-  // keeps an object per phone notification on its own bus with a replyId and
-  // a sendReply method, and the helper matches our row to it by app and text.
+  // Phone notifications forwarded by KDE Connect can be answered; the helper
+  // matches our row to KDE Connect's object by app and text.
   property string replyingKey: ""
   property string replyError: ""
 
@@ -1709,25 +1607,22 @@ Item {
   // ------------------------------------------------------------- offers
   //
   // Acting on what Detect.js found in a card: copy the code, open the link.
-  // The card only offers what was actually found, and only on a click.
   Process { id: clipProc; running: false }
 
-  // A verification code is not clipboard history material: wl-copy's
-  // --sensitive keeps it out of Omarchy's clipboard capture, and it is cleared
-  // once it has had time to be used - only if it is still what is on the
-  // clipboard.
+  function runClip(args) {
+    clipProc.running = false
+    clipProc.command = args
+    clipProc.running = true
+  }
+
+  // A code is kept out of clipboard history (--sensitive) and cleared after a
+  // while, but only if it is still what is on the clipboard.
   property string secretHeld: ""
 
   function copyText(text, sensitive) {
     var value = String(text || "")
     if (!value || value.length > (sensitive ? 64 : 4096)) return
-    var args = ["wl-copy"]
-    if (sensitive) args.push("--sensitive")
-    args.push("--")
-    args.push(value)
-    clipProc.running = false
-    clipProc.command = args
-    clipProc.running = true
+    runClip(["wl-copy"].concat(sensitive ? ["--sensitive"] : [], ["--", value]))
     if (sensitive) { secretHeld = value; secretLife.restart() }
   }
 
@@ -1744,11 +1639,8 @@ Item {
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
-        if (String(text) === service.secretHeld && service.secretHeld) {
-          clipProc.running = false
-          clipProc.command = ["wl-copy", "--clear"]
-          clipProc.running = true
-        }
+        if (String(text) === service.secretHeld && service.secretHeld)
+          service.runClip(["wl-copy", "--clear"])
         service.secretHeld = ""
       }
     }
@@ -1756,24 +1648,16 @@ Item {
 
   function takeOffer(kind, value, key) {
     if (kind === "code") {
-      var index = rowIndexFor(String(key || ""))
-      if (index < 0 || String(toasts.get(index).codes).split(" ").indexOf(String(value)) < 0) return
+      var at = rowIndexFor(String(key || ""))
+      var codes = at >= 0 ? String(toasts.get(at).codes) : ""
+      if (at < 0 || codes.split(" ").indexOf(String(value)) < 0) return
       copyText(value, true)
+      // A copied code finishes its card unless it carried several, a moment
+      // after the press so the button's tick is seen.
+      if (codes.indexOf(" ") <= 0) codeTaken.keys = codeTaken.keys.concat([String(key)])
     }
     else if (kind === "phone") copyText(value, false)
     else Security.openExternalUrl(value)
-
-    // A copied code is a finished notification - unless it carried more than
-    // one. It goes a moment after the press, so the button's tick is seen.
-    if (kind === "code" && String(key || "")) {
-      var at = rowIndexFor(String(key))
-      var several = at >= 0 && String(toasts.get(at).codes || "").indexOf(" ") > 0
-      if (!several) {
-        var waiting = codeTaken.keys.slice()
-        waiting.push(String(key))
-        codeTaken.keys = waiting
-      }
-    }
   }
 
   Timer {
@@ -1852,8 +1736,7 @@ Item {
     }
   }
 
-  // Housekeeping, once, at startup: history past its age, and icons nothing
-  // has wanted for a long time.
+  // Startup housekeeping: aged history and long-unused icons.
   Process {
     id: tidyProc
     environment: service.helperEnvironment
@@ -1891,9 +1774,7 @@ Item {
 
   // ------------------------------------------------------------- history replay
   //
-  // Put the last few back on screen. They come back as restored rows - no live
-  // sender, a short grace rather than their original timeout - because the
-  // notification they came from is long gone.
+  // The last few come back as restored rows: no live sender, a short grace.
   readonly property int replayCount: 6
 
   Process {
@@ -1926,15 +1807,13 @@ Item {
 
   // ------------------------------------------------------------- the panel
   //
-  // The panel lives with the bar's notification indicator (one per monitor).
-  // Keybindings and IPC ask here, and the indicator on the focused monitor
-  // answers.
+  // The panel lives with the bar's indicator (one per monitor); requests go
+  // through here and the focused monitor's indicator answers.
   signal panelRequested(string action, string screenName)
   readonly property url panelUrl: Qt.resolvedUrl("NotificationPanel.qml")
 
-  // The panel that is open, wherever it was opened from. The indicator moves
-  // between the bar's active and inactive blocks as the quiet state changes,
-  // and those are separate instances, so only the service can always find it.
+  // Tracked here because the indicator moves between separate bar instances
+  // as the quiet state changes.
   property var openPanel: null
   function notePanel(panel, opened) {
     if (opened) {
@@ -1958,8 +1837,7 @@ Item {
 
   // ------------------------------------------------------------- IPC
   //
-  // Keybindings reach these handlers as Hyprland global shortcuts, run here
-  // exactly as the IPC call would run them, with no client to spawn.
+  // Keybindings run these handlers directly as global shortcuts, with no client to spawn.
   function runShortcut(method) {
     if (typeof ipcHandler[method] !== "function") return false
     ipcHandler[method]()
@@ -2128,8 +2006,7 @@ Item {
     function openSettings(): string { return service.requestPanel("settings") }
     function closePanel(): string { return service.requestPanel("close") }
 
-    // What the daemon thinks is true, for a script to check against what it
-    // can see.
+    // What the daemon thinks is true, for scripts to check.
     function probe(): string {
       return JSON.stringify({ toasts: toasts.count, fontScale: service.fontScale,
         doNotDisturb: service.doNotDisturb, expanded: service.expanded,
@@ -2146,19 +2023,14 @@ Item {
         fullscreenOverlay: service.fullscreenOverlay, surfaces: service.surfaceStates(),
         avoidedDisplays: service.displayNames.filter(function(n) { return service.awayFrom(n) }) })
     }
-
-    // Re-read Hyprland's window list now, for a test that cannot wait on events.
-    function refreshFullscreen(): string { hyprRefresh.restart(); return "ok" }
   }
 
   // ------------------------------------------------------------- surface
   //
-  // One fixed-width layer per output. The surface never resizes while cards
-  // enter or leave, so the compositor never scales a stale buffer; the mask
-  // keeps everything outside the deck click-through. It stays mapped while
-  // idle - a layer surface coming and going makes the compositor re-evaluate
-  // focus, which drags a scrolling layout's viewport - except under the
-  // fullscreen windows `fullscreenOverlay` steps aside for.
+  // One fixed-size layer per output, so the compositor never scales a stale
+  // buffer; the mask makes everything outside the deck click-through. It stays
+  // mapped while idle (remapping re-evaluates focus and drags a scrolling
+  // layout's viewport), except where `fullscreenOverlay` steps aside.
   Variants {
     id: surfaceVariants
     model: Quickshell.screens
@@ -2169,7 +2041,7 @@ Item {
       screen: modelData
       readonly property bool showingNotifications: service.showsOn(String(modelData.name))
       readonly property var margins: service.marginsFor(String(modelData.name))
-      readonly property bool stepAside: service.stepsAsideOn(modelData)
+      readonly property bool stepAside: service.fullscreenOn(String(modelData.name))
       readonly property bool hasSomethingToShow: showingNotifications
         && (toasts.count > 0 || service.replyingKey !== "")
       // Holds the canvas for the last card's exit animation.
@@ -2190,8 +2062,7 @@ Item {
                                    ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       exclusionMode: ExclusionMode.Ignore
 
-      // As wide as the deck and no wider, at a constant width so the buffer is
-      // allocated once; full height so the deck grows without a resize.
+      // Constant width and full height, so the buffer is allocated once.
       anchors { top: true; bottom: true; right: true }
       implicitWidth: clipper.width + Style.space(10)
 
@@ -2215,10 +2086,8 @@ Item {
           width: service.notificationWidth
           height: service.deckHeight
 
-          // One hover region for the whole deck, above the cards: moving
-          // between two cards would otherwise leave and re-enter, and the deck
-          // would flicker shut between them. It accepts no buttons, so clicks
-          // fall through to the card underneath.
+          // One hover region over the whole deck, so crossing between cards does
+          // not flicker it shut. It accepts no buttons; clicks reach the cards.
           MouseArea {
             id: hoverArea
             z: 5000
@@ -2228,8 +2097,7 @@ Item {
             acceptedButtons: Qt.NoButton
             propagateComposedEvents: true
 
-            // Which card the pointer is over, and where. The cards cannot see
-            // hover themselves under this region, so they are told.
+            // The cards cannot see hover under this region, so they are told.
             function hoverAt(x, y) {
               service.hoverX = x
               service.hoverY = y
@@ -2244,9 +2112,8 @@ Item {
               service.hoverKey = found
             }
 
-            // Cards move under a stationary pointer after a dismissal: look
-            // again once the move settles, or the next card keeps a stale
-            // hover and a second click invokes it instead of closing it.
+            // Cards move under a still pointer after a dismissal: re-hit-test
+            // once settled, or a second click invokes a stale card.
             Connections {
               target: sceneRun
               function onFinished() {
@@ -2317,8 +2184,6 @@ Item {
                         && (service.stacking !== "source" || service.openDeck === Layout.deckKeyFor(model, service.stacking))
               // Hover opens the body only when there is nothing else to open.
               sole: toasts.count === 1
-              // Nothing counts down while the deck is open or an answer is
-              // half typed into it.
               paused: service.expanded || service.replyingKey !== ""
 
               drawnHeight: service.at(model.key, "height")
