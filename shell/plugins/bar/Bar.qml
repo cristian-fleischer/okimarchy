@@ -155,6 +155,21 @@ Item {
   property real barDragScreenY: 0
   property real barDragOffsetX: 0
   property real barDragOffsetY: 0
+  // True once the drag has pulled far enough off the bar that letting go
+  // removes the widget instead of moving it. Its room closes meanwhile, as
+  // though it were gone already (fadeDragRoom).
+  property bool barDragRemoveArmed: false
+  // Pulling a widget this far past the bar arms its removal. Generous enough
+  // that overshooting a drop keeps reading as a move.
+  readonly property real barDragRemoveDistance: Style.spaceReal(48)
+  // A widget let go of past that, until its entry is written out of the
+  // layout once its poof has played: { key, region, id }.
+  property var barRemoval: null
+  property bool barPoofActive: false
+  property var barPoofScreen: null
+  property real barPoofX: 0
+  property real barPoofY: 0
+  property int barPoofSerial: 0
   property bool barMoveActive: false
   property string barMoveCandidate: ""
   property var barMoveWindow: null
@@ -510,10 +525,16 @@ Item {
     return targetWindow(slot.activeItem) || targetWindow(slot)
   }
 
+  function sameScreen(left, right) {
+    if (!left || !right) return false
+    if (left === right) return true
+    return !!left.name && !!right.name && left.name === right.name
+  }
+
   function sameWindow(left, right) {
     if (!left || !right) return false
     if (left === right) return true
-    return !!left.screen && !!right.screen && !!left.screen.name && !!right.screen.name && left.screen.name === right.screen.name
+    return sameScreen(left.screen, right.screen)
   }
 
   function targetTooltipHovered(target) {
@@ -538,6 +559,7 @@ Item {
     barDragRoom = null
     barDragExtent = 0
     barDragKeys = ""
+    barDragRemoveArmed = false
     barDragRegrab.stop()
     barSettle = null
     barSettleAnimation.stop()
@@ -1064,6 +1086,9 @@ Item {
   // length the section's layout gives it, which is whole pixels. Its panel
   // closes: placed when it opened, it wouldn't follow the widget anywhere.
   function beginBarDrag(sourceSlot, pressX, pressY) {
+    // A widget still poofing away is written out first, so the drag starts
+    // from the layout as it will be.
+    commitBarRemoval()
     var item = sourceSlot.activeItem
     if (item && item.opened === true && typeof item.close === "function") item.close()
     barDragWindow = targetWindow(sourceSlot.activeItem) || targetWindow(sourceSlot)
@@ -1143,12 +1168,13 @@ Item {
 
   // A frame of the room moving, at an even pace: a place hands over the
   // whole room in 120ms.
+  // Armed for removal, there is no target: every place gives its room up.
   function fadeDragRoom(seconds) {
     var duration = Style.duration(120)
     var step = duration > 0 ? seconds * 1000 / duration : 1
-    var target = dragShareKey(barDragRoom)
+    var target = barDragRemoveArmed ? "" : dragShareKey(barDragRoom)
     barDragShares = BarModel.fadeShares(barDragShares, target, step)
-    if (barDragShares[target] >= 1) roomFader.stop()
+    if (target ? barDragShares[target] >= 1 : Object.keys(barDragShares).length === 0) roomFader.stop()
   }
 
   FrameAnimation {
@@ -1285,6 +1311,94 @@ Item {
     } finally {
       widgetMemo.expected = null
     }
+  }
+
+  // How far past the bar the drag point sits, in screen coordinates: past
+  // the strip its screen's bar surface draws, thickness deep along its edge.
+  function moduleRemoveDistance(screenPoint) {
+    var screen = barDragScreen
+    if (!screen) return 0
+    var thickness = thicknessFor(screen)
+    var x = screenPoint.x
+    var y = screenPoint.y
+    if (vertical) {
+      if (position === "right") x -= Math.max(0, screen.width - thickness)
+      return BarModel.dragDistanceOutside({ x: x, y: y }, thickness, screen.height)
+    }
+    if (position === "bottom") y -= Math.max(0, screen.height - thickness)
+    return BarModel.dragDistanceOutside({ x: x, y: y }, screen.width, thickness)
+  }
+
+  // Arming closes the dragged widget's room, and disarming opens it again
+  // where a drop would land, as a move of the room does (moveDragRoom).
+  function setBarDragRemoveArmed(armed) {
+    if (barDragRemoveArmed === armed) return
+    barDragRemoveArmed = armed
+    fadeDragRoom(0)
+    roomFader.start()
+  }
+
+  // Lets go of a widget pulled off the bar. It vanishes in a poof where it
+  // was let go, its slot closing at once (ModuleSlot.removalPending), and
+  // its entry leaves the layout once the poof has played.
+  function removeBarDrag(sourceSlot) {
+    commitBarRemoval()
+    barRemoval = { key: sourceSlot.widgetKey, region: sourceSlot.region, id: entryId(sourceSlot.entry) }
+    // Up before the drag clears, so the ghost's surface never unmaps
+    // between the ghost and the poof.
+    playPoof()
+    clearBarDrag()
+    if (!barPoofActive) commitBarRemoval()
+  }
+
+  // Writes a removed widget out of the layout. Every other widget keeps its
+  // instance through the write (BarModel.layoutWidgets), as with a move.
+  function commitBarRemoval() {
+    var removal = barRemoval
+    barRemoval = null
+    if (!removal || !root.shell || typeof root.shell.mutateShellConfig !== "function") return
+    var expected = JSON.parse(JSON.stringify(layoutWidgets.sections))
+    var list = expected[removal.region] || []
+    var index = list.indexOf(removal.key)
+    if (index < 0) return
+    list.splice(index, 1)
+    widgetMemo.expected = expected
+    try {
+      root.shell.mutateShellConfig(function(config) {
+        BarModel.removeEntry(config, { region: removal.region, index: index, id: removal.id }, function(entry) { return Util.normalizeLayoutEntry(entry) })
+      })
+    } finally {
+      widgetMemo.expected = null
+    }
+  }
+
+  // Bursts at the live drag point, so it runs before clearBarDrag wipes it.
+  // With motion reduced there is nothing to play.
+  function playPoof() {
+    if (Style.duration(520) === 0) return
+    barPoofScreen = barDragScreen
+    barPoofX = barDragScreenX
+    barPoofY = barDragScreenY
+    barPoofSerial++
+    barPoofActive = true
+    poofTimer.restart()
+  }
+
+  // Outlives the poof's animation a little so its last frames aren't cut
+  // off by the ghost's surface unmapping, and only then writes the removal:
+  // persisting shell.json stalls the render loop for long enough to swallow
+  // a poof still playing.
+  Timer {
+    id: poofTimer
+    interval: Style.duration(520)
+    onTriggered: {
+      root.barPoofActive = false
+      root.commitBarRemoval()
+    }
+  }
+
+  function isPendingRemoval(key) {
+    return !!barRemoval && barRemoval.key === key
   }
 
   function moduleTargetClickable(target) {
@@ -1766,12 +1880,12 @@ Item {
     id: ghostWindow
 
     required property var ghostScreen
-    readonly property bool screenMatches: root.barDragScreen === ghostScreen ||
-      (root.barDragScreen && ghostScreen && root.barDragScreen.name && ghostScreen.name && root.barDragScreen.name === ghostScreen.name)
-    readonly property bool active: root.barDragSource && root.barDragScreen && screenMatches
+    readonly property bool active: !!root.barDragSource && root.sameScreen(root.barDragScreen, ghostScreen)
     readonly property var sourceItem: root.barDragSource ? root.barDragSource.activeItem : null
+    readonly property bool poofMatches: root.sameScreen(root.barPoofScreen, ghostScreen)
+    readonly property bool poofShown: root.barPoofActive && poofMatches
 
-    visible: active && sourceItem !== null
+    visible: (active && sourceItem !== null) || poofShown
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.namespace: "omarchy-bar-drag-ghost"
@@ -1792,11 +1906,18 @@ Item {
     // The widget at its size in the bar, outlined like the room it leaves
     // and the room it would land in (DragSpacer).
     Item {
-      visible: ghostWindow.visible
+      visible: ghostWindow.active && ghostWindow.sourceItem !== null
       x: Math.round(root.barDragScreenX - root.barDragOffsetX)
       y: Math.round(root.barDragScreenY - root.barDragOffsetY)
       width: root.barDragGhostWidth
       height: root.barDragGhostHeight
+      // Pulled past the removal threshold, the ghost shrinks and dims: let
+      // go now and the widget poofs away instead of moving.
+      scale: root.barDragRemoveArmed ? 0.82 : 1
+      opacity: root.barDragRemoveArmed ? 0.55 : 1
+
+      Behavior on scale { NumberAnimation { duration: Style.duration(140); easing.type: Easing.OutCubic } }
+      Behavior on opacity { NumberAnimation { duration: Style.duration(140); easing.type: Easing.OutCubic } }
 
       RoomOutline { opacity: root.transparent ? 0.45 : 0.94 }
 
@@ -1808,15 +1929,73 @@ Item {
         opacity: 0.84
       }
     }
+
+    // The puff of smoke a removed widget vanishes in: a ring of soft dots
+    // drifting outward and fading around a collapsing center puff.
+    Item {
+      id: poofBurst
+
+      property real progress: 1
+
+      visible: ghostWindow.poofShown
+      x: Math.round(root.barPoofX)
+      y: Math.round(root.barPoofY)
+
+      Connections {
+        target: root
+        function onBarPoofSerialChanged() {
+          if (ghostWindow.poofMatches) poofAnimation.restart()
+        }
+      }
+
+      NumberAnimation {
+        id: poofAnimation
+        target: poofBurst
+        property: "progress"
+        from: 0
+        to: 1
+        duration: Style.duration(460)
+        easing.type: Easing.OutCubic
+      }
+
+      Rectangle {
+        readonly property real puffSize: Style.spaceReal(9) * (1.2 - poofBurst.progress * 0.6)
+
+        width: puffSize
+        height: puffSize
+        radius: puffSize / 2
+        x: -puffSize / 2
+        y: -puffSize / 2
+        color: root.barForeground
+        opacity: (1 - poofBurst.progress) * 0.7
+      }
+
+      Repeater {
+        model: 8
+
+        Rectangle {
+          required property int index
+          readonly property real angle: Math.PI * 2 * index / 8
+          readonly property real drift: Style.spaceReal(5) + Style.spaceReal(15) * poofBurst.progress
+          readonly property real puffSize: Style.spaceReal(4 + index % 3 * 2) * (0.6 + poofBurst.progress * 0.9)
+
+          width: puffSize
+          height: puffSize
+          radius: puffSize / 2
+          x: Math.cos(angle) * drift - puffSize / 2
+          y: Math.sin(angle) * drift - puffSize / 2
+          color: root.barForeground
+          opacity: (1 - poofBurst.progress) * 0.85
+        }
+      }
+    }
   }
 
   component BarMoveGhostPanel: PanelWindow {
     id: moveGhostWindow
 
     required property var ghostScreen
-    readonly property bool screenMatches: root.barMoveScreen === ghostScreen ||
-      (root.barMoveScreen && ghostScreen && root.barMoveScreen.name && ghostScreen.name && root.barMoveScreen.name === ghostScreen.name)
-    visible: root.barMoveActive && screenMatches
+    visible: root.barMoveActive && root.sameScreen(root.barMoveScreen, ghostScreen)
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.namespace: "omarchy-bar-move-ghost"
@@ -2462,6 +2641,10 @@ Item {
     readonly property var activeItem: host ? host.activeItem : null
     readonly property bool hovered: moduleHover.hovered
     readonly property bool dragSource: root.barDragSource === slot
+    // A widget let go of past the removal threshold leaves the bar the
+    // moment its poof starts, though its entry stays in the layout until
+    // the poof has played.
+    readonly property bool removalPending: root.isPendingRemoval(widgetKey)
     readonly property bool panelOpen: root.activePopout === slot.activeItem
     // Modules bigger than the mark they want (a text label in a padded slot,
     // a multi-line stack on a vertical bar) can say how long the open-panel
@@ -2522,7 +2705,7 @@ Item {
     readonly property real widgetHeight: host ? host.widgetHeight : 0
     // Its length along the bar. The dragged widget keeps its place's share
     // of the room: all of it until the room moves away.
-    readonly property real alongLength: dragSource
+    readonly property real alongLength: removalPending ? 0 : dragSource
       ? (root.barDragLengths[root.barDragHome] || 0)
       : (root.vertical ? widgetHeight : widgetWidth)
 
@@ -2563,7 +2746,7 @@ Item {
 
       width: root.vertical ? slot.widgetWidth : slot.alongLength
       height: root.vertical ? slot.alongLength : slot.widgetHeight
-      clip: slot.dragSource
+      clip: slot.dragSource || slot.removalPending
 
       RoomOutline { visible: slot.dragSource }
 
@@ -2699,6 +2882,7 @@ Item {
           var drop = root.moduleDropAtScene(scenePoint, slot)
           root.barDragTarget = drop
           root.moveDragRoom(drop)
+          root.setBarDragRemoveArmed(!drop && root.moduleRemoveDistance(screenPoint) >= root.barDragRemoveDistance)
         }
       }
 
@@ -2709,7 +2893,8 @@ Item {
 
         if (wasDragging) {
           suppressClick = true
-          if (root.barDragSource === slot) root.settleBarDrag(slot)
+          if (root.barDragSource === slot && root.barDragRemoveArmed) root.removeBarDrag(slot)
+          else if (root.barDragSource === slot) root.settleBarDrag(slot)
           mouse.accepted = true
         } else {
           root.clearBarDrag()

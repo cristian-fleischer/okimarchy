@@ -351,6 +351,59 @@ const aliasConfig = { bar: { layout: { left: ['clock', 'b'] } } }
 assertEqual(bar.moveEntry(aliasConfig, { from: { region: 'left', index: 0, id: 'omarchy.clock' }, to: { region: 'left', index: -1 } }, entry => entry === 'clock' ? { id: 'omarchy.clock' } : entry), true, 'an entry is matched by the id the bar knows it by')
 assertDeepEqual(aliasConfig.bar.layout.left, ['b', 'clock'], 'and moved as it is written')
 
+// A widget dragged off the bar leaves just its own entry, found as a move
+// finds it.
+let removeConfig = moveLayout()
+assertEqual(bar.removeEntry(removeConfig, { region: 'left', index: 2, id: 'b' }), true, 'a widget dragged off the bar leaves the layout')
+assertDeepEqual(moved(removeConfig), { left: ['a', 'bx', 'c'], right: ['d'] }, 'the second of two entries with one id goes when it is the one dragged off')
+removeConfig = moveLayout()
+assertEqual(bar.removeEntry(removeConfig, { region: 'left', index: 0, id: 'b' }), false, 'a layout that changed since the drag started is left alone')
+assertEqual(bar.removeEntry(removeConfig, { region: 'centerEnd', index: 0, id: 'b' }), false, 'a removal from a section the config lacks changes nothing')
+assertEqual(bar.removeEntry(removeConfig, { region: 'left', index: 9, id: 'b' }), false, 'a removal past the end of the section changes nothing')
+assertDeepEqual(moved(removeConfig), moved(moveLayout()), 'a removal that does not apply leaves the layout as it was')
+const strayRemoval = { bar: { layout: { left: [42, 'a', {}, 'b', 'c'] } } }
+assertEqual(bar.removeEntry(strayRemoval, { region: 'left', index: 1, id: 'b' }), true, 'a removal counts by the bar\'s indexes past entries it leaves out')
+assertDeepEqual(strayRemoval.bar.layout.left, [42, 'a', {}, 'c'], 'and leaves the entries it left out alone')
+
+// Removal arms only once the drag is well clear of the bar strip.
+assertEqual(bar.dragDistanceOutside({ x: 400, y: 12 }, 1000, 26), 0, 'a drag along the bar is no distance off it')
+assertEqual(bar.dragDistanceOutside({ x: 0, y: 26 }, 1000, 26), 0, 'the strip\'s own edge still counts as on the bar')
+assertEqual(bar.dragDistanceOutside({ x: 400, y: 86 }, 1000, 26), 60, 'a drag below a top bar is measured from the strip\'s inner edge')
+assertEqual(bar.dragDistanceOutside({ x: 1030, y: 66 }, 1000, 26), 50, 'a drag off a corner is the straight-line distance past it')
+assertEqual(bar.dragDistanceOutside({ x: -20, y: 12 }, 1000, 26), 20, 'a drag off the end of the bar counts too')
+assertEqual(bar.dragDistanceOutside({ x: NaN, y: 12 }, 1000, 26), 0, 'a point with no position is no distance off')
+
+assert(
+  /root\.setBarDragRemoveArmed\(!drop && root\.moduleRemoveDistance\(screenPoint\) >= root\.barDragRemoveDistance\)/.test(barSource),
+  'removal arms only with no drop in reach and the drag well past the bar'
+)
+assert(
+  /if \(root\.barDragSource === slot && root\.barDragRemoveArmed\) root\.removeBarDrag\(slot\)\s*\n\s*else if \(root\.barDragSource === slot\) root\.settleBarDrag\(slot\)/.test(barSource),
+  'an armed release removes the widget, and any other drag settles where it lands'
+)
+// The poof goes up before the drag clears, so the ghost's surface never
+// unmaps between the ghost and the poof, and the write waits for the poof:
+// persisting shell.json stalls the render loop long enough to swallow it.
+const removeBarDragBody = barSource.match(/function removeBarDrag\(sourceSlot\) \{([\s\S]*?)\n  \}/)[1]
+assert(
+  removeBarDragBody.indexOf('playPoof()') !== -1 && removeBarDragBody.indexOf('playPoof()') < removeBarDragBody.indexOf('clearBarDrag()'),
+  'the poof starts before the drag state clears'
+)
+assert(
+  /if \(!barPoofActive\) commitBarRemoval\(\)/.test(removeBarDragBody) &&
+    /id: poofTimer[\s\S]*?onTriggered: \{[\s\S]*?root\.commitBarRemoval\(\)/.test(barSource),
+  'the removal is written once the poof has played, or at once with nothing to play'
+)
+assert(
+  /readonly property bool removalPending: root\.isPendingRemoval\(widgetKey\)/.test(barSource) &&
+    /readonly property real alongLength: removalPending \? 0 :/.test(barSource),
+  'a removed widget leaves the bar the moment it poofs, ahead of the layout write'
+)
+assert(
+  /function beginBarDrag\(sourceSlot, pressX, pressY\) \{[\s\S]*?commitBarRemoval\(\)/.test(barSource),
+  'a new drag writes any removal still poofing first, so it starts from the layout as it will be'
+)
+
 // Horizontal bar: indicators in centerBegin, the clock alone in the center box
 // at 340-400, weather in centerEnd, the menu far off in the left section.
 const menuSlot = { id: 'menu' }
