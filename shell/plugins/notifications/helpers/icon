@@ -1,17 +1,14 @@
 #!/usr/bin/python3
 # icon - work out what picture belongs to a notification.
 #
-#   run icon --key web:app.slack.com --app "Google Chrome" \
-#                 --app-icon google-chrome --source app.slack.com \
-#            --scheme dark [--fetch]
+#   run icon --key=web:app.slack.com --app="Google Chrome" \
+#            --app-icon=google-chrome --source=app.slack.com --scheme dark [--fetch]
 #   run icon --sender-image      (an image path on stdin; prints a data: URL)
 #
-# Prints a path, or nothing. The order is deliberate: anything you have put
-# there yourself wins, then anything already installed on the machine, and only
-# then the site itself - which is the one step that touches the network, and so
-# the one step that has to be asked for.
+# Prints pixels for the launcher, which publishes the PNG. Your own icons win,
+# then installed ones, and only then the site itself: the one step that
+# touches the network, and so the one that has to be asked for.
 import argparse
-import base64
 import glob
 import hashlib
 import json
@@ -43,7 +40,6 @@ APP_DIRS = [
 ]
 EXTS = (".png", ".svg", ".jpg", ".jpeg", ".webp", ".ico")
 
-
 NORM = 128          # every icon ends up this size, however it arrived
 PAGE_BYTES = 512 * 1024
 MANIFEST_BYTES = 256 * 1024
@@ -56,24 +52,17 @@ MAX_MANIFEST_ICONS = 16
 MAX_ICON_REQUESTS = 6
 MAX_REMOTE_SIDE = 2048
 MAX_REMOTE_PIXELS = MAX_REMOTE_SIDE * MAX_REMOTE_SIDE
-REMOTE_FORMATS = ("PNG", "JPEG", "WEBP", "ICO")
-SENDER_IMAGE_DATA_URL_CHARS = 131072
-
-
+RASTER_FORMATS = tuple(images.FORMATS)  # never SVG from a site or a sender
 LOCAL_ICON_BYTES = 4 * 1024 * 1024
-LOCAL_FORMATS = ("PNG", "JPEG", "WEBP", "ICO")
 WORKING_SIDE = 512                     # local icons are trimmed at this size
+# The best icon and one fallback: few requests to the site, and still an icon
+# when its first choice turns out not to decode.
+MAX_DOWNLOADS = 2
 
 
 def is_mono_glyph(width, height, rgba, opaque):
-  """Is this a one-colour mark on nothing?
-
-  KDE Connect's Messages icon is a black speech bubble on transparency. On a
-  dark card it is a black shape on a black background - technically present,
-  practically invisible, and the same in reverse for a white glyph on a light
-  theme. A mark like that carries no colour information worth keeping, so it
-  can be redrawn in the theme's text colour and always read. A mark that has
-  its own backdrop, or any real colour in it, is left alone."""
+  """Is this a one-colour mark on nothing, to be redrawn in the theme's text
+  colour? (KDE Connect's black speech bubble vanishes on a dark card.)"""
   if opaque:
     return False                       # it brought its own background
   spread = 0
@@ -96,13 +85,8 @@ def is_mono_glyph(width, height, rgba, opaque):
   mean = sum(lums) / float(n)
   variance = sum((l - mean) ** 2 for l in lums) / float(n)
   coverage = n / float(32 * 32)
-  # One colour means one colour: low saturation is not enough on its own.
-  # X's mark is a white glyph on a black square - no hue anywhere, an average
-  # luminance down in the dark end, and repainting it in the theme colour
-  # turned the whole logo into a filled square. What separates that from a
-  # genuine one-tone glyph is spread of *brightness*, and how much of the
-  # canvas is covered: a mark with its own filled backdrop covers nearly all
-  # of it, a bare glyph does not.
+  # Low saturation is not enough: X's white glyph on a black square has no
+  # hue either. Brightness spread and canvas coverage tell them apart.
   return (spread < 26
           and variance < 1600                # ~40 luminance levels of spread
           and coverage < 0.82
@@ -145,39 +129,24 @@ def round_corners(width, height, rgba, radius):
   return bytes(pixels)
 
 
-def read_local_icon(path):
-  with open(path, "rb") as source:
-    data = source.read(LOCAL_ICON_BYTES + 1)
-  if len(data) > LOCAL_ICON_BYTES:
-    raise ValueError("oversized icon")
-  return data
-
-
 def normalise(path):
-  """Render an icon to one consistent shape: (rgba, mono) on a NORM square.
-
-  Icons arrive in three habits: a full-bleed opaque square (Linear), a
-  transparent glyph with no padding (Slack), a circle (Spotify). Drawn at the
-  same box they read as three different sizes, because what varies is not the
-  file's dimensions but how much of them the mark actually fills. This trims
-  each one to its own content, fits it into a common canvas with a margin,
-  and rounds the corners of the ones that carry their own background."""
+  """Render an icon to (rgba, mono) on a NORM square: trimmed to its own
+  content, fitted with a margin, and rounded if it carries its own backdrop,
+  so a full-bleed square, a bare glyph and a circle read as one size."""
   try:
-    data = read_local_icon(path)
-    # Chosen by what the bytes are, never by the file's name: a raster
-    # signature goes to its own coder, anything else only to librsvg, and only
-    # if it reads as SVG. An SVG is rasterised here too, never handed to Qt
-    # as-is: Qt's SVG renderer would load any file an <image> in it names.
-    if images.sniff(data) in LOCAL_FORMATS:
-      width, height, rgba = images.decode(data, LOCAL_FORMATS, 2048, 2048 * 2048, WORKING_SIDE)
+    with open(path, "rb") as source:
+      data = source.read(LOCAL_ICON_BYTES + 1)
+    if len(data) > LOCAL_ICON_BYTES:
+      raise ValueError("oversized icon")
+    # Chosen by the bytes, never the name: a raster signature goes to its own
+    # coder, anything else only to librsvg. No SVG ever reaches Qt, whose
+    # renderer would load any file an <image> in it names.
+    if images.sniff(data) in RASTER_FORMATS:
+      width, height, rgba = images.decode(data, RASTER_FORMATS, 2048, 2048 * 2048, WORKING_SIDE)
     else:
       width, height, rgba = images.rasterize_svg(data, WORKING_SIDE)
   except (OSError, ValueError):
-    # If it cannot be read here, Qt very likely cannot either - a favicon
-    # served as HTML, an .ico in a variant nobody supports. Handing the path
-    # over anyway produced a card with a broken-image box and a stream of
-    # decoding errors in the log. Better to have no icon.
-    return None
+    return None                          # unreadable: better no icon than a broken one
   if width < 8 or height < 8:
     return None
 
@@ -185,11 +154,8 @@ def normalise(path):
   opaque = min(rgba[3::4]) > 250         # no transparency: it has a backdrop
   mono = is_mono_glyph(width, height, rgba, opaque)
 
-  # A mark with its own background keeps more of the canvas and gets rounded
-  # corners; a bare glyph is inset a little further so it does not out-weigh
-  # the boxed ones sitting above and below it. Scaled up as well as down: a
-  # 32px favicon left at 32px came out a quarter the size of the icon next to
-  # it.
+  # A boxed mark keeps more of the canvas; a bare glyph is inset further so it
+  # does not out-weigh it. Scaled up as well as down.
   fill = 0.94 if opaque else 0.82
   side = int(NORM * fill)
   scale = side / float(max(width, height))
@@ -208,9 +174,7 @@ def normalise(path):
     start = ((top + y) * NORM + left) * 4
     canvas[start:start + width * 4] = rgba[y * width * 4:(y + 1) * width * 4]
 
-  # The finding travels with the pixels: a monochrome glyph is drawn in the
-  # theme's own text colour, and the drawing happens in QML, which cannot look
-  # at pixels. The launcher marks the file it publishes.
+  # QML cannot look at pixels, so the mono finding travels with them.
   return bytes(canvas), mono
 
 
@@ -233,16 +197,12 @@ def from_config(names):
 def from_icon_theme(names):
   """Whatever the machine already has for this name."""
   for name in names:
-    # The name as given, then the slugged form. Icon files are not all
-    # lowercase - "LimineSnapperSync.png" is on this machine - and a glob
-    # on a case-sensitive filesystem does not care what the spec says
-    # names ought to look like.
+    # The name as given (icon files are not all lowercase), then slugged.
     for n in [str(name or "").strip(), slug(name)]:
       if not re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9_.-]{0,255}", n):
         continue
       for base in ICON_DIRS:
-        # Biggest first: these get drawn at 38px, and downscaling
-        # beats up.
+        # Biggest first: downscaling beats up.
         for pattern in ("%s/hicolor/512x512/apps/%s.*", "%s/hicolor/256x256/apps/%s.*",
                         "%s/hicolor/128x128/apps/%s.*", "%s/hicolor/scalable/apps/%s.*",
                         "%s/hicolor/64x64/apps/%s.*", "%s/*/*/apps/%s.*", "%s/%s.*"):
@@ -253,10 +213,8 @@ def from_icon_theme(names):
 
 
 def from_desktop_entries(names):
-  """A .desktop file that answers to this name, and the icon it declares.
-
-  This is what catches "app.slack.com" -> the installed Slack: the entry's
-  name, its window class or its exec line all mention slack."""
+  """The icon of a .desktop entry whose name, window class or exec line
+  answers to one of these names."""
   wanted = [slug(n) for n in names if slug(n)]
   if not wanted:
     return None
@@ -292,17 +250,9 @@ def from_desktop_entries(names):
 
 
 # ---------------------------------------------------------------- 3. the site
-# Names that are a description rather than a brand. Guessing a domain from one
-# of these lands on whoever happened to register the generic word: "Messages"
-# found messages.dev and came back wearing a stranger's logo, which is worse
-# than the letter M. A phone's built-in apps are all called things like this.
 def load_index():
   value = read_json(INDEX)
   return value if isinstance(value, dict) else {}
-
-
-def save_index(data):
-  write_json(INDEX, data)
 
 
 def https_candidate(raw, base):
@@ -344,26 +294,21 @@ def icon_links(html, base, scheme):
     pass
   out, themed = [], []
   for attrs in parser.links:
-    try:
-      rel = (attrs.get("rel") or "").lower()
-      url = https_candidate(attrs.get("href"), base)
-      if not url:
-        continue
-      media = (attrs.get("media") or "").lower()
-      if "apple-touch-icon" in rel:
-        (themed if scheme in media else out).append((0, url))
-      elif "icon" in rel and "mask" not in rel:
-        size = attrs.get("sizes", "")
-        rank = 1
-        try:
-          rank = -int(size.split("x", 1)[0])
-        except (TypeError, ValueError):
-          pass
-        (themed if scheme in media else out).append((rank, url))
-      elif rel == "manifest":
-        out.append((50, ("manifest", url)))
-    except (TypeError, ValueError):
+    rel = attrs.get("rel", "").lower()
+    url = https_candidate(attrs.get("href"), base)
+    if not url:
       continue
+    bucket = themed if scheme in attrs.get("media", "").lower() else out
+    if "apple-touch-icon" in rel:
+      bucket.append((0, url))
+    elif "icon" in rel and "mask" not in rel:
+      try:
+        rank = -int(attrs.get("sizes", "").split("x", 1)[0])
+      except ValueError:
+        rank = 1
+      bucket.append((rank, url))
+    elif rel == "manifest":
+      out.append((50, ("manifest", url)))
     if len(themed) + len(out) >= MAX_ICON_LINKS:
       break
   ordered = ([url for _, url in sorted(themed, key=lambda item: item[0])]
@@ -399,39 +344,21 @@ def from_manifest(url, base):
   return result
 
 
-def normalised_remote_png(data):
-  """A fully decoded, re-encoded PNG of a fetched or sender-supplied image."""
+def remote_pixels(data):
+  """(width, height, rgba) of a fetched or sender-supplied image, fully decoded."""
   if not isinstance(data, bytes) or len(data) > REMOTE_ICON_BYTES:
     raise ValueError("oversized image")
-  width, height, rgba = images.decode(data, REMOTE_FORMATS, MAX_REMOTE_SIDE,
-                                      MAX_REMOTE_PIXELS, NORM)
-  if width < 8 or height < 8:
-    raise ValueError("image too small")
-  return images.encode_png(width, height, rgba)
-
-
-def sender_image_pixels(stream):
-  """Decode one bounded image stream to (width, height, rgba), never naming it."""
-  data = stream.read(REMOTE_ICON_BYTES + 1)
-  if len(data) > REMOTE_ICON_BYTES:
-    raise ValueError("oversized image")
-  width, height, rgba = images.decode(data, REMOTE_FORMATS, MAX_REMOTE_SIDE, MAX_REMOTE_PIXELS, NORM)
+  width, height, rgba = images.decode(data, RASTER_FORMATS, MAX_REMOTE_SIDE, MAX_REMOTE_PIXELS, NORM)
   if width < 8 or height < 8:
     raise ValueError("image too small")
   return width, height, rgba
 
 
-# The best icon and one fallback: few requests to the site, and still an icon
-# when its first choice turns out not to decode.
-MAX_DOWNLOADS = 2
-
-
 def download_candidates(host, scheme):
   """The raw bytes of up to MAX_DOWNLOADS of a site's own icons, best first.
 
-  Network only: this runs in a sandbox that can reach the internet and decodes
-  nothing. A body is kept only when its signature names a format the decoder
-  takes; deciding whether it really is one happens later, without a network."""
+  Runs in the networked sandbox and decodes nothing: a body is kept only when
+  its signature names a decoder format, and is decoded later without a network."""
   host = public_hostname(host)
   if not host or scheme not in ("dark", "light"):
     return []
@@ -465,7 +392,7 @@ def download_candidates(host, scheme):
       data, _ = get(url, REMOTE_ICON_BYTES)
     except Exception:
       continue
-    if len(data) <= REMOTE_ICON_BYTES and images.sniff(data) in REMOTE_FORMATS:
+    if len(data) <= REMOTE_ICON_BYTES and images.sniff(data) in RASTER_FORMATS:
       found.append(bytes(data))
   return found
 
@@ -478,19 +405,13 @@ def store_fetched(host, scheme, blobs):
     return None
   for data in blobs[:MAX_DOWNLOADS]:
     try:
-      png = normalised_remote_png(data)
+      png = images.encode_png(*remote_pixels(data))
       dest = remote_cache_path(host, scheme)
       write_bytes(dest, png)
     except Exception:
       continue
     return dest
   return None
-
-
-def fetch_site(host, scheme):
-  """Download and store in one process. Only tests use this: the launcher runs
-  the two halves in separate sandboxes, so the decoder never has a network."""
-  return store_fetched(host, scheme, download_candidates(host, scheme))
 
 
 def pack_blobs(blobs):
@@ -524,37 +445,29 @@ class NeedFetch(Exception):
 
 
 def remote_cache_path(host, scheme):
-  """Where a validated fetch_site(host, scheme) result would live."""
+  """Where a validated fetch for this host and theme is cached."""
   return os.path.join(CACHE, "web-" + hashlib.sha256((host + scheme).encode()).hexdigest() + ".png")
 
 
 def safe_cached_remote_icon(host, scheme, cached):
-  """Return a fully decoded normalized cache entry for this host and theme."""
+  """The cache entry for this host and theme, if it is exactly the PNG a fetch writes."""
   if not isinstance(cached, str):
     return None
   expected = os.path.abspath(remote_cache_path(host, scheme))
   if os.path.abspath(cached) != expected:
     return None
-  flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
   try:
-    fd = os.open(expected, flags)
-    try:
+    fd = os.open(expected, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    with os.fdopen(fd, "rb") as source:
       info = os.fstat(fd)
       if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
               or info.st_nlink != 1 or not 0 < info.st_size <= CACHED_ICON_BYTES):
         return None
       os.set_blocking(fd, True)
-      data = bytearray()
-      while len(data) <= CACHED_ICON_BYTES:
-        block = os.read(fd, min(16384, CACHED_ICON_BYTES + 1 - len(data)))
-        if not block:
-          break
-        data.extend(block)
-    finally:
-      os.close(fd)
+      data = source.read(CACHED_ICON_BYTES + 1)
     if len(data) > CACHED_ICON_BYTES:
       return None
-    images.decode(bytes(data), ("PNG",), NORM, NORM * NORM, NORM)
+    images.decode(data, ("PNG",), NORM, NORM * NORM, NORM)
   except Exception:
     return None
   return expected
@@ -600,28 +513,20 @@ def resolve(args, fetcher=None):
   web = host_names(args.source)
   app = [n for n in [args.app_icon, args.source, args.app] if n]
 
-  # Anything you dropped in the config directory wins outright.
   hit = from_config(web + app + ([args.key] if args.key else []))
   if hit:
     return hit, "from_config"
 
-  # For a web notification, the site comes first and the browser last: the
-  # other way round hands Slack, Gmail and Calendar three identical Chromes.
-  # Only an exact icon-theme name is trusted here - matching .desktop entries
-  # on a domain label is how "mail.google.com" ends up wearing the icon for
-  # Google Contacts.
+  # For a web notification the site comes first and the browser last, and only
+  # an exact icon-theme name: a .desktop match on a domain label is how
+  # mail.google.com ends up wearing Google Contacts.
   if web:
     hit = from_icon_theme(web)
     if hit:
       return hit, "from_icon_theme:web"
 
-  # The name the sender itself passed, if this machine has it. This has to
-  # come before any guessing at websites: a sender that says `-i kitty` or
-  # `-i LimineSnapperSync` has told us exactly what it wants, and the machine
-  # either has that icon or it does not - there is nothing to guess about.
-  # Not for a web notification, though: every one of those is `-i
-  # google-chrome`, and the browser showing the page is the one thing the
-  # icon must not be. The site wins there.
+  # The icon the sender named, if this machine has it - but not for a web
+  # notification, whose hint is always the browser.
   if args.app_icon and not web:
     hit = from_icon_theme([args.app_icon])
     if hit:
@@ -642,11 +547,9 @@ def resolve(args, fetcher=None):
       note.pop(args.scheme, None)
       note["failed_at"] = 0
       index[host] = note
-      save_index(index)
+      write_json(INDEX, index)
 
-    # This is the network boundary: every cache check above is local, and
-    # no metadata, favicon, DNS, proxy, cookie jar, or credential lookup is
-    # attempted unless the caller supplied --fetch.
+    # The network boundary: nothing past local caches without --fetch.
     if args.fetch:
       failed_at = note.get("failed_at", 0)
       if type(failed_at) not in (int, float) or not math.isfinite(failed_at):
@@ -659,7 +562,7 @@ def resolve(args, fetcher=None):
         if hit:
           note[args.scheme] = hit
         index[host] = note
-        save_index(index)
+        write_json(INDEX, index)
         if hit:
           return hit, "fetched:" + host
 
@@ -683,9 +586,8 @@ def main(argv=None):
   ap.add_argument("--fetch", action="store_true")
   ap.add_argument("--why", action="store_true", help="print where it came from")
   ap.add_argument("--sender-image", action="store_true")
-  # The two halves of a fetch, run by the launcher in separate sandboxes:
-  # --download has the network and decodes nothing; --fetched decodes what
-  # it downloaded, from stdin, and has no network.
+  # A fetch's two halves, in separate sandboxes: --download has the network and
+  # decodes nothing; --fetched decodes those bytes from stdin, with no network.
   ap.add_argument("--download", action="store_true")
   ap.add_argument("--fetched", action="store_true")
   args = ap.parse_args(argv)
@@ -698,13 +600,13 @@ def main(argv=None):
     if argv != ["--sender-image"]:
       return 2
     try:
-      width, height, rgba = sender_image_pixels(sys.stdin.buffer)
+      width, height, rgba = remote_pixels(sys.stdin.buffer.read(REMOTE_ICON_BYTES + 1))
     except Exception:
       return 1
     sys.stdout.buffer.write(images.pack_pixels(width, height, rgba))
     return 0
-  for field in ("key", "app", "app_icon", "source"):
-    if len(getattr(args, field)) > 256: return 2
+  if any(len(getattr(args, field)) > 256 for field in ("key", "app", "app_icon", "source")):
+    return 2
   private_dir(CACHE)
   fetcher = None
   if args.fetched:
@@ -716,13 +618,11 @@ def main(argv=None):
     wanted = public_hostname(args.source)
     fetcher = lambda host, scheme: store_fetched(host, scheme, blobs) if host == wanted else None
   try:
-    path, how = resolve(args, fetcher if args.fetch else None)
+    path, how = resolve(args, fetcher)
   except NeedFetch as need:
     sys.stdout.buffer.write(images.pack_nothing("fetch:" + need.host, fetch=need.host))
     return 0
   found = normalise(path) if path else None
-  # Pixels, not a path: the launcher outside the sandbox writes the PNG the
-  # shell will load, somewhere no helper can write.
   if found:
     sys.stdout.buffer.write(images.pack_pixels(NORM, NORM, found[0], found[1], how))
   else:

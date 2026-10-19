@@ -14,18 +14,14 @@
 #   held [N]         print the newest N that were never shown, newest first
 #   forget-all       empty the history
 #
-# Everything lives in ~/.local/state/omarchy/notifications/. It is state, not cache:
-# what you were told should survive a `rm -rf ~/.cache`. History is a log to
-# read back, not a queue to work through. Keeping it as one file per
-# notification means a half-written entry costs one notification instead of the
-# lot, and the daemon can be killed at any point without needing a save step.
+# State, not cache, in ~/.local/state/omarchy/notifications/: one file per
+# notification, so a half-written entry costs one row and the shell can be
+# killed at any point without a save step.
 #
-# The previous notification service used the same directory with a different
-# layout: popups as <ms>-<id>.json in the root, history/<ms>-<id>.json rows
-# without a `key`, and copied sender images under images/. A migration clears
-# them, but the old shell keeps running until the update restarts it and can
-# write one more row. Rows without this store's shape are dropped on sight and
-# never surfaced; root-level files are never read; tidy removes the rest.
+# The previous notification service shared the directory (root-level
+# <ms>-<id>.json popups, keyless history rows, images/), and the old shell can
+# write one more row before an update restarts it. Rows without this store's
+# shape are dropped on sight and never surfaced; tidy removes the rest.
 import json
 import os
 import re
@@ -41,20 +37,12 @@ LIVE = os.path.join(ROOT, "live")
 HISTORY = os.path.join(ROOT, "history")
 ICONS = os.path.join(ROOT, "icons")
 QUIET = os.path.join(ROOT, "quiet.json")
-LEGACY_IMAGES = os.path.join(ROOT, "images")
 LEGACY_POPUP = re.compile(r"[0-9]+-.+\.json")
-# What history is for: replaying the last few onto the screen, and showing what
-# a snooze or a silence held back. Both want the recent past, neither wants a
-# fortnight of it - and every entry is the text of a message somebody sent you,
-# so keeping it past its usefulness is a cost with nothing on the other side.
-# Whichever of the two limits bites first wins.
+# Every entry is somebody's message, so history keeps only the recent past:
+# whichever of the count and the retention hours bites first.
 HISTORY_MAX = 100
-HISTORY_HOURS = 24
-
-# Resolved icons are keyed by source and cost a lookup - sometimes a web
-# request - to rebuild, so they outlive the notifications that prompted them,
-# but not forever. Anything nothing has wanted for this long is a source you no
-# longer have, and it resolves again by itself if you turn out to still have it.
+RETENTION_HOURS = (0, 1, 24, 168)
+# Resolved icons outlive their notifications, but not a source gone this long.
 ICON_DAYS = 60
 
 
@@ -91,11 +79,8 @@ def safe(name):
 
 
 def belongs(directory, name, entry):
-  """Is this file a row this store wrote, under the name it would use?
-
-  Every row carries a string `key`, and the file is named after it: KEY.json
-  in live/, <13-digit ms>-KEY.json in history/. The previous service's rows
-  have no key and are dropped rather than shown as blank notifications."""
+  """Is this a row this store wrote, under its own key: KEY.json in live/,
+  <13-digit ms>-KEY.json in history/?"""
   if not isinstance(entry, dict):
     return False
   key = entry.get("key")
@@ -106,9 +91,8 @@ def belongs(directory, name, entry):
   return re.fullmatch(r"[0-9]{13}-" + re.escape(key) + r"\.json", name) is not None
 
 
-# Keep the raw-helper/legacy check independent of caller-supplied code flags,
-# but use Detect.js's vocabulary, windows and shapes. Product names and years
-# are ordinary notification text; migrating them must not destroy history.
+# Independent of the caller's code flags, but with Detect.js's vocabulary,
+# windows and shapes. Product names and years are ordinary text.
 CODE_KEYWORD = re.compile(
     r"\b(code|otp|one[\s-]?time|verification|verify|passcode|pin|2fa|"
     r"two[\s-]factor|security key|confirm(?:ation)?)\b", re.IGNORECASE | re.ASCII)
@@ -150,15 +134,14 @@ def looks_like_a_code(text):
 
 
 def sanitise(entry):
-  # Independently defend raw helper callers and legacy state migrations.
+  """Only known scalar fields survive, and a row that looks like a code is
+  redacted whole. Rich text, actions, images and reply handles never persist."""
   allowed = {"key", "originalId", "senderPid", "app", "appIcon", "summary",
              "body", "rawBody", "bodyLine", "source", "groupKey", "urgency",
              "expireTimeout", "duration", "ts", "closed_ts", "closed_reason",
              "glyph", "execArgv"}
-  # Scan the same bounded summary/rawBody/body fields as Store's redaction,
-  # not metadata: keys/groupKey and app names can contain unrelated numbers
-  # or product keywords. This independent detector strips raw tags before
-  # decoding; unlike a display preview, it need not preserve literal markup.
+  # The text fields Store.js redacts, not metadata (keys and app names carry
+  # unrelated numbers), with tags stripped before entities are decoded.
   text = " ".join(entry.get(k, "")[:limit] if isinstance(entry.get(k), str) else ""
                   for k, limit in (("summary", MAX_SUMMARY), ("rawBody", MAX_BODY),
                                    ("body", MAX_BODY)))[:MAX_BODY]
@@ -175,7 +158,6 @@ def sanitise(entry):
   if secret:
     out = {k: v for k, v in out.items() if not isinstance(v, str) or k == "key"}
     out.update(summary="Verification notification", body="[redacted]", rawBody="[redacted]", bodyLine="[redacted]")
-  # Rich text, actions, image paths and reply handles are reconstructed or dropped.
   return out
 
 
@@ -192,11 +174,8 @@ def valid_glyph(value):
 
 
 def valid_exec_argv(value):
-  """The omarchy-exec-argv hint: a JSON argv a restored toast clicks through.
-
-  Persisted so a toast restored after a shell restart acts like the live
-  one, which makes it a stored command line: it has to be the shape the
-  shell would run, not whatever a row on disk happens to hold."""
+  """The omarchy-exec-argv hint: a stored command line a restored toast runs,
+  so it must be the shape the shell would run."""
   if not isinstance(value, str) or len(value) > EXEC_TOTAL_CHARS * 2:
     return False
   try:
@@ -215,14 +194,12 @@ def retention():
   if not isinstance(settings, dict):
     settings = {}
   hours = settings.get("historyHours", 24)
-  return hours if hours in (0, 1, 24, 168) else 24
+  return hours if hours in RETENTION_HOURS else 24
 
 
 def cmd_put():
   entry = sanitise(input_json(sys.stdin))
   key = safe(entry.get("key"))
-  if not key:
-    return 1
   write_json(os.path.join(LIVE, key + ".json"), entry)
   # Floods and interrupted close queues cannot grow the live directory forever.
   names = sorted(n for n in os.listdir(LIVE) if n.endswith(".json"))
@@ -260,8 +237,7 @@ def cmd_drop(key):
 
 
 def trim_history():
-  """Names start with the closing timestamp, so sorting is chronological and
-  the age test never has to open a file."""
+  """Names start with the closing time, so the age test never opens a file."""
   files = sorted(f for f in os.listdir(HISTORY) if f.endswith(".json"))
   cutoff = (time.time() - retention() * 3600) * 1000
   doomed = set(files[:-HISTORY_MAX]) if len(files) > HISTORY_MAX else set()
@@ -280,7 +256,6 @@ def trim_history():
 
 
 def trim_icons():
-  """Resolved icons live under icons/, written by the icon helper."""
   cutoff = time.time() - ICON_DAYS * 86400
   dropped = 0
   for name in os.listdir(ICONS):
@@ -295,10 +270,7 @@ def trim_icons():
 
 
 def trim_legacy():
-  """The previous notification service's popups and copied images.
-
-  Unlinked, never followed: a symlink planted where images/ was goes, and
-  whatever it pointed at stays."""
+  """The previous service's popups and images/, unlinked and never followed."""
   dropped = 0
   for name in os.listdir(ROOT):
     path = os.path.join(ROOT, name)
@@ -323,39 +295,22 @@ def cmd_tidy():
   return 0
 
 
-def listing(directory, limit=None, newest_first=False):
-  files = sorted(f for f in os.listdir(directory) if f.endswith(".json"))
-  if newest_first:
-    files.reverse()
-  files = files[:max(0, min(100, limit if limit is not None else 100))]
-  out = []
-  for name in files:
-    entry = read_json(os.path.join(directory, name))
-    # ensure() already dropped foreign rows; this catches one written
-    # since, by a previous-generation shell still running.
-    if belongs(directory, name, entry):
-      out.append(entry)
-  return out
-
-
-# What was kept from you, as opposed to what you saw and dealt with. The
-# distinction is the closing reason, recorded for every entry: only these two
-# mean "this never reached the screen".
+# The closing reasons that mean "this never reached the screen".
 HELD_REASONS = ("snoozed", "silenced")
 
 
-def cmd_held(limit):
+def listing(directory, limit=100, newest_first=False, held=False):
   out = []
-  for name in sorted(os.listdir(HISTORY), reverse=True):
+  for name in sorted(os.listdir(directory), reverse=newest_first):
+    if len(out) >= min(100, limit):
+      break
     if not name.endswith(".json"):
       continue
-    entry = read_json(os.path.join(HISTORY, name))
-    if belongs(HISTORY, name, entry) and entry.get("closed_reason") in HELD_REASONS:
+    entry = read_json(os.path.join(directory, name))
+    # Rechecked: a previous-generation shell may have written a row since ensure().
+    if belongs(directory, name, entry) and (not held or entry.get("closed_reason") in HELD_REASONS):
       out.append(entry)
-      if len(out) >= limit:
-        break
-  json.dump(out, sys.stdout, separators=(",", ":"))
-  return 0
+  return out
 
 
 def cmd_forget_all():
@@ -367,21 +322,9 @@ def cmd_forget_all():
   return 0
 
 
-def cmd_quiet_save():
-  """Every decision to not be interrupted, in one file: which sources are
-  snoozed and until when, and whether the desktop is silenced. A handful of
-  entries that change only when someone asks for quiet, so there is nothing
-  to gain from tracking them separately."""
-  value = input_json(sys.stdin)
-  if not isinstance(value, dict):
-    return 1
-  write_json(QUIET, value)
+def dump(value):
+  json.dump(value, sys.stdout, separators=(",", ":"))
   return 0
-
-
-def read_quiet():
-  state = read_json(QUIET)
-  return state if isinstance(state, dict) else {"snoozes": {}}
 
 
 def main():
@@ -392,9 +335,8 @@ def main():
     return 2
   verb = args[0]
   if verb == "policy":
-    value = input_json(sys.stdin)
-    hours = value.get("historyHours", 24)
-    if hours not in (0, 1, 24, 168):
+    hours = input_json(sys.stdin).get("historyHours", 24)
+    if hours not in RETENTION_HOURS:
       return 2
     write_json(os.path.join(ROOT, "policy.json"), {"historyHours": hours})
     trim_history()
@@ -406,22 +348,19 @@ def main():
   if verb == "drop":
     return cmd_drop(args[1])
   if verb == "restore":
-    json.dump(listing(LIVE), sys.stdout, separators=(",", ":"))
-    return 0
-  if verb == "history":
+    return dump(listing(LIVE))
+  if verb in ("history", "held"):
     limit = int(args[1]) if len(args) > 1 else 60
-    json.dump(listing(HISTORY, limit, newest_first=True), sys.stdout,
-              separators=(",", ":"))
-    return 0
-  if verb == "held":
-    return cmd_held(int(args[1]) if len(args) > 1 else 60)
+    return dump(listing(HISTORY, limit, newest_first=True, held=verb == "held"))
   if verb == "forget-all":
     return cmd_forget_all()
   if verb == "quiet":
-    json.dump(read_quiet(), sys.stdout, separators=(",", ":"))
-    return 0
+    state = read_json(QUIET)
+    # Which sources are snoozed until when, and whether the desktop is silenced.
+    return dump(state if isinstance(state, dict) else {"snoozes": {}})
   if verb == "quiet-save":
-    return cmd_quiet_save()
+    write_json(QUIET, input_json(sys.stdin))
+    return 0
   if verb == "tidy":
     return cmd_tidy()
   return 2

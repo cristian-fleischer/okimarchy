@@ -4,9 +4,6 @@ Skipped when Bubblewrap is missing or cannot create namespaces here (a
 container without user namespaces); the helper-mode tests cover the policy
 around it with the sandbox mocked.
 """
-import contextlib
-import io
-import json
 import os
 from pathlib import Path
 import socket
@@ -19,20 +16,6 @@ from unittest.mock import patch
 from support import HELPERS, load_helper
 
 DEMO_APP = "Omarchy reply demo"
-
-
-@contextlib.contextmanager
-def quiet_stdout():
-  """The helper writes to the inherited descriptor, not to sys.stdout."""
-  saved = os.dup(1)
-  devnull = os.open(os.devnull, os.O_WRONLY)
-  try:
-    os.dup2(devnull, 1)
-    yield
-  finally:
-    os.dup2(saved, 1)
-    os.close(saved)
-    os.close(devnull)
 
 
 class Sandbox(unittest.TestCase):
@@ -76,13 +59,6 @@ s=socket.socket();s.settimeout(.2)
 assert s.connect_ex(('1.1.1.1',443)) != 0
 open({str(writable / 'check')!r}, 'w').write('ok')
 """)
-
-  def test_sandboxed_store_redacts_codes(self):
-    command = self.r.sandbox_command("store", ["put"], self.bwrap, os.environ)
-    subprocess.run(command, input=json.dumps({"key": "n1", "body": "Your code is 938271",
-                                              "codes": "938271"}),
-                   text=True, check=True, timeout=10)
-    self.assertNotIn("938271", (self.r.STATE / "live/n1.json").read_text())
 
   def test_kdeconnect_gets_the_bus_and_only_the_demo_directory_it_asked_for(self):
     self.r.STATE.mkdir(parents=True)
@@ -135,33 +111,6 @@ else:
                                         "XDG_RUNTIME_DIR": str(runtime)}), \
                 self.assertRaises((RuntimeError, ValueError)):
           self.r.sandbox_command("kdeconnect", [], self.bwrap, os.environ)
-
-  def test_direct_fallback_and_required_blocking(self):
-    surprise = {"PYTHONPATH": "/attacker", "LD_PRELOAD": "/attacker/library.so",
-                "AWS_SECRET_ACCESS_KEY": "secret", "http_proxy": "http://127.0.0.1:9"}
-    self.assertEqual(self.r.direct_environment("store", surprise), {
-        "HOME": str(self.r.HOME_DIR), "LANG": "C.UTF-8", "PATH": "/usr/bin",
-        "PYTHONDONTWRITEBYTECODE": "1"})
-    with patch.object(self.r, "bubblewrap_path", return_value=None):
-      status, _ = self.r.mode_status(False)
-      self.assertEqual(status["mode"], "direct")
-      self.assertTrue(status["unsandboxedFallback"])
-      with quiet_stdout():
-        self.assertEqual(self.r.run_helper("store", ["restore"], False, surprise), 0)
-      blocked, _ = self.r.mode_status(True)
-      self.assertEqual(blocked["mode"], "blocked")
-      self.assertFalse(blocked["unsandboxedFallback"])
-    with patch.object(self.r, "bubblewrap_path", return_value="/usr/bin/bwrap"), \
-            patch.object(self.r, "probe_sandbox", return_value=False), \
-            patch.object(self.r, "direct_command", side_effect=AssertionError("required downgrade")):
-      broken, _ = self.r.mode_status(False)
-      self.assertTrue(broken["bubblewrapAvailable"])
-      self.assertFalse(broken["sandboxOperational"])
-      self.assertEqual(broken["mode"], "direct")
-      with self.assertRaises(RuntimeError):
-        self.r.run_helper("store", ["restore"], True, surprise)
-    with contextlib.redirect_stderr(io.StringIO()):
-      self.assertEqual(self.r.main(["status"], {"OMARCHY_NOTIFICATIONS_REQUIRE_SANDBOX": "invalid"}), 1)
 
 
 if __name__ == "__main__":

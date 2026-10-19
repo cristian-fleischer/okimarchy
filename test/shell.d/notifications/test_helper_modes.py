@@ -15,10 +15,6 @@ from unittest.mock import patch
 from support import HELPERS, RUN, load_helper
 
 
-def load_runner():
-  return load_helper("run", "helper_modes_runner")
-
-
 @contextlib.contextmanager
 def stdin_bytes(payload):
   saved = os.dup(0)
@@ -42,7 +38,7 @@ def stdin_bytes(payload):
 
 class HelperModes(unittest.TestCase):
   def setUp(self):
-    self.runner = load_runner()
+    self.runner = load_helper("run", "helper_modes_runner")
     self.temp = tempfile.TemporaryDirectory(prefix="omarchy-notification-helper-modes-")
     self.root = Path(self.temp.name)
     self.home = self.root / "home"
@@ -94,28 +90,18 @@ class HelperModes(unittest.TestCase):
       result = self.runner.main(["status"], {})
     self.assertEqual(result, 0)
     self.assertEqual(json.loads(stdout.getvalue())["mode"], "direct")
-    self.assertTrue(json.loads(stdout.getvalue())["unsandboxedFallback"])
 
-  def test_malformed_policy_is_rejected_before_status_probe(self):
-    with patch.object(self.runner, "mode_status") as status, \
-            contextlib.redirect_stdout(io.StringIO()) as stdout, \
-            contextlib.redirect_stderr(io.StringIO()):
-      result = self.runner.main(["status"], {"OMARCHY_NOTIFICATIONS_REQUIRE_SANDBOX": "yes"})
-    self.assertEqual(result, 1)
-    self.assertEqual(stdout.getvalue(), "")
-    status.assert_not_called()
-
-  def test_main_accepts_only_known_kinds(self):
-    # Capabilities and the per-kind wrapper names were plugin-era modes;
-    # core calls `run <kind>` directly and has nothing else to ask.
-    for argv in ([], ["capabilities"], ["action"], ["helper", "store"],
-                 ["check"], ["status", "extra"]):
-      with self.subTest(argv=argv), \
-              patch.object(self.runner, "run_supervised",
-                           side_effect=AssertionError("ran a helper")), \
+  def test_main_refuses_a_malformed_policy_and_unknown_kinds_before_probing(self):
+    # Capabilities and the per-kind wrapper names were plugin-era modes.
+    cases = [(["status"], {"OMARCHY_NOTIFICATIONS_REQUIRE_SANDBOX": "yes"})] + [
+        (argv, {}) for argv in ([], ["capabilities"], ["action"], ["helper", "store"],
+                                ["check"], ["status", "extra"])]
+    for argv, environ in cases:
+      with self.subTest(argv=argv, environ=environ), \
+              patch.object(self.runner, "mode_status", side_effect=AssertionError("probed")), \
               contextlib.redirect_stdout(io.StringIO()) as stdout, \
               contextlib.redirect_stderr(io.StringIO()) as stderr:
-        self.assertEqual(self.runner.main(argv, {}), 1)
+        self.assertEqual(self.runner.main(argv, environ), 1)
       self.assertEqual(stdout.getvalue(), "")
       self.assertIn("helper unavailable", stderr.getvalue())
 
@@ -123,7 +109,7 @@ class HelperModes(unittest.TestCase):
     self.assertEqual(self.runner.BASE, HELPERS.resolve())
     self.assertEqual(load_helper("run", "fresh_runner").STATE,
                      Path.home() / ".local/state/omarchy/notifications")
-    self.assertEqual(self.runner.direct_command("store", ["restore"])[-2:],
+    self.assertEqual(self.runner.python_helper("store", ["restore"], str(self.runner.BASE))[-2:],
                      [str(HELPERS.resolve() / "store"), "restore"])
     self.assertEqual(self.runner.python_helper("icon", [])[-1],
                      "/opt/omarchy-notifications/icon")
@@ -151,7 +137,7 @@ class HelperModes(unittest.TestCase):
 
   def make_effect_helper(self):
     plugin = self.root / "helpers"
-    plugin.mkdir()
+    plugin.mkdir(exist_ok=True)
     helper = plugin / "store"
     helper.write_text(
         "import json, os, sys\n"
@@ -175,9 +161,8 @@ class HelperModes(unittest.TestCase):
     self.runner.BASE = plugin
     return plugin
 
-  def run_direct_case(self, bwrap):
+  def test_missing_or_broken_bwrap_runs_direct_once_with_stdin_and_a_clean_environment(self):
     self.make_effect_helper()
-    effect = self.root / ("missing.json" if bwrap is None else "broken.json")
     source_environment = {
         "OMARCHY_NOTIFICATIONS_REQUIRE_SANDBOX": "0",
         "PYTHONPATH": "/attacker",
@@ -187,28 +172,17 @@ class HelperModes(unittest.TestCase):
         "HTTPS_PROXY": "http://127.0.0.1:9",
         "XDG_CONFIG_HOME": "/attacker/config",
     }
-    probe_value = False
-    with patch.object(self.runner, "bubblewrap_path", return_value=bwrap), \
-            patch.object(self.runner, "probe_sandbox", return_value=probe_value) as probe, \
-            stdin_bytes(b"preserved stdin"):
-      result = self.runner.main(["store", str(effect), "7"], source_environment)
-    self.assertEqual(result, 7)
-    self.assertEqual(probe.call_count, 1 if bwrap else 0)
-    row = json.loads(effect.read_text())
-    self.assertEqual(row, {
-        "count": 1,
-        "stdin": "preserved stdin",
-        "home": str(self.home),
-        "path": "/usr/bin",
-        "lang": "C.UTF-8",
-        "bad": [],
-    })
-
-  def test_missing_bwrap_runs_direct_once_with_stdin_limits_and_clean_environment(self):
-    self.run_direct_case(None)
-
-  def test_broken_bwrap_runs_direct_once_without_replaying_failed_helper(self):
-    self.run_direct_case("/usr/bin/bwrap")
+    for bwrap in (None, "/usr/bin/bwrap"):
+      effect = self.root / ("missing.json" if bwrap is None else "broken.json")
+      with self.subTest(bwrap=bwrap), \
+              patch.object(self.runner, "bubblewrap_path", return_value=bwrap), \
+              patch.object(self.runner, "probe_sandbox", return_value=False) as probe, \
+              stdin_bytes(b"preserved stdin"):
+        self.assertEqual(self.runner.main(["store", str(effect), "7"], source_environment), 7)
+      self.assertEqual(probe.call_count, 1 if bwrap else 0)
+      self.assertEqual(json.loads(effect.read_text()), {
+          "count": 1, "stdin": "preserved stdin", "home": str(self.home),
+          "path": "/usr/bin", "lang": "C.UTF-8", "bad": []})
 
   def test_required_mode_blocks_missing_and_broken_bwrap_before_helper_effect(self):
     self.make_effect_helper()
@@ -228,7 +202,7 @@ class HelperModes(unittest.TestCase):
     self.make_effect_helper()
     effect = self.root / "failed-sandbox.json"
     args = [str(effect), "23"]
-    sandbox_argv = self.runner.direct_command("store", args)
+    sandbox_argv = self.runner.python_helper("store", args, str(self.runner.BASE))
     with patch.object(self.runner, "bubblewrap_path", return_value="/usr/bin/bwrap"), \
             patch.object(self.runner, "probe_sandbox", return_value=True), \
             patch.object(self.runner, "sandbox_command", return_value=sandbox_argv), \

@@ -1,27 +1,27 @@
-"""Focused tests for pinned HTTPS transport and remote icon resolution.
+"""The pinned HTTPS client and remote icon resolution.
 
-DNS is synthetic. Only public fixture addresses are routed to a server owned
-by this test; every other connect is refused before any network operation.
-Redirects, TLS handshakes and certificate hostname checks are real.
+DNS is synthetic. Only public fixture addresses are routed to a loopback TLS
+server owned by this test; every other connect is refused before any network
+operation. Redirects, TLS handshakes and certificate hostname checks are real.
 """
 import argparse
 import collections
 import contextlib
 import http.server
 import errno
+import json
 import os
 from pathlib import Path
 import socket
 import ssl
 import subprocess
-import sys
 import tempfile
 import threading
 import time
 import unittest
 from unittest import mock
 
-from support import have_magick, have_openssl, load_helper, png
+from support import fetch_site, have_magick, have_openssl, load_helper, png
 
 PUBLIC = "93.184.216.34"
 PUBLIC_V6 = "2606:4700:4700::1111"
@@ -29,11 +29,6 @@ BLOCKED = (
     "127.0.0.1", "10.0.0.1", "169.254.169.254", "240.0.0.1",
     "::1", "fd00::1", "fe80::1", "4000::1",
 )
-
-def load_icon_module():
-  return load_helper("icon", "notification_icon_network")
-
-
 
 class IconNetworkTest(unittest.TestCase):
   @classmethod
@@ -69,15 +64,16 @@ class IconNetworkTest(unittest.TestCase):
       def do_GET(self):
         requests.append((self.headers["Host"], self.path))
         request_headers.append(dict(self.headers.items()))
+        location = {"/loop": "/loop", "/private": "https://127.0.0.1/secret"}.get(self.path)
         if redirect and self.path == "/start":
-          self.send_response(302)
-          target_scheme = redirect_scheme or scheme
-          self.send_header("Location", f"{target_scheme}://target.test/icon")
-          body = b""
-        else:
-          self.send_response(200)
-          body = b"fixture icon"
-        self.send_header("Content-Length", str(len(body)))
+          location = f"{redirect_scheme or scheme}://target.test/icon"
+        body = b"" if location else b"x" * 2048 if self.path in ("/large", "/stream") else b"fixture icon"
+        self.send_response(302 if location else 200)
+        if location:
+          self.send_header("Location", location)
+        # /stream is close-delimited: only the bytes read can bound it.
+        if self.path != "/stream":
+          self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         try:
           if slow:
@@ -147,8 +143,7 @@ class IconNetworkTest(unittest.TestCase):
               mock.patch.object(socket.socket, "connect", connect), \
               mock.patch.object(ssl, "create_default_context",
                                 return_value=self.client_context):
-        icon = load_icon_module()
-        yield icon.get, state
+        yield load_helper("icon").get, state
     finally:
       server.shutdown()
       thread.join(timeout=3)
@@ -174,7 +169,9 @@ class IconNetworkTest(unittest.TestCase):
             self.assertEqual(state["sni"], [host for host, _ in expected])
 
   def test_non_public_answers_block_initial_and_redirect_requests(self):
-    for address in BLOCKED + ("224.0.0.1", "ff02::1", "0.0.0.0", "::"):
+    # An IPv4-mapped address is refused even when the IPv4 address is public.
+    for address in BLOCKED + ("172.16.0.1", "192.168.1.1", "224.0.0.1", "ff02::1", "0.0.0.0", "::",
+                              "::ffff:" + PUBLIC):
       for redirect in (False, True):
         with self.subTest(address=address, redirect=redirect):
           def answers(host):
@@ -195,30 +192,22 @@ class IconNetworkTest(unittest.TestCase):
           self.assertEqual(state["attempts"], [])
           self.assertEqual(state["requests"], [])
 
-  def test_public_address_fallback_retains_hostname(self):
-    with self.transport("https", answers=lambda _host: [PUBLIC_V6, PUBLIC],
-                        fail_first=True) as (get, state):
-      self.assertEqual(get("https://source.test/icon"),
-                       (b"fixture icon", "https://source.test/icon"))
-      self.assertEqual(state["attempts"], [PUBLIC_V6, PUBLIC])
-      self.assertEqual(state["requests"], [("source.test", "/icon")])
-      self.assertEqual(state["sni"], ["source.test"])
+  def test_a_failed_address_falls_back_to_the_next_validated_one(self):
+    real_socket = socket.socket
 
-  def test_socket_family_failure_uses_validated_fallback(self):
-    with self.transport("https", answers=lambda _host: [PUBLIC_V6, PUBLIC]) as (get, state):
-      real_socket = socket.socket
+    def no_ipv6(family, *args, **kwargs):
+      if family == socket.AF_INET6:
+        raise OSError(errno.EAFNOSUPPORT, "Synthetic IPv6 unavailable")
+      return real_socket(family, *args, **kwargs)
 
-      def supported_socket(family, *args, **kwargs):
-        if family == socket.AF_INET6:
-          raise OSError(errno.EAFNOSUPPORT, "Synthetic IPv6 unavailable")
-        return real_socket(family, *args, **kwargs)
-
-      with mock.patch.object(socket, "socket", supported_socket):
-        self.assertEqual(get("https://source.test/icon"),
-                         (b"fixture icon", "https://source.test/icon"))
-      self.assertEqual(state["attempts"], [PUBLIC])
-      self.assertEqual(dict(state["calls"]), {"source.test": 1})
-      self.assertEqual(state["sni"], ["source.test"])
+    for failure in ("connect", "socket"):
+      with self.subTest(failure=failure), \
+              self.transport(answers=lambda _host: [PUBLIC_V6, PUBLIC], fail_first=failure == "connect") as (get, state), \
+              mock.patch.object(socket, "socket", no_ipv6 if failure == "socket" else real_socket):
+        self.assertEqual(get("https://source.test/icon"), (b"fixture icon", "https://source.test/icon"))
+        self.assertEqual(state["attempts"], [PUBLIC_V6, PUBLIC] if failure == "connect" else [PUBLIC])
+        self.assertEqual(dict(state["calls"]), {"source.test": 1})
+        self.assertEqual(state["sni"], ["source.test"])
 
   def test_tls_rejects_wrong_hostname_before_http(self):
     # The pinned transport talks http.client directly, so certificate
@@ -254,6 +243,10 @@ class IconNetworkTest(unittest.TestCase):
 
   def test_credentials_numeric_hosts_local_names_and_ports_are_rejected(self):
     forbidden = (
+        "file:///etc/passwd",
+        "http://169.254.169.254/",
+        "https://127.1/icon",
+        "https://source.test/%250a",
         "https://user:password@source.test/icon",
         "https://127.0.0.1/icon",
         "https://[::1]/icon",
@@ -271,6 +264,14 @@ class IconNetworkTest(unittest.TestCase):
           get(url)
       self.assertEqual(state["attempts"], [])
       self.assertEqual(dict(state["calls"]), {})
+
+  def test_redirect_loops_private_redirects_and_oversized_bodies_fail(self):
+    with self.transport() as (get, state):
+      for route in ("loop", "private", "large", "stream"):
+        with self.subTest(route=route), self.assertRaises(ValueError):
+          get("https://source.test/" + route, 100)
+      self.assertEqual(state["requests"].count(("source.test", "/loop")), 4)
+      self.assertEqual(dict(state["calls"]), {"source.test": 7})
 
   def test_dns_answer_count_is_bounded_before_connect(self):
     too_many = [f"93.184.216.{last}" for last in range(1, 10)]
@@ -298,139 +299,73 @@ class IconNetworkTest(unittest.TestCase):
 
 
 class IconResolutionTest(unittest.TestCase):
-  def load_icon(self):
-    return vars(load_icon_module())
+  def setUp(self):
+    self.icon = load_helper("icon")
+    temp = tempfile.TemporaryDirectory()
+    self.addCleanup(temp.cleanup)
+    self.cache = temp.name
+    for name, value in (("CACHE", self.cache), ("from_config", lambda _names: None),
+                        ("from_icon_theme", lambda _names: None), ("from_desktop_entries", lambda _names: None)):
+      patcher = mock.patch.object(self.icon, name, value)
+      patcher.start()
+      self.addCleanup(patcher.stop)
 
-  def no_local_icons(self, icon):
-    return mock.patch.dict(icon, {
-        "from_config": lambda _names: None,
-        "from_icon_theme": lambda _names: None,
-        "from_desktop_entries": lambda _names: None,
-    })
+  def site(self, pages):
+    """A fake fetch serving `pages` by URL, recording what was asked for."""
+    self.requested = []
 
-  def test_html_and_manifest_candidates_are_https_only(self):
-    icon = self.load_icon()
-    html = """
-      <link rel="icon" sizes="256x256" href="https://cdn.test/icon.png">
-      <link rel="icon" href="//target.test/icon.png">
-      <link rel="icon" href="http://target.test/downgrade.png">
-      <link rel="icon" href="https://user:secret@target.test/private.png">
-      <link rel="manifest" href="/site.webmanifest">
-    """
-    links = icon["icon_links"](html, "https://source.test/app/", "dark")
-    self.assertEqual(links, [
-        "https://cdn.test/icon.png",
-        "https://target.test/icon.png",
-        ("manifest", "https://source.test/site.webmanifest"),
-    ])
-    self.assertEqual(icon["icon_links"](None, "https://source.test/", "dark"), [])
-    self.assertEqual(icon["icon_links"](
-        '<link href><link rel="icon" href="/still-valid.png">',
-        "https://source.test/", "dark"),
-        ["https://source.test/still-valid.png"])
+    def get(url, _limit=None):
+      self.requested.append(url)
+      if url not in pages:
+        raise ValueError("no such page " + url)
+      return pages[url], url
+    return mock.patch.object(self.icon, "get", get)
 
-
-    manifest = json_bytes({"icons": [
+  def test_manifest_candidates_are_https_only_and_malformed_ones_are_contained(self):
+    good = json.dumps({"icons": [
         {"src": "icon.png", "sizes": "128x128"},
         {"src": "http://target.test/downgrade.png", "sizes": "64x64"},
         None,
         {"src": "https://127.0.0.1/private.png", "sizes": "32x32"},
         {"src": 7},
-    ]})
-    with mock.patch.dict(icon, {"get": lambda *_args: (
-            manifest, "https://target.test/assets/site.webmanifest")}):
-      self.assertEqual(icon["from_manifest"](
-          "https://source.test/site.webmanifest", "https://source.test/"),
-          ["https://target.test/assets/icon.png"])
-
-  def test_malformed_manifests_are_contained(self):
-    icon = self.load_icon()
-    malformed = (b"{", b"[]", b'{"icons":{}}',
-                 b'{"icons":[null,4,{"src":3}]}')
-    for payload in malformed:
-      with self.subTest(payload=payload), \
-              mock.patch.dict(icon, {"get": lambda *_args, p=payload: (
-                  p, "https://source.test/site.webmanifest")}):
-        self.assertEqual(icon["from_manifest"](
-            "https://source.test/site.webmanifest", "https://source.test/"), [])
+    ]}).encode()
+    for payload, expected in ((good, ["https://source.test/assets/icon.png"]), (b"{", []), (b"[]", []),
+                              (b'{"icons":{}}', []), (b'{"icons":[null,4,{"src":3}]}', [])):
+      with self.subTest(payload=payload[:20]), self.site({"https://source.test/assets/m.json": payload}):
+        self.assertEqual(self.icon.from_manifest("https://source.test/assets/m.json", "https://source.test/"),
+                         expected)
 
   def test_malformed_manifest_does_not_hide_a_later_page_icon(self):
     if not have_magick():
       self.skipTest("imagemagick is not installed")
-    icon = self.load_icon()
-    image = png((32, 32))
-    requested = []
-
-    def get(url, _limit):
-      requested.append(url)
-      if url == "https://source.test/":
-        return (b'<link rel="manifest" href="/bad.webmanifest">'
-                b'<link rel="icon" href="/icon.png">', url)
-      if url.endswith("bad.webmanifest"):
-        return b'{"icons":{}}', url
-      if url.endswith("icon.png"):
-        return image, url
-      raise AssertionError("unexpected request " + url)
-
-    with tempfile.TemporaryDirectory() as temp, \
-            mock.patch.dict(icon, {"CACHE": temp, "get": get}):
-      path = icon["fetch_site"]("source.test", "dark")
-      self.assertIsNotNone(path)
-      self.assertTrue(Path(path).is_file())
-    self.assertEqual(requested[:3], [
-        "https://source.test/",
-        "https://source.test/bad.webmanifest",
-        "https://source.test/icon.png",
-    ])
+    pages = {"https://source.test/": b'<link rel="manifest" href="/bad.webmanifest"><link rel="icon" href="/icon.png">',
+             "https://source.test/bad.webmanifest": b'{"icons":{}}',
+             "https://source.test/icon.png": png((32, 32))}
+    with self.site(pages):
+      self.assertTrue(Path(fetch_site(self.icon, "source.test", "dark")).is_file())
+    self.assertEqual(self.requested[:3], list(pages))
 
   def test_oversized_and_invalid_images_are_not_cached(self):
-    icon = self.load_icon()
-    for payload in (b"x" * (icon["REMOTE_ICON_BYTES"] + 1), b"not an image"):
-      with self.subTest(size=len(payload)), tempfile.TemporaryDirectory() as temp:
-        def get(url, _limit):
-          if url == "https://source.test/":
-            return b'<link rel="icon" href="/icon.png">', url
-          return payload, url
-        with mock.patch.dict(icon, {"CACHE": temp, "get": get}):
-          self.assertIsNone(icon["fetch_site"]("source.test", "dark"))
-          self.assertEqual(list(Path(temp).iterdir()), [])
+    for payload in (b"x" * (self.icon.REMOTE_ICON_BYTES + 1), b"not an image"):
+      with self.subTest(size=len(payload)), \
+              self.site({"https://source.test/": b'<link rel="icon" href="/icon.png">',
+                         "https://source.test/icon.png": payload, "https://source.test/favicon.ico": payload}):
+        self.assertIsNone(fetch_site(self.icon, "source.test", "dark"))
+        self.assertEqual(list(Path(self.cache).iterdir()), [])
 
-  def test_fetch_disabled_uses_valid_cache_without_any_request(self):
-    if not have_magick():
-      self.skipTest("imagemagick is not installed")
-    icon = self.load_icon()
-    args = argparse.Namespace(source="source.test", app_icon="", app="", key="",
-                              scheme="dark", fetch=False)
-    with tempfile.TemporaryDirectory() as temp, mock.patch.dict(icon, {"CACHE": temp}):
-      cached = icon["remote_cache_path"]("source.test", "dark")
-      Path(cached).write_bytes(png((32, 32)))
-      os.chmod(cached, 0o600)
-      index = {"source.test": {"dark": cached}}
-
-      def forbidden(*_args):
-        raise AssertionError("fetching disabled must not request")
-
-      with mock.patch.dict(icon, {"load_index": lambda: index,
-                                  "fetch_site": forbidden, "get": forbidden}), \
-              self.no_local_icons(icon):
-        self.assertEqual(icon["resolve"](args), (cached, "cache"))
-
-  def test_fetch_disabled_without_cache_never_calls_fetcher(self):
-    icon = self.load_icon()
-    args = argparse.Namespace(source="source.test", app_icon="", app="", key="",
-                              scheme="dark", fetch=False)
-
-    def forbidden(*_args):
-      raise AssertionError("fetching disabled must not request")
-
-    with mock.patch.dict(icon, {"load_index": lambda: {}, "fetch_site": forbidden,
-                                "get": forbidden}), self.no_local_icons(icon):
-      self.assertEqual(icon["resolve"](args), (None, "none"))
-
-
-def json_bytes(value):
-  import json
-  return json.dumps(value).encode()
+  def test_fetch_disabled_never_requests(self):
+    args = argparse.Namespace(source="source.test", app_icon="", app="", key="", scheme="dark", fetch=False)
+    cached = self.icon.remote_cache_path("source.test", "dark")
+    Path(cached).write_bytes(png((32, 32)))
+    cases = [({}, (None, "none"))]
+    if have_magick():  # a cache hit is decoded before it is trusted
+      cases.append(({"source.test": {"dark": cached}}, (cached, "cache")))
+    for index, expected in cases:
+      with self.subTest(cached=bool(index)), self.site({}), \
+              mock.patch.object(self.icon, "load_index", lambda i=index: i):
+        # No fetcher, and fetching off: a lookup without --fetch never asks the launcher.
+        self.assertEqual(self.icon.resolve(args), expected)
+        self.assertEqual(self.requested, [])
 
 
 if __name__ == "__main__":

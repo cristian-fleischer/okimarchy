@@ -5,27 +5,23 @@
 #   find APP BODY                 the object path of a repliable match
 #   reply PATH TEXT APP BODY      send a reply back to the phone, re-matched first
 #
-# KDE Connect posts phone notifications to the desktop bus like any other app,
-# and that is all the freedesktop spec can carry. But it also keeps an object
-# per notification on its own bus with the part the spec has no room for: a
-# replyId, and a sendReply method that puts text back into the conversation on
-# the phone. Matching the two is by app name and body text, because the desktop
-# notification carries no handle to the object.
+# KDE Connect also keeps an object per phone notification on its own bus, with
+# a replyId and a sendReply method the freedesktop spec has no room for. The
+# desktop notification carries no handle to it, so the two are matched by app
+# name and body text.
 import json
 import os
+import re
 import subprocess
 import sys
 import time
-import re
-import selectors
-from notification_files import read_json, write_json
+from notification_files import read_bounded, read_json, write_json
 
 BUS = "org.kde.kdeconnect"
 IFACE = "org.kde.kdeconnect.device.notifications.notification"
 
-# Only the explicitly named demo app can use the private, short-lived fixture.
-# It is never mixed into real-phone discovery or matched against another app.
-# The path matches the directory the sandbox launcher mounts for it.
+# Only the named demo app uses the private, short-lived fixture, never mixed
+# into real-phone discovery. The launcher mounts exactly this directory.
 DEMO_APP = "Omarchy reply demo"
 STATE = os.path.expanduser("~/.local/state/omarchy/notifications/reply-demo")
 FIXTURE = os.path.join(STATE, "notification.json")
@@ -52,25 +48,15 @@ def fixture():
 
 
 def run(args):
-  # Bound output while receiving it, rather than after communicate allocated it.
+  """busctl's output, bounded while it arrives, or "" on any failure."""
   with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as proc:
-    data = bytearray()
     deadline = time.monotonic() + 5
-    with selectors.DefaultSelector() as selector:
-      selector.register(proc.stdout, selectors.EVENT_READ)
-      while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0 or not selector.select(remaining):
-          proc.kill(); proc.wait(); return ""
-        block = os.read(proc.stdout.fileno(), min(4096, 65537-len(data)))
-        if not block: break
-        data.extend(block)
-        if len(data) > 65536:
-          proc.kill(); proc.wait(); return ""
     try:
-      proc.wait(timeout=max(.01, deadline-time.monotonic()))
-    except subprocess.TimeoutExpired:
-      proc.kill(); proc.wait(); return ""
+      data = read_bounded(proc.stdout.fileno(), 65536, deadline)
+      proc.wait(timeout=max(.01, deadline - time.monotonic()))
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+      proc.kill()
+      return ""
     return data.decode("utf-8", "replace") if proc.returncode == 0 else ""
 
 
@@ -110,8 +96,7 @@ SMART = {"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
 
 
 def normalise(text):
-  """Comparable text. Phones send typographic quotes and desktops rarely do,
-  and a body that differs only by a curly apostrophe is the same body."""
+  """Comparable text: phones send typographic quotes, desktops rarely do."""
   out = str(text or "")
   for fancy, plain in SMART.items():
     out = out.replace(fancy, plain)
@@ -131,9 +116,8 @@ def find(app, body):
   notes = fixture() if want_app == normalise(DEMO_APP) else listing()
   matches = [n for n in notes if n.get("replyId")
              and normalise(n.get("appName")) == want_app
-             and want_body in (normalise(n.get("ticker")), normalise(n.get("text"))) ]
+             and want_body in (normalise(n.get("ticker")), normalise(n.get("text")))]
   return matches[0] if len(matches) == 1 else None
-
 
 
 def main():
@@ -156,10 +140,10 @@ def main():
     return 0
 
   if verb == "reply":
+    if len(sys.argv) != 6:
+      return 1
     path, text = sys.argv[2], sys.argv[3]
     if not text.strip() or len(text) > 4096 or "\x00" in text:
-      return 1
-    if len(sys.argv) != 6:
       return 1
     demo = bool(re.fullmatch(r"demo:[0-9a-f]{32}", path))
     if not demo and not valid_path(path):
@@ -180,11 +164,8 @@ def main():
     if result.returncode != 0:
       sys.stdout.write("reply failed")
       return result.returncode
-    # Answered means dealt with, on the phone as well. Without this the
-    # notification is still live over there, KDE Connect forwards it again,
-    # and the card you just replied to reappears a moment later.
-    # Best effort: a reply that went through is a success even if the
-    # dismissal does not, and some senders do not offer one.
+    # Answered means dealt with on the phone too, or KDE Connect forwards it
+    # again. Best effort: not every sender offers a dismissal.
     subprocess.run(["busctl", "--user", "--", "call", BUS, path, IFACE, "dismiss"],
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=5)
     sys.stdout.write("sent")

@@ -8,9 +8,9 @@
 
 OMARCHY_NOTIFICATIONS_REQUIRE_SANDBOX=1 refuses to run a helper without an
 operational Bubblewrap sandbox; unset or 0 runs it directly when there is none.
+Icons are never decoded without the sandbox.
 """
 import json
-from functools import partial
 import os
 from pathlib import Path
 import re
@@ -25,14 +25,13 @@ from urllib.parse import unquote
 # Launched by its shebang, without -B: keep the sibling import from writing
 # __pycache__ into the Omarchy checkout the helpers live in.
 sys.dont_write_bytecode = True
-from notification_files import private_dir, write_bytes  # noqa: E402
+from notification_files import private_dir, read_bounded, write_bytes  # noqa: E402
 import notification_images as images  # noqa: E402
 from notification_http import public_hostname  # noqa: E402
 
 
-# The helpers sit beside this file. Resolve through any symlinks (a dev
-# checkout reached through a linked OMARCHY_PATH) so the sandbox mounts, and
-# direct mode runs, the real files rather than a path that only exists outside.
+# Resolved through symlinks (a dev checkout behind a linked OMARCHY_PATH) so
+# the sandbox mounts, and direct mode runs, the real files.
 BASE = Path(__file__).resolve().parent
 HOME_DIR = Path.home()
 STATE = HOME_DIR / ".local/state/omarchy/notifications"
@@ -70,24 +69,13 @@ def require_policy(environ):
   raise ValueError("invalid sandbox policy")
 
 
-def executable(path):
-  return path.is_file() and os.access(path, os.X_OK)
-
-
 def bubblewrap_path():
-  return str(BWRAP) if executable(BWRAP) else None
+  return str(BWRAP) if BWRAP.is_file() and os.access(BWRAP, os.X_OK) else None
 
 
 def clean_environment(extra=None):
-  environ = {
-      "HOME": str(HOME_DIR),
-      "LANG": "C.UTF-8",
-      "PATH": "/usr/bin",
-      "PYTHONDONTWRITEBYTECODE": "1",
-  }
-  if extra:
-    environ.update(extra)
-  return environ
+  return {"HOME": str(HOME_DIR), "LANG": "C.UTF-8", "PATH": "/usr/bin",
+          "PYTHONDONTWRITEBYTECODE": "1", **(extra or {})}
 
 
 def validated_bus_environment(environ):
@@ -121,10 +109,9 @@ def validated_bus_environment(environ):
   }, bus
 
 
-# Kernel interfaces, not files a sender could mean as a picture. They report
-# themselves as regular files (/proc/<pid>/environ is one, size 0), so they are
-# refused by where the opened file really is, wherever the path pointed, and by
-# the type of filesystem it lives on, which a bind mount elsewhere cannot hide.
+# Kernel interfaces report themselves as regular files (/proc/<pid>/environ),
+# so they are refused by where the opened file really is and by its
+# filesystem type, which a bind mount elsewhere cannot hide.
 PSEUDO_FILESYSTEMS = ("/proc/", "/sys/", "/dev/")
 PSEUDO_FILESYSTEM_TYPES = frozenset((
     "proc", "sysfs", "devtmpfs", "devpts", "debugfs", "tracefs", "securityfs", "cgroup", "cgroup2",
@@ -168,36 +155,26 @@ def sender_path(stream):
 
 
 def read_sender_file(path):
-  """Open, check and read the sender's file. Runs in a disposable child."""
+  """Open, check and read the sender's file, in the disposable reader child."""
   fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC)
-  try:
+  with os.fdopen(fd, "rb") as source:
     info = os.fstat(fd)
     if (not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= SENDER_IMAGE_BYTES
             or opened_in_pseudo_filesystem(fd, info)):
       raise ValueError("invalid sender image source")
     os.set_blocking(fd, True)
-    chunks, size = [], 0
-    while size <= SENDER_IMAGE_BYTES:
-      chunk = os.read(fd, min(65536, SENDER_IMAGE_BYTES + 1 - size))
-      if not chunk:
-        break
-      chunks.append(chunk)
-      size += len(chunk)
-    if size > SENDER_IMAGE_BYTES:
-      raise ValueError("sender image grew too large")
-    return b"".join(chunks)
-  finally:
-    os.close(fd)
+    data = source.read(SENDER_IMAGE_BYTES + 1)
+  if len(data) > SENDER_IMAGE_BYTES:
+    raise ValueError("sender image grew too large")
+  return data
 
 
 def open_sender_image(stream, timeout=SENDER_READ_SECONDS):
   """A sealed in-memory copy of the sender's file, for the helper's stdin.
 
-  Every filesystem operation on a path the sender chose happens in a forked
-  child under a deadline: on a stalled FUSE mount, lookup and open can block
-  however the file is opened, and only killing the child gets the launcher -
-  and the sender-image queue behind it - back. The launcher never touches the
-  path itself."""
+  The launcher never touches the sender's path: a forked child does, under a
+  deadline, because on a stalled FUSE mount lookup and open block however the
+  file is opened, and only killing the child frees the launcher."""
   path = sender_path(stream)
   launcher = os.getpid()
   read_end, write_end = os.pipe()
@@ -206,17 +183,12 @@ def open_sender_image(stream, timeout=SENDER_READ_SECONDS):
     status = 1
     try:
       os.close(read_end)
-      # Dies with the launcher, however the launcher ends.
       die_with_parent(launcher)
-      # A reader stuck on a stalled mount must not hold the caller's pipes
-      # open after the launcher has given up on it.
+      # A reader stuck on a stalled mount must not hold the caller's pipes open.
       null = os.open(os.devnull, os.O_RDWR)
       for standard in (0, 1, 2):
         os.dup2(null, standard)
-      data = read_sender_file(path)
-      view = memoryview(data)
-      while view:
-        view = view[os.write(write_end, view):]
+      write_all(write_end, read_sender_file(path))
       status = 0
     except BaseException:
       pass
@@ -225,10 +197,11 @@ def open_sender_image(stream, timeout=SENDER_READ_SECONDS):
   os.close(write_end)
   status = None
   try:
-    reader = os.fdopen(read_end, "rb", buffering=0)
-    with reader:
-      deadline = time.monotonic() + timeout
-      data = read_bounded(reader, SENDER_IMAGE_BYTES, deadline)
+    deadline = time.monotonic() + timeout
+    try:
+      data = read_bounded(read_end, SENDER_IMAGE_BYTES, deadline)
+    finally:
+      os.close(read_end)
     while status is None and time.monotonic() < deadline:
       done, code = os.waitpid(pid, os.WNOHANG)
       if done:
@@ -240,7 +213,6 @@ def open_sender_image(stream, timeout=SENDER_READ_SECONDS):
       reap_killed(pid)
   if status is None or os.waitstatus_to_exitcode(status) != 0:
     raise ValueError("sender image unavailable")
-  # Sealed: nothing can change the copy once it is made.
   return sealed_memfd("sender-image", data)
 
 
@@ -253,26 +225,6 @@ def die_with_parent(parent):
   # The launcher may already have gone before the request took effect.
   if os.getppid() != parent:
     os._exit(1)
-
-
-def read_bounded(stream, limit, deadline):
-  import selectors
-  chunks, size = [], 0
-  with selectors.DefaultSelector() as selector:
-    selector.register(stream, selectors.EVENT_READ)
-    while True:
-      remaining = deadline - time.monotonic()
-      if remaining <= 0:
-        raise ValueError("sender image read timed out")
-      if not selector.select(remaining):
-        continue
-      chunk = os.read(stream.fileno(), 65536)
-      if not chunk:
-        return b"".join(chunks)
-      size += len(chunk)
-      if size > limit:
-        raise ValueError("sender image too large")
-      chunks.append(chunk)
 
 
 def reap_killed(pid):
@@ -299,12 +251,11 @@ def python_helper(kind, args, root=SANDBOX_ROOT):
 
 
 # The download sandbox shares the host network, and with it the host's abstract
-# Unix sockets, which no filesystem mount can hide. This seccomp filter, a
-# classic BPF program in the form bwrap --seccomp reads, refuses to create any
-# AF_UNIX socket there and kills a syscall from any other ABI, so the 32-bit
-# entry point cannot go around it, and any x32 syscall (numbers with bit 30
-# set, which x86_64 reports under its own arch) is killed outright. Loopback stays reachable because DNS
-# often lives there (127.0.0.53); the HTTP client refuses non-public addresses.
+# Unix sockets, which no mount can hide. This classic BPF program (the form
+# bwrap --seccomp reads) refuses AF_UNIX sockets and kills any syscall from a
+# foreign ABI or the x32 range (bit 30, which x86_64 reports under its own
+# arch), so neither entry point goes around it. Loopback stays reachable for
+# DNS (127.0.0.53); the HTTP client refuses non-public addresses.
 SECCOMP_ARCH = {"x86_64": (0xC000003E, 41), "aarch64": (0xC00000B7, 198)}
 X32_SYSCALL_BIT = 0x40000000
 
@@ -361,8 +312,7 @@ def sandbox_command(kind, args, bwrap, environ, seccomp_fd=None):
   if kind == "store":
     cmd += ["--bind", str(STATE), str(STATE)]
   elif download:
-    # The only sandbox with a network: it fetches a site's icons and decodes
-    # nothing, and it can write nowhere but its own tmpfs.
+    # The only sandbox with a network: it decodes nothing and writes nowhere.
     cmd += ["--share-net"]
     for name in ("/etc/resolv.conf", "/etc/ssl/certs", "/etc/ca-certificates"):
       if Path(name).exists():
@@ -381,8 +331,8 @@ def sandbox_command(kind, args, bwrap, environ, seccomp_fd=None):
     for name, value in bus_environment.items():
       cmd += ["--setenv", name, value]
 
-    # A reply demo gets only its private fixture/result directory. Normal
-    # phone operations never receive the notification store mount.
+    # Only a reply demo gets its private fixture directory; phone requests
+    # get no state at all.
     demo_request = (len(args) == 3 and args[:2] == ["find", DEMO_APP]) or (
         len(args) == 5 and args[0] == "reply"
         and re.fullmatch(r"demo:[0-9a-f]{32}", args[1]) is not None
@@ -395,27 +345,12 @@ def sandbox_command(kind, args, bwrap, environ, seccomp_fd=None):
   return cmd + python_helper(kind, args)
 
 
-def direct_command(kind, args):
-  return python_helper(kind, args, str(BASE))
-
-
-def direct_environment(kind, environ):
-  if kind not in HELPER_KINDS:
-    raise ValueError("unknown helper")
-  extra = validated_bus_environment(environ)[0] if kind == "kdeconnect" else None
-  return clean_environment(extra)
-
-
-def limits():
+def prepare_child(signal_mask):
+  signal.pthread_sigmask(signal.SIG_SETMASK, signal_mask)
   resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
   resource.setrlimit(resource.RLIMIT_CPU, (30, 30))
   resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
   resource.setrlimit(resource.RLIMIT_FSIZE, (2 * 1024 * 1024, 2 * 1024 * 1024))
-
-
-def prepare_child(signal_mask):
-  signal.pthread_sigmask(signal.SIG_SETMASK, signal_mask)
-  limits()
 
 
 def stop_process_group(proc):
@@ -456,27 +391,6 @@ def stop_process_group(proc):
     pass
 
 
-def collect_output(proc, limit, deadline):
-  """Read the child's stdout to EOF, at most `limit` bytes, before `deadline`."""
-  import selectors
-  chunks, size = [], 0
-  with selectors.DefaultSelector() as selector:
-    selector.register(proc.stdout, selectors.EVENT_READ)
-    while True:
-      remaining = deadline - time.monotonic()
-      if remaining <= 0:
-        raise subprocess.TimeoutExpired(proc.args, 0)
-      if not selector.select(remaining):
-        continue
-      chunk = os.read(proc.stdout.fileno(), 65536)
-      if not chunk:
-        return b"".join(chunks)
-      size += len(chunk)
-      if size > limit:
-        raise ValueError("helper output too large")
-      chunks.append(chunk)
-
-
 def run_supervised(argv, environ, timeout, stdin_descriptor=None, capture=None, pass_fds=(), deadline=None):
   handled_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
   previous = {}
@@ -490,11 +404,9 @@ def run_supervised(argv, environ, timeout, stdin_descriptor=None, capture=None, 
   try:
     for signum in handled_signals:
       previous[signum] = signal.signal(signum, interrupted)
-    # Output streams deliberately inherit unchanged. A supplied descriptor
-    # becomes child stdin without exposing its source path to argv or logs.
-    # The child is a session leader so termination and deadlines reap its group.
-    child_setup = partial(prepare_child, old_mask)
-    proc = subprocess.Popen(argv, env=environ, preexec_fn=child_setup,
+    # Unless captured, output inherits unchanged. The child leads its own
+    # session so termination and deadlines reap its whole group.
+    proc = subprocess.Popen(argv, env=environ, preexec_fn=lambda: prepare_child(old_mask),
                             stdin=stdin_descriptor, start_new_session=True,
                             stdout=subprocess.PIPE if capture else None, pass_fds=pass_fds)
     masked = False
@@ -506,7 +418,7 @@ def run_supervised(argv, environ, timeout, stdin_descriptor=None, capture=None, 
       if not capture:
         return proc.wait(timeout=timeout)
       deadline = time.monotonic() + timeout
-      output = collect_output(proc, capture, deadline)
+      output = read_bounded(proc.stdout.fileno(), capture, deadline)
       return proc.wait(timeout=max(0.1, deadline - time.monotonic())), output
     except BaseException:
       # Whatever went wrong, the helper does not outlive the launcher's answer.
@@ -560,9 +472,7 @@ def run_helper(kind, args, required, environ, stdin_descriptor=None):
   status, bwrap = mode_status(required)
   if status["mode"] == "blocked":
     raise RuntimeError("sandbox required")
-  # Icons are hostile input end to end - a website's favicon, a file a sender
-  # points at - and decoding them is the riskiest thing these helpers do. That
-  # never runs unsandboxed: without a working sandbox the card shows a letter.
+  # Icons are hostile input end to end; decoding them never runs unsandboxed.
   if kind == "icon" and status["mode"] != "sandboxed":
     raise RuntimeError("image decoding needs the sandbox")
   if kind != "icon":
@@ -570,15 +480,14 @@ def run_helper(kind, args, required, environ, stdin_descriptor=None):
       argv = sandbox_command(kind, args, bwrap, environ)
       child_environment = clean_environment()
     else:
-      argv = direct_command(kind, args)
-      child_environment = direct_environment(kind, environ)
-    # This is the sole actual-helper execution. A failure is returned
-    # directly; it is never replayed in a less restricted mode.
+      argv = python_helper(kind, args, str(BASE))
+      bus = validated_bus_environment(environ)[0] if kind == "kdeconnect" else None
+      child_environment = clean_environment(bus)
+    # The only execution: a failure is never replayed in a less restricted mode.
     return run_supervised(argv, child_environment, 45, stdin_descriptor)
 
-  # One icon job resolves one source, all of it inside one deadline, so a
-  # slow or hostile site cannot hold the icon queue for long. Its output is
-  # pixels, bounded, which become a PNG here.
+  # One icon job resolves one source inside one deadline, so a slow or hostile
+  # site cannot hold the icon queue. Its output is bounded pixels.
   deadline = time.monotonic() + ICON_JOB_SECONDS
   if not sender_image:
     fields, flags, scheme = icon_lookup(args)
@@ -591,8 +500,7 @@ def run_helper(kind, args, required, environ, stdin_descriptor=None):
         seccomp = sealed_memfd("download-seccomp", no_unix_sockets_filter())
         os.set_inheritable(seccomp, True)
       command = sandbox_command("icon", icon_args, bwrap, environ, seccomp)
-      # Checked after setup, and the phase is bounded by the job's deadline
-      # from the moment it spawns, so setup time counts against the budget.
+      # Setup time counts against the job's budget.
       if deadline - time.monotonic() <= 1:
         raise subprocess.TimeoutExpired("icon", 0)
       return run_supervised(command, clean_environment(), 20, stdin, limit,
@@ -601,18 +509,16 @@ def run_helper(kind, args, required, environ, stdin_descriptor=None):
       if seccomp is not None:
         os.close(seccomp)
 
-  # The lookup runs without a network either way; with --fetch it says which
-  # site it would need, and the launcher fetches that separately.
+  # The lookup never has a network; with --fetch it names the site it needs.
   first = args if sender_image else lookup + (["--fetch"] if "--fetch" in flags else [])
   code, output = icon(first, stdin_descriptor, ICON_OUTPUT_BYTES)
   if code != 0:
     return code
   host = "" if sender_image or "--fetch" not in flags else images.requested_fetch(output)
   if host:
-    # Downloading and decoding never share a sandbox: the one with the
-    # network decodes nothing, and the decoder never has a network. The lookup
-    # only asks; the site downloaded is always the notification's own source,
-    # and only for a well-formed answer with nothing after it.
+    # Downloading and decoding never share a sandbox. The lookup only asks: the
+    # site downloaded is always the notification's own source, and only for a
+    # well-formed answer with nothing after it.
     expected = public_hostname(lookup_source(fields)) or ""
     images.unpack_pixels(output, 128)
     host = expected if host == expected else ""
@@ -624,7 +530,7 @@ def run_helper(kind, args, required, environ, stdin_descriptor=None):
         if code == 0:
           blobs = downloaded
       except (subprocess.TimeoutExpired, ValueError, OSError):
-        pass
+        pass  # decode nothing: the card falls back to its letter
     sealed = sealed_memfd("downloaded-icons", blobs)
     try:
       code, output = icon(["--fetched"] + lookup, sealed, ICON_OUTPUT_BYTES)
@@ -640,16 +546,15 @@ ICON_FIELDS = ("--key=", "--app=", "--app-icon=", "--source=")
 
 
 def lookup_source(fields):
-  """The source a lookup was asked about: its last --source=, as argparse reads it."""
+  """The lookup's last --source=, as argparse reads it."""
   sources = [field[len("--source="):] for field in fields if field.startswith("--source=")]
   return sources[-1] if sources else ""
 
 
 def icon_lookup(args):
-  """The only shapes a lookup may take: the four `--name=value` fields, an
-  optional `--fetch` and `--why`, and a scheme. Values are attached with `=`, so
-  one that starts with dashes is still the value; anything else is refused, so
-  no argument from a caller can reach the launcher's own internal modes."""
+  """The only shapes a lookup may take: the four `--name=value` fields, optional
+  `--fetch` and `--why`, and a scheme. Values attach with `=`, so a dash-leading
+  value stays a value, and no caller argument reaches an internal mode."""
   fields, flags, scheme, i = [], set(), "dark", 0
   while i < len(args):
     arg = args[i]
@@ -673,9 +578,7 @@ def sealed_memfd(name, data):
   import fcntl
   fd = os.memfd_create(name, os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
   try:
-    view = memoryview(data)
-    while view:
-      view = view[os.write(fd, view):]
+    write_all(fd, data)
     fcntl.fcntl(fd, fcntl.F_ADD_SEALS, fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW
                 | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL)
     os.lseek(fd, 0, os.SEEK_SET)
@@ -685,10 +588,15 @@ def sealed_memfd(name, data):
     raise
 
 
+def write_all(fd, data):
+  view = memoryview(data)
+  while view:
+    view = view[os.write(fd, view):]
+
+
 def publish_icon(output, sender_image, why):
-  """The PNG for a helper's pixels: a data: URL for a sender image, else a
-  file in PUBLISHED named by its own digest, so equal icons share one file and
-  a different icon can never overwrite it."""
+  """The PNG for a helper's pixels: a data: URL for a sender image, else a file
+  in PUBLISHED named by its digest, which a different icon can never overwrite."""
   import base64
   import hashlib
   width, height, rgba, mono, how = images.unpack_pixels(output, 128)

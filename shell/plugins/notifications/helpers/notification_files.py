@@ -1,9 +1,11 @@
-"""Private, bounded, atomic helper storage. Paths are application-owned."""
+"""Private, bounded, atomic helper storage and bounded reads. Paths are application-owned."""
 import json
 import os
 from pathlib import Path
+import selectors
 import stat
 import tempfile
+import time
 
 MAX_BYTES = 65536
 os.umask(0o077)
@@ -62,3 +64,22 @@ def input_json(stream):
   if not isinstance(value, dict):
     raise ValueError('object required')
   return value
+
+def read_bounded(fd, limit, deadline):
+  """Read `fd` to EOF before the monotonic `deadline`, refusing more than `limit` bytes."""
+  chunks, size = [], 0
+  with selectors.DefaultSelector() as selector:
+    selector.register(fd, selectors.EVENT_READ)
+    while True:
+      remaining = deadline - time.monotonic()
+      if remaining <= 0:
+        raise TimeoutError("read timed out")
+      if not selector.select(remaining):
+        continue
+      chunk = os.read(fd, 65536)
+      if not chunk:
+        return b"".join(chunks)
+      size += len(chunk)
+      if size > limit:
+        raise ValueError("output too large")
+      chunks.append(chunk)

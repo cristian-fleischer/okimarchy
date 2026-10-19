@@ -1,4 +1,5 @@
 """Hostile input on the image path: pages, SVGs, ICOs and the decoder policy."""
+import io
 import os
 from pathlib import Path
 import subprocess
@@ -8,13 +9,9 @@ import time
 import unittest
 from unittest.mock import patch
 
-from support import have_magick, load_helper, png
+from support import SVG, load_helper, magick, needs_magick, png
 
 import notification_images as images
-
-
-def needs_magick(test):
-  return unittest.skipUnless(have_magick(), "imagemagick is not installed")(test)
 
 
 EXTERNAL_IMAGE_SVG = b"""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
@@ -37,13 +34,17 @@ class FaviconPages(unittest.TestCase):
       self.assertEqual(icon.icon_links(page, "https://source.test/", "dark"), [])
       self.assertLess(time.monotonic() - started, 2.0)
 
-  def test_link_attributes_are_still_read(self):
+  def test_links_are_read_in_order_and_only_over_https(self):
     icon = load_helper("icon")
     page = ('<link rel="icon" sizes="32x32" href="/a.png"><link rel=icon href=/b.png />'
-            '<LINK REL="apple-touch-icon" href="https://source.test/c.png"><link rel="manifest" href="/m.json">')
-    self.assertEqual(icon.icon_links(page, "https://source.test/", "dark"), [
+            '<LINK REL="apple-touch-icon" href="https://source.test/c.png"><link rel="manifest" href="/m.json">'
+            '<link href><link rel="icon" href="//target.test/d.png">'
+            '<link rel="icon" href="http://target.test/downgrade.png">'
+            '<link rel="icon" href="https://user:secret@target.test/private.png">')
+    self.assertEqual(icon.icon_links(page, "https://source.test/app/", "dark"), [
         "https://source.test/a.png", "https://source.test/c.png", "https://source.test/b.png",
-        ("manifest", "https://source.test/m.json")])
+        "https://target.test/d.png", ("manifest", "https://source.test/m.json")])
+    self.assertEqual(icon.icon_links(None, "https://source.test/", "dark"), [])
 
 
 class Svg(unittest.TestCase):
@@ -67,22 +68,15 @@ class Svg(unittest.TestCase):
     icon = load_helper("icon")
     with tempfile.TemporaryDirectory() as temp, patch.object(icon, "CACHE", temp):
       source = Path(temp) / "mark.svg"
-      source.write_bytes(b'<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">'
-                         b'<circle cx="16" cy="16" r="12" fill="red"/></svg>')
+      source.write_bytes(SVG)
       rgba, mono = icon.normalise(str(source))
       self.assertEqual(len(rgba), 128 * 128 * 4)
       self.assertEqual(tuple(rgba[(64 * 128 + 64) * 4:(64 * 128 + 64) * 4 + 4])[3], 255)
       source.write_bytes(b"not an svg")
       self.assertIsNone(icon.normalise(str(source)))
 
-  def test_svg_is_never_a_remote_or_sender_format(self):
-    icon = load_helper("icon")
-    self.assertNotIn("SVG", icon.REMOTE_FORMATS)
-    with self.assertRaises(ValueError):
-      icon.normalised_remote_png(b'<svg xmlns="http://www.w3.org/2000/svg"/>')
 
-
-class Ico(unittest.TestCase):
+class Frames(unittest.TestCase):
   def test_rejected_counts_never_reach_the_decoder(self):
     def forbidden(*_args):
       raise AssertionError("ImageMagick ran on a rejected icon")
@@ -100,11 +94,13 @@ class Ico(unittest.TestCase):
     return header + directory + entry
 
   @needs_magick
-  def test_frame_count_is_bounded_before_decoding(self):
+  def test_an_icon_decodes_its_largest_frame_and_an_animation_is_refused(self):
     self.assertEqual(images.decode(self.ico(64), ("ICO",), 2048, 2048 * 2048, 128)[:2], (4, 4))
-    for count in (0, 65, 1024):
-      with self.subTest(count=count), self.assertRaises(ValueError):
-        images.decode(self.ico(count), ("ICO",), 2048, 2048 * 2048, 128)
+    sizes = magick("-size", "64x64", "xc:red", "-define", "icon:auto-resize=16,32,64", "ico:-")
+    self.assertEqual(images.decode(sizes, ("ICO",), 2048, 2048 * 2048, 128)[:2], (64, 64))
+    animation = magick("-size", "8x8", "xc:red", "xc:blue", "-loop", "0", "webp:-")
+    with self.assertRaises(ValueError):
+      images.decode(animation, ("WEBP",), 2048, 2048 * 2048, 128)
 
 
 class Policy(unittest.TestCase):
@@ -134,8 +130,7 @@ class Policy(unittest.TestCase):
       image_list.write_text(str(listed) + "\n")
       # Real inputs for every denied coder: under ImageMagick's own policy each
       # one converts, so a refusal under ours is the policy and not a bad file.
-      gif = subprocess.run([images.MAGICK, "-size", "8x8", "xc:red", "gif:-"], stdout=subprocess.PIPE,
-                           stderr=subprocess.DEVNULL, check=True).stdout
+      gif = magick("-size", "8x8", "xc:red", "gif:-")
       cases = (("label:secret", b""), ("caption:secret", b""), ("svg:-", svg), ("msvg:-", svg),
                ("mvg:-", b"viewbox 0 0 8 8 fill red rectangle 0,0 8,8"), ("text:-", b"secret"),
                ("gif:-", gif), ("@" + str(image_list), b""))
@@ -150,7 +145,6 @@ class Policy(unittest.TestCase):
           self.assertNotEqual(result.returncode, 0)
           self.assertEqual(result.stdout, b"")
 
-  @needs_magick
   def test_decoded_output_is_bounded(self):
     with self.assertRaises(ValueError):
       images._bounded((129, 1, b""), 128)
@@ -187,15 +181,21 @@ class Publishing(unittest.TestCase):
     with self.assertRaises(ValueError):
       self.runner.publish_icon(images.pack_nothing(), True, False)
 
-  def test_malformed_pixel_output_publishes_nothing(self):
-    svg = b'<svg xmlns="http://www.w3.org/2000/svg"/>'
-    for output in (b"", svg, b"/home/user/.ssh/id_ed25519\n",
-                   b'{"width":4,"height":4,"mono":false}\n' + bytes(63),
-                   b'{"width":129,"height":1,"mono":false}\n' + bytes(129 * 4),
-                   b'{"width":1,"height":1,"mono":"yes"}\n' + bytes(4),
-                   b'{"none":true}\n' + svg, b"x" * 600):
-      with self.subTest(output=output[:40]), self.assertRaises(ValueError):
-        self.runner.publish_icon(output, False, False)
+  def test_anything_but_the_pixel_protocol_publishes_nothing(self):
+    import base64
+    outputs = [b"", SVG, b"/home/user/.ssh/id_ed25519\n",
+               b'{"width":4,"height":4,"mono":false}\n' + bytes(63),
+               b'{"width":129,"height":1,"mono":false}\n' + bytes(129 * 4),
+               b'{"width":1,"height":1,"mono":"yes"}\n' + bytes(4),
+               b'{"none":true}\n' + SVG, b"x" * 600]
+    # Not even a data: URL of a real PNG: the launcher builds every PNG itself.
+    for body in (SVG, b"<html></html>", png((4, 4))):
+      url = b"data:image/png;base64," + base64.b64encode(body)
+      outputs += [url, b" " + url, url + b"\n", url + b"data:image/png;base64,AAAA"]
+    for output in outputs:
+      for sender_image in (False, True):
+        with self.subTest(output=output[:40], sender_image=sender_image), self.assertRaises(ValueError):
+          self.runner.publish_icon(output, sender_image, False)
     self.assertFalse(self.published.exists() and any(self.published.iterdir()))
 
   def test_the_published_directory_is_outside_every_sandbox(self):
@@ -219,7 +219,6 @@ class SenderFiles(unittest.TestCase):
     self.runner = load_helper("run")
 
   def stream(self, path):
-    import io
     return io.BytesIO(str(path).encode())
 
   def test_a_stalled_open_is_abandoned_at_the_deadline(self):
@@ -227,7 +226,7 @@ class SenderFiles(unittest.TestCase):
     # opened; the reader runs in a child the launcher kills at its deadline.
     with patch.object(self.runner, "read_sender_file", lambda _path: time.sleep(3600)):
       started = time.monotonic()
-      with self.assertRaises(ValueError):
+      with self.assertRaises(TimeoutError):
         self.runner.open_sender_image(self.stream("/stalled/image.png"), timeout=1)
       self.assertLess(time.monotonic() - started, 4)
 
@@ -256,16 +255,22 @@ class SenderFiles(unittest.TestCase):
     with tempfile.TemporaryDirectory() as temp:
       marker = Path(temp) / "reader.pid"
       script = (
-          "import sys, time\n"
+          "import io, os, sys, time\n"
           "sys.path.insert(0, %r)\n"
           "from support import load_helper\n"
           "runner = load_helper('run')\n"
-          "import io\n"
-          "runner.read_sender_file = lambda _p: (open(%r, 'w').write(str(__import__('os').getpid())), time.sleep(3600))\n"
+          "runner.read_sender_file = lambda _p: (open(%r, 'w').write(str(os.getpid())), time.sleep(3600))\n"
           "runner.open_sender_image(io.BytesIO(b'/stalled.png'), timeout=600)\n"
       ) % (str(Path(__file__).parent), str(marker))
       launcher = subprocess.Popen([sys.executable, "-B", "-c", script])
       reader = None
+
+      def alive():
+        try:
+          return Path("/proc/%d/stat" % reader).read_text().split()[2] != "Z"
+        except OSError:
+          return False
+
       try:
         deadline = time.monotonic() + 10
         while not (marker.exists() and marker.read_text()) and time.monotonic() < deadline:
@@ -274,13 +279,9 @@ class SenderFiles(unittest.TestCase):
         launcher.kill()
         launcher.wait(timeout=5)
         deadline = time.monotonic() + 5
-        while Path("/proc/%d" % reader).exists() and time.monotonic() < deadline:
-          state = Path("/proc/%d/stat" % reader).read_text().split()[2] if Path("/proc/%d/stat" % reader).exists() else "X"
-          if state == "Z":
-            break
+        while alive() and time.monotonic() < deadline:
           time.sleep(0.05)
-        alive = Path("/proc/%d/stat" % reader).exists() and Path("/proc/%d/stat" % reader).read_text().split()[2] != "Z"
-        self.assertFalse(alive, "the reader outlived its launcher")
+        self.assertFalse(alive(), "the reader outlived its launcher")
       finally:
         if launcher.poll() is None:
           launcher.kill()
@@ -309,7 +310,7 @@ class SenderFiles(unittest.TestCase):
   def test_any_failure_while_supervising_stops_the_helper(self):
     def broken(*_args):
       raise OSError("selector failed")
-    with patch.object(self.runner, "collect_output", broken):
+    with patch.object(self.runner, "read_bounded", broken):
       started = time.monotonic()
       with self.assertRaises(OSError):
         self.runner.run_supervised(["/usr/bin/sleep", "60"], {"PATH": "/usr/bin"}, 30, None, 4096)

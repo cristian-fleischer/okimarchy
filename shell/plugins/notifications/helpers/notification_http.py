@@ -41,12 +41,10 @@ def parse_url(raw):
   return p, h, port
 
 def resolve_public_answers(host, port):
-  """Return one fully validated, bounded DNS answer set.
+  """One bounded DNS answer set, every address checked before any connect.
 
-  Every answer is checked before any connection starts. The returned numeric
-  socket addresses are the only destinations the connection may try, so a
-  later resolver change cannot redirect the request to a local service.
-  """
+  These numeric addresses are the only ones the connection may try, so a
+  later resolver change cannot redirect the request to a local service."""
   answers = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM,
                                proto=socket.IPPROTO_TCP)
   if not answers:
@@ -69,17 +67,10 @@ def resolve_public_answers(host, port):
       checked.append((family, socktype, proto, canonname, address))
   return checked
 
-
-def resolve_public_host(host, port):
-  """The first validated address, for callers that only want one."""
-  return resolve_public_answers(host, port)[0]
-
 class PinnedHTTPConnection(http.client.HTTPConnection):
   def __init__(self, host, port, answers, deadline):
     super().__init__(host, port, timeout=CONNECT_TIMEOUT)
-    # A single getaddrinfo 5-tuple is accepted too, for callers with
-    # exactly one already-validated address to connect to.
-    self.answers = [answers] if isinstance(answers, tuple) else answers
+    self.answers = answers
     self.deadline = deadline
 
   def remaining(self):
@@ -117,11 +108,8 @@ class PinnedHTTPConnection(http.client.HTTPConnection):
       raise last_error
     raise OSError('no validated DNS answer')
 
-def fetch_once(url, limit, deadline=None):
-  if type(limit) is not int or not 0 < limit <= MAX_RESPONSE_BYTES:
-    raise ValueError('invalid response limit')
+def fetch_once(url, limit, deadline):
   p, host, port = parse_url(url)
-  deadline = deadline if deadline is not None else time.monotonic() + REQUEST_DEADLINE
   answers = resolve_public_answers(host, port)
   conn = PinnedHTTPConnection(host, port, answers, deadline)
   try:
@@ -171,7 +159,6 @@ def fetch(url, limit=512*1024):
     raise ValueError('invalid response limit')
   deadline = time.monotonic() + REQUEST_DEADLINE
   for hop in range(MAX_REDIRECTS + 1):
-    parse_url(url)
     data, location = fetch_once(url, limit, deadline)
     if location is None:
       return data, url
@@ -185,4 +172,3 @@ def fetch(url, limit=512*1024):
     # Fail before another DNS lookup or connect on HTTPS downgrade,
     # credentials, numeric/local names, or a forbidden port.
     parse_url(url)
-  raise ValueError('redirect limit')

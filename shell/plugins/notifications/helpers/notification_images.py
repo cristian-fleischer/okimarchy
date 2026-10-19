@@ -1,18 +1,13 @@
 """Bounded image decoding for the notification helpers, through ImageMagick.
 
-ImageMagick is a base Omarchy package, so icons and sender images need no
-Python imaging library. It is never left to guess a format: the bytes are
-sniffed here first, and only a PNG, JPEG, WebP or ICO signature is handed to
-the matching native coder (`png:-`), so a file cannot talk its way into an
-SVG, MSL or text coder. Every run carries memory, size and time limits, reads
-from stdin, and returns raw RGBA through PAM, which this module checks before
-using. PNGs are written here, with zlib.
-
-The bundled policy.xml is forced on through MAGICK_CONFIGURE_PATH, inside the
-sandbox (where the system policy is not even mounted) and out of it: every
-coder, delegate, filter and @file read is denied except the ones above, PAM,
-and librsvg for local SVG icons.
+ImageMagick never guesses a format: the bytes are sniffed here, and only a
+PNG, JPEG, WebP or ICO signature reaches its own coder (`png:-`), so a file
+cannot talk its way into an SVG, MSL or text coder. Every run reads stdin
+under memory, size and time limits and returns RGBA through PAM, checked
+before use. The bundled policy.xml (forced through MAGICK_CONFIGURE_PATH)
+denies every other coder, delegate, filter and @file read.
 """
+import json
 import os
 import struct
 import subprocess
@@ -52,13 +47,6 @@ def sniff(data):
   if data.startswith(b"\x00\x00\x01\x00"):
     return "ICO"
   return None
-
-
-def ico_count(data):
-  """The number of images an ICO header claims."""
-  if len(data) < 6:
-    raise ValueError("truncated icon")
-  return struct.unpack_from("<H", data, 4)[0]
 
 
 def _magick(args, data):
@@ -120,8 +108,8 @@ def decode(data, formats, max_side, max_pixels, out_side):
     raise ValueError("unsupported image")
   # ImageMagick's list-length limit does not bound an ICO's directory; the
   # header's own count does, before any decoder sees it.
-  if fmt == "ICO" and not 0 < ico_count(data) <= MAX_FRAMES:
-    raise ValueError("too many icon frames")
+  if fmt == "ICO" and (len(data) < 6 or not 0 < struct.unpack_from("<H", data, 4)[0] <= MAX_FRAMES):
+    raise ValueError("bad icon frame count")
   sizes = frames(data, fmt)
   if fmt != "ICO" and len(sizes) != 1:
     raise ValueError("animated or multi-frame image")
@@ -203,22 +191,27 @@ def pack_nothing(how="", fetch=""):
   return _header(header)
 
 
+def _parse_header(data):
+  end = data.find(b"\n", 0, PIXELS_HEADER_BYTES)
+  if end < 0:
+    raise ValueError("no header")
+  header = json.loads(data[:end].decode("ascii", "strict"))
+  if not isinstance(header, dict):
+    raise ValueError("bad header")
+  return header, data[end + 1:]
+
+
 def requested_fetch(data):
   """The host a lookup asks the launcher to download icons for, or ""."""
-  import json
-  end = data.find(b"\n", 0, PIXELS_HEADER_BYTES)
   try:
-    header = json.loads(data[:end].decode("ascii", "strict")) if end >= 0 else None
+    header = _parse_header(data)[0]
   except ValueError:
     return ""
-  if not isinstance(header, dict) or header.get("none") is not True:
-    return ""
-  host = header.get("fetch", "")
+  host = header.get("fetch", "") if header.get("none") is True else ""
   return host if isinstance(host, str) else ""
 
 
 def _header(value):
-  import json
   line = json.dumps(value, separators=(",", ":")).encode() + b"\n"
   if len(line) > PIXELS_HEADER_BYTES:
     raise ValueError("header too large")
@@ -227,16 +220,9 @@ def _header(value):
 
 def unpack_pixels(data, max_side):
   """(width, height, rgba, mono, how), or (0, 0, b"", False, how) for no image."""
-  import json
-  end = data.find(b"\n", 0, PIXELS_HEADER_BYTES)
-  if end < 0:
-    raise ValueError("no header")
-  header = json.loads(data[:end].decode("ascii", "strict"))
-  if not isinstance(header, dict):
-    raise ValueError("bad header")
+  header, pixels = _parse_header(data)
   how = header.get("how", "")
   how = how if isinstance(how, str) and len(how) <= 128 and how.isprintable() else ""
-  pixels = data[end + 1:]
   if header.get("none") is True:
     if pixels:
       raise ValueError("unexpected pixels")

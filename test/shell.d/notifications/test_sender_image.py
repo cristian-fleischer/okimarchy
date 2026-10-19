@@ -7,8 +7,8 @@ import subprocess
 import tempfile
 import unittest
 
-
 from support import RUN, have_magick, png
+import notification_images as images
 
 DATA_URL_PREFIX = "data:image/png;base64,"
 
@@ -18,8 +18,6 @@ class SenderImage(unittest.TestCase):
   def setUpClass(cls):
     if not have_magick():
       raise unittest.SkipTest("imagemagick is not installed")
-    import notification_images
-    cls.images = notification_images
 
   def setUp(self):
     self.temp = tempfile.TemporaryDirectory(prefix="omarchy-notification-sender-image-")
@@ -32,38 +30,14 @@ class SenderImage(unittest.TestCase):
   def tearDown(self):
     self.temp.cleanup()
 
-  def environment(self, required="0"):
-    return {
-        "HOME": str(self.home),
-        "LANG": "C.UTF-8",
-        "PATH": "/usr/bin",
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "OMARCHY_NOTIFICATIONS_REQUIRE_SANDBOX": required,
-    }
+  def launch(self, args, stdin=b"", required="0"):
+    environment = {"HOME": str(self.home), "LANG": "C.UTF-8", "PATH": "/usr/bin",
+                   "PYTHONDONTWRITEBYTECODE": "1", "OMARCHY_NOTIFICATIONS_REQUIRE_SANDBOX": required}
+    return subprocess.run([str(RUN), *args], input=stdin, capture_output=True, env=environment,
+                          timeout=10, check=False)
 
-  def mode_status(self):
-    result = subprocess.run(
-        [str(RUN), "status"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=self.environment(),
-        timeout=10,
-        check=False,
-    )
-    self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", "replace"))
-    return json.loads(result.stdout)
-
-  def run_sender(self, path, required="0", timeout=10):
-    self.assertTrue(path.is_absolute())
-    return subprocess.run(
-        [str(RUN), "icon", "--sender-image"],
-        input=str(path).encode("utf-8"),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=self.environment(required),
-        timeout=timeout,
-        check=False,
-    )
+  def run_sender(self, path, required="0"):
+    return self.launch(["icon", "--sender-image"], str(path).encode(), required)
 
   def make_png(self, name="sender.png"):
     path = self.inputs / name
@@ -75,15 +49,17 @@ class SenderImage(unittest.TestCase):
     output = result.stdout.decode("ascii")
     self.assertTrue(output.startswith(DATA_URL_PREFIX))
     self.assertLessEqual(len(output), 131072)
-    png = base64.b64decode(output[len(DATA_URL_PREFIX):], validate=True)
-    self.assertEqual(self.images.sniff(png), "PNG")
-    width, height, rgba = self.images.decode(png, ("PNG",), 128, 128 * 128, 128)
+    data = base64.b64decode(output[len(DATA_URL_PREFIX):], validate=True)
+    self.assertEqual(images.sniff(data), "PNG")
+    width, height, rgba = images.decode(data, ("PNG",), 128, 128 * 128, 128)
     self.assertEqual((width, height), (128, 64))
     i = (32 * width + 64) * 4
     self.assertEqual(tuple(rgba[i:i + 4]), (17, 83, 149, 255))
 
   def test_png_becomes_self_contained_bounded_data_url_in_available_modes(self):
-    status = self.mode_status()
+    result = self.launch(["status"])
+    self.assertEqual(result.returncode, 0, result.stderr)
+    status = json.loads(result.stdout)
     modes = [(status["mode"], "0")]
     if status["sandboxOperational"]:
       modes.append(("required-sandbox", "1"))
@@ -101,7 +77,7 @@ class SenderImage(unittest.TestCase):
   def test_fifo_is_rejected_promptly_and_does_not_poison_next_request(self):
     fifo = self.inputs / "sender.fifo"
     os.mkfifo(fifo)
-    rejected = self.run_sender(fifo, timeout=10)
+    rejected = self.run_sender(fifo)
     self.assertNotEqual(rejected.returncode, 0)
     self.assertEqual(rejected.stdout, b"")
 

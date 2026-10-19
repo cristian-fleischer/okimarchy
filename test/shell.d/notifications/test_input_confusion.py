@@ -2,7 +2,7 @@
 
 Every image is judged by its bytes, never its name; every name and argument is
 data, never an option, coder or path outside its root; and every sandbox keeps
-what it holds to itself. Fixtures follow the round-5 review's cases.
+what it holds to itself.
 """
 import io
 import json
@@ -12,24 +12,13 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
-from support import HELPERS, have_magick, load_helper, png
+from support import SVG, load_helper, magick, needs_magick, png
 
 import notification_images as images
-
-SVG = (b'<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">'
-       b'<circle cx="16" cy="16" r="12" fill="red"/></svg>')
-
-
-def needs_magick(test):
-  return unittest.skipUnless(have_magick(), "imagemagick is not installed")(test)
-
-
-def magick(*args):
-  return subprocess.run([images.MAGICK, *args], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                        check=True).stdout
 
 
 class MisnamedLocalIcons(unittest.TestCase):
@@ -190,22 +179,6 @@ class Arguments(unittest.TestCase):
         os.close(fd)
 
 
-class DataUrlsAreNotPixels(unittest.TestCase):
-  def test_the_publisher_takes_only_its_pixel_protocol(self):
-    runner = load_helper("run")
-    import base64
-    with tempfile.TemporaryDirectory() as temp, patch.object(runner, "PUBLISHED", Path(temp) / "out"):
-      for body in (SVG, b"<html></html>", png((4, 4))):
-        url = b"data:image/png;base64," + base64.b64encode(body)
-        for output in (url, b" " + url, url + b"\n", url + b"data:image/png;base64,AAAA"):
-          with self.subTest(output=output[:40]):
-            with self.assertRaises(ValueError):
-              runner.publish_icon(output, True, False)
-            with self.assertRaises(ValueError):
-              runner.publish_icon(output, False, False)
-      self.assertFalse((Path(temp) / "out").exists())
-
-
 class FetchingAndDecodingAreApart(unittest.TestCase):
   """The sandbox with a network decodes nothing; the decoder has no network."""
 
@@ -248,37 +221,6 @@ class FetchingAndDecodingAreApart(unittest.TestCase):
       with self.subTest(data=data[:24]), self.assertRaises((ValueError, AttributeError)):
         icon.unpack_blobs(data)
 
-  def test_the_launcher_runs_each_half_in_its_own_sandbox(self):
-    runner = load_helper("run")
-    calls = []
-
-    def supervised(argv, environ, timeout, stdin=None, capture=None, pass_fds=(), deadline=None):
-      calls.append((argv, pass_fds))
-      inner = argv[argv.index("/usr/bin/python3"):]
-      if "--download" in inner:
-        return 0, b'{"blobs":[]}\n'
-      if "--fetched" in inner:
-        return 0, images.pack_nothing("none")
-      return 0, images.pack_nothing("fetch:source.test", fetch="source.test")
-
-    status = {"mode": "sandboxed"}
-    with tempfile.TemporaryDirectory() as temp, patch.object(runner, "STATE", Path(temp) / "state"), \
-            patch.object(runner, "PUBLISHED", Path(temp) / "out"), \
-            patch.object(runner, "mode_status", return_value=(status, "/usr/bin/bwrap")), \
-            patch.object(runner, "run_supervised", supervised), \
-            patch.object(sys, "stdout", io.StringIO()):
-      runner.run_helper("icon", ["--key=web:source.test", "--source=source.test", "--scheme", "dark", "--fetch"], False, {})
-    phases = [next(arg for arg in argv[argv.index("/usr/bin/python3"):] if arg in ("--fetch", "--download", "--fetched"))
-              for argv, _ in calls]
-    self.assertEqual(phases, ["--fetch", "--download", "--fetched"])
-    for argv, fds in calls:
-      networked = "--share-net" in argv
-      self.assertEqual(networked, "--download" in argv, argv)
-      if networked:
-        self.assertIn("--seccomp", argv)
-        self.assertEqual(len(fds), 1)
-        self.assertFalse(any(word == "--bind" for word in argv), "the download sandbox writes nowhere")
-
 
 class SeccompProgram(unittest.TestCase):
   """Evaluate the download sandbox's filter the way the kernel would."""
@@ -320,14 +262,16 @@ class SeccompProgram(unittest.TestCase):
 
 
 class PhaseProtocol(unittest.TestCase):
+  """The launcher's three icon phases, with every sandbox run faked."""
+
   def setUp(self):
     self.runner = load_helper("run")
     self.calls = []
 
-  def run_job(self, lookup_output, args=None):
+  def run_job(self, lookup_output):
     def supervised(argv, environ, timeout, stdin=None, capture=None, pass_fds=(), deadline=None):
-      self.calls.append((argv[argv.index("/usr/bin/python3"):], deadline))
       inner = argv[argv.index("/usr/bin/python3"):]
+      self.calls.append((argv, inner, pass_fds, deadline))
       if "--download" in inner:
         return 0, b'{"blobs":[]}\n'
       if "--fetched" in inner:
@@ -339,41 +283,39 @@ class PhaseProtocol(unittest.TestCase):
             patch.object(self.runner, "mode_status", return_value=({"mode": "sandboxed"}, "/usr/bin/bwrap")), \
             patch.object(self.runner, "run_supervised", supervised), patch.object(sys, "stdout", io.StringIO()):
       try:
-        self.runner.run_helper("icon", args or ["--key=web:source.test", "--source=source.test", "--fetch"], False, {})
+        self.runner.run_helper("icon", ["--key=web:source.test", "--source=source.test", "--scheme", "dark",
+                                        "--fetch"], False, {})
       except ValueError:
         pass
-    return [next((a for a in inner if a in ("--download", "--fetched")), "lookup") for inner, _ in self.calls]
+    return [inner for _, inner, _, _ in self.calls if "--download" in inner]
 
-  def test_a_lookup_cannot_choose_another_site_to_download(self):
-    phases = self.run_job(images.pack_nothing("fetch:other.test", fetch="other.test"))
-    self.assertNotIn("--download", phases)
-    downloads = [inner for inner, _ in self.calls if "--download" in inner]
-    self.assertEqual(downloads, [])
-
-  def test_the_downloaded_site_is_the_source(self):
-    self.run_job(images.pack_nothing("fetch:source.test", fetch="SOURCE.test."))
-    downloads = [inner for inner, _ in self.calls if "--download" in inner]
-    self.assertEqual(len(downloads), 0, "a differently spelled host is still not the source")
-    self.calls.clear()
+  def test_each_half_runs_in_its_own_sandbox_under_one_deadline(self):
     self.run_job(images.pack_nothing("fetch:source.test", fetch="source.test"))
-    downloads = [inner for inner, _ in self.calls if "--download" in inner]
-    self.assertEqual(len(downloads), 1)
-    self.assertIn("--source=source.test", downloads[0])
+    phases = [next(arg for arg in inner if arg in ("--fetch", "--download", "--fetched"))
+              for _, inner, _, _ in self.calls]
+    self.assertEqual(phases, ["--fetch", "--download", "--fetched"])
+    self.assertEqual(len({deadline for *_, deadline in self.calls} - {None}), 1)
+    for argv, inner, fds, _ in self.calls:
+      networked = "--share-net" in argv
+      self.assertEqual(networked, "--download" in inner, argv)
+      if networked:
+        self.assertIn("--seccomp", argv)
+        self.assertEqual(len(fds), 1)
+        self.assertFalse(any(word == "--bind" for word in argv), "the download sandbox writes nowhere")
+        self.assertIn("--source=source.test", inner)
 
-  def test_a_fetch_request_with_anything_after_it_is_refused(self):
-    phases = self.run_job(images.pack_nothing("fetch:source.test", fetch="source.test") + b"extra")
-    self.assertNotIn("--download", phases)
-
-  def test_every_phase_shares_one_deadline(self):
-    self.run_job(images.pack_nothing("fetch:source.test", fetch="source.test"))
-    deadlines = {deadline for _, deadline in self.calls}
-    self.assertEqual(len(deadlines), 1)
-    self.assertIsNotNone(deadlines.pop())
+  def test_only_a_well_formed_request_for_the_source_is_downloaded(self):
+    # Another site, a differently spelled host, or anything after the answer.
+    for output in (images.pack_nothing("fetch:other.test", fetch="other.test"),
+                   images.pack_nothing("fetch:source.test", fetch="SOURCE.test."),
+                   images.pack_nothing("fetch:source.test", fetch="source.test") + b"extra"):
+      with self.subTest(output=output[:60]):
+        self.calls.clear()
+        self.assertEqual(self.run_job(output), [])
 
   def test_a_phase_stops_at_the_job_deadline_not_its_own_limit(self):
-    import time
     started = time.monotonic()
-    with self.assertRaises(subprocess.TimeoutExpired):
+    with self.assertRaises(TimeoutError):
       self.runner.run_supervised(["/usr/bin/sleep", "30"], {"PATH": "/usr/bin"}, 20, None, 4096, (),
                                  time.monotonic() + 1)
     self.assertLess(time.monotonic() - started, 6)
@@ -452,7 +394,7 @@ print(json.dumps(out))
     for args in ([], ["--fetch"], ["--fetched"], ["--sender-image"]):
       with self.subTest(args=args):
         found = self.probe(args)
-        self.assertEqual({k for k, v in found.items() if v == "ALLOWED"}, {"unix-socket"} - set(), found)
+        self.assertEqual({k for k, v in found.items() if v == "ALLOWED"}, {"unix-socket"}, found)
 
   def test_the_download_sandbox_has_the_network_and_nothing_else(self):
     found = self.probe(["--download"], seccomp=True)
