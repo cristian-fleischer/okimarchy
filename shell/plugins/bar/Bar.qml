@@ -3,6 +3,7 @@ import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
+import QtQuick.Effects
 import QtQuick.Layouts
 import QtQml.Models
 import qs.Commons
@@ -165,10 +166,17 @@ Item {
   // A widget let go of past that, until its entry is written out of the
   // layout once its poof has played: { key, region, id }.
   property var barRemoval: null
+  // The poof a removed widget vanishes in: the screen it plays on, the
+  // ghost as it was let go (its center, size and picture), and a serial
+  // that starts it again and lays it out a little differently each time.
   property bool barPoofActive: false
   property var barPoofScreen: null
   property real barPoofX: 0
   property real barPoofY: 0
+  property real barPoofWidth: 0
+  property real barPoofHeight: 0
+  property bool barPoofArmed: false
+  property url barPoofImage: ""
   property int barPoofSerial: 0
   property bool barMoveActive: false
   property string barMoveCandidate: ""
@@ -1371,13 +1379,17 @@ Item {
     }
   }
 
-  // Bursts at the live drag point, so it runs before clearBarDrag wipes it.
-  // With motion reduced there is nothing to play.
+  // Bursts out of the ghost where it was let go, so it runs before
+  // clearBarDrag wipes the drag. With motion reduced there is nothing to play.
   function playPoof() {
-    if (Style.duration(520) === 0) return
+    if (Style.duration(620) === 0) return
     barPoofScreen = barDragScreen
-    barPoofX = barDragScreenX
-    barPoofY = barDragScreenY
+    barPoofWidth = barDragGhostWidth
+    barPoofHeight = barDragGhostHeight
+    barPoofX = barDragScreenX - barDragOffsetX + barDragGhostWidth / 2
+    barPoofY = barDragScreenY - barDragOffsetY + barDragGhostHeight / 2
+    barPoofArmed = barDragRemoveArmed
+    barPoofImage = barDragImageUrl
     barPoofSerial++
     barPoofActive = true
     poofTimer.restart()
@@ -1389,7 +1401,7 @@ Item {
   // a poof still playing.
   Timer {
     id: poofTimer
-    interval: Style.duration(520)
+    interval: Style.duration(620)
     onTriggered: {
       root.barPoofActive = false
       root.commitBarRemoval()
@@ -1978,12 +1990,34 @@ Item {
       }
     }
 
-    // The puff of smoke a removed widget vanishes in: a ring of soft dots
-    // drifting outward and fading around a collapsing center puff.
+    // The puff of smoke a widget pulled off the bar vanishes in. Its ghost
+    // pops, swelling as it fades, while a cloud billows out of the space it
+    // filled and thins away, throwing off a few specks. The cloud takes the
+    // widget's own footprint, so a wide widget leaves a wide cloud, and is
+    // laid out afresh for each poof so no two look alike.
     Item {
-      id: poofBurst
+      id: poof
 
+      // 0 to 1 through the poof. Each part runs on its own stretch of it.
       property real progress: 1
+
+      readonly property real spanX: Math.max(Style.spaceReal(16), root.barPoofWidth / 2)
+      readonly property real spanY: Math.max(Style.spaceReal(16), root.barPoofHeight / 2)
+      readonly property real puffSize: Util.clamp(Math.min(root.barPoofWidth, root.barPoofHeight) * 1.1, Style.spaceReal(16), Style.spaceReal(34))
+      // Room around the puffs at their furthest, so the blur isn't clipped.
+      readonly property real margin: puffSize * 1.4 + Style.spaceReal(16)
+
+      // A steady pseudo-random 0 to 1 for part n of this poof.
+      function noise(n) {
+        var v = Math.sin(n * 12.9898 + root.barPoofSerial * 78.233) * 43758.5453
+        return v - Math.floor(v)
+      }
+      // How far along a part starting `from` and ending `to` is.
+      function phase(from, to) {
+        return Util.clamp((progress - from) / (to - from), 0, 1)
+      }
+      function outCubic(t) { return 1 - Math.pow(1 - t, 3) }
+      function outBack(t) { return 1 + 2.4 * Math.pow(t - 1, 3) + 1.4 * Math.pow(t - 1, 2) }
 
       visible: ghostWindow.poofShown
       x: Math.round(root.barPoofX)
@@ -1998,42 +2032,101 @@ Item {
 
       NumberAnimation {
         id: poofAnimation
-        target: poofBurst
+        target: poof
         property: "progress"
         from: 0
         to: 1
-        duration: Style.duration(460)
-        easing.type: Easing.OutCubic
+        duration: Style.duration(560)
       }
 
-      Rectangle {
-        readonly property real puffSize: Style.spaceReal(9) * (1.2 - poofBurst.progress * 0.6)
+      // The ghost, picking up as the drag left it.
+      Image {
+        readonly property real t: poof.outCubic(poof.phase(0, 0.3))
+        readonly property real startScale: root.barPoofArmed ? 0.82 : 1
 
-        width: puffSize
-        height: puffSize
-        radius: puffSize / 2
-        x: -puffSize / 2
-        y: -puffSize / 2
-        color: root.barForeground
-        opacity: (1 - poofBurst.progress) * 0.7
+        width: root.barPoofWidth
+        height: root.barPoofHeight
+        x: -width / 2
+        y: -height / 2
+        source: root.barPoofImage
+        fillMode: Image.Stretch
+        smooth: true
+        scale: startScale + 0.45 * t
+        opacity: 0.84 * (root.barPoofArmed ? 0.55 : 1) * (1 - t)
+      }
+
+      // Overlapping puffs blurred into one soft cloud, ringed faintly in the
+      // bar's background so it reads over light windows and dark alike.
+      Item {
+        id: cloud
+
+        width: (poof.spanX + poof.margin) * 2
+        height: (poof.spanY + poof.margin) * 2
+        x: -width / 2
+        y: -height / 2
+        // Built with the ghost's surface rather than at the release, which
+        // would cost the poof its first frames while the effect sets up.
+        // Until the poof plays the cloud holds nothing to draw.
+        layer.enabled: ghostWindow.visible
+        layer.effect: MultiEffect {
+          blurEnabled: true
+          blur: 0.6
+          blurMax: 20
+          shadowEnabled: true
+          shadowColor: root.background
+          shadowBlur: 0.9
+          shadowOpacity: 0.7
+          shadowHorizontalOffset: 0
+          shadowVerticalOffset: 0
+        }
+
+        Repeater {
+          model: 14
+
+          Rectangle {
+            required property int index
+            // The first sits in the middle; the rest ring it unevenly.
+            readonly property real angle: Math.PI * 2 * (index + poof.noise(index) * 0.7) / 13
+            readonly property real reach: index === 0 ? 0 : 0.3 + 0.7 * poof.noise(index + 20)
+            readonly property real begin: index === 0 ? 0 : 0.1 * poof.noise(index + 40)
+            readonly property real end: 0.82 + 0.18 * poof.noise(index + 60)
+            readonly property real t: poof.phase(begin, end)
+            // Billows out fast, overshooting a touch, then drifts, rises and
+            // swells as it thins, the way smoke spreads.
+            readonly property real grow: poof.outBack(Math.min(1, t / 0.4))
+            readonly property real size: poof.puffSize * (index === 0 ? 1.25 : 0.6 + 0.55 * poof.noise(index + 80)) * (0.3 + 0.8 * grow + 0.4 * t)
+            readonly property real drift: 0.55 + 0.55 * poof.outCubic(t)
+
+            width: size
+            height: size
+            radius: size / 2
+            x: cloud.width / 2 + Math.cos(angle) * poof.spanX * reach * drift - size / 2
+            y: cloud.height / 2 + Math.sin(angle) * poof.spanY * reach * drift - Style.spaceReal(10) * poof.outCubic(t) - size / 2
+            color: root.barForeground
+            // In at once, holding while it billows, thinning away after.
+            opacity: Math.min(1, t / 0.08) * (1 - Math.pow(Math.max(0, t - 0.3) / 0.7, 1.4)) * 0.9
+          }
+        }
       }
 
       Repeater {
-        model: 8
+        model: 7
 
         Rectangle {
           required property int index
-          readonly property real angle: Math.PI * 2 * index / 8
-          readonly property real drift: Style.spaceReal(5) + Style.spaceReal(15) * poofBurst.progress
-          readonly property real puffSize: Style.spaceReal(4 + index % 3 * 2) * (0.6 + poofBurst.progress * 0.9)
+          readonly property real angle: Math.PI * 2 * (index + 0.5 + poof.noise(index + 100) * 0.6) / 7
+          readonly property real reach: 1.15 + 0.6 * poof.noise(index + 120)
+          readonly property real t: poof.phase(0.04, 0.7 + 0.2 * poof.noise(index + 140))
+          readonly property real fly: poof.outCubic(t)
+          readonly property real size: Style.spaceReal(2) + Style.spaceReal(1.5) * poof.noise(index + 160)
 
-          width: puffSize
-          height: puffSize
-          radius: puffSize / 2
-          x: Math.cos(angle) * drift - puffSize / 2
-          y: Math.sin(angle) * drift - puffSize / 2
+          width: size
+          height: size
+          radius: size / 2
+          x: Math.cos(angle) * (poof.spanX + poof.puffSize * 0.6) * reach * fly - size / 2
+          y: Math.sin(angle) * (poof.spanY + poof.puffSize * 0.6) * reach * fly - size / 2
           color: root.barForeground
-          opacity: (1 - poofBurst.progress) * 0.85
+          opacity: (t > 0 ? 1 : 0) * (1 - t) * 0.9
         }
       }
     }

@@ -445,6 +445,28 @@ assert(
   'the tray section reaches by the strip\'s thickness, not the window\'s'
 )
 
+// The poof bursts out of the ghost as it was let go, not the pointer, which
+// holds it by wherever it was pressed, and follows reduced motion.
+const playPoofBody = barSource.match(/function playPoof\(\) \{([\s\S]*?)\n  \}/)[1]
+assert(
+  /if \(Style\.duration\(620\) === 0\) return/.test(playPoofBody) &&
+    /barPoofX = barDragScreenX - barDragOffsetX \+ barDragGhostWidth \/ 2/.test(playPoofBody) &&
+    /barPoofY = barDragScreenY - barDragOffsetY \+ barDragGhostHeight \/ 2/.test(playPoofBody),
+  'the poof bursts from the ghost\'s center, and not at all with motion reduced'
+)
+// Its overlay stays mapped while it plays, though the ghost goes with the drag.
+assert(
+  /visible: \(active && sourceItem !== null\) \|\| poofShown/.test(barSource) &&
+    /visible: ghostWindow\.active && ghostWindow\.sourceItem !== null/.test(barSource),
+  'the drag overlay stays mapped for the poof while the ghost hides with the drag'
+)
+// Setting the cloud's effect up at the release costs the poof its first
+// frames, so it is built with the overlay.
+assert(
+  /layer\.enabled: ghostWindow\.visible\s*\n\s*layer\.effect: MultiEffect/.test(barSource),
+  'the poof\'s cloud effect is ready before the release'
+)
+
 assert(
   /function beginBarDrag\(sourceSlot, pressX, pressY\) \{[\s\S]*?commitBarRemoval\(\)/.test(barSource),
   'a new drag writes any removal still poofing first, so it starts from the layout as it will be'
