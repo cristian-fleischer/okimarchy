@@ -358,7 +358,7 @@ class Icons(unittest.TestCase):
         with patch.object(icon,'from_config',return_value=None), \
              patch.object(icon,'from_icon_theme',return_value=None), \
              patch.object(icon,'from_desktop_entries',return_value=None):
-          hit,how=icon.resolve(args)
+          hit,how=icon.resolve(args,icon.fetch_site)
       self.assertNotEqual(hit,legacy)
       self.assertFalse(os.path.exists(legacy),'poisoned cache entry must be deleted, not reused')
       fetch_site.assert_called_once_with('example.com','dark')

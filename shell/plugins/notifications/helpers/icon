@@ -164,12 +164,14 @@ def normalise(path):
   and rounds the corners of the ones that carry their own background."""
   try:
     data = read_local_icon(path)
-    # An SVG is rasterised here too, never handed to Qt as-is: Qt's SVG
-    # renderer would load any file an <image> in it names.
-    if path.lower().endswith(".svg"):
-      width, height, rgba = images.rasterize_svg(data, WORKING_SIDE)
-    else:
+    # Chosen by what the bytes are, never by the file's name: a raster
+    # signature goes to its own coder, anything else only to librsvg, and only
+    # if it reads as SVG. An SVG is rasterised here too, never handed to Qt
+    # as-is: Qt's SVG renderer would load any file an <image> in it names.
+    if images.sniff(data) in LOCAL_FORMATS:
       width, height, rgba = images.decode(data, LOCAL_FORMATS, 2048, 2048 * 2048, WORKING_SIDE)
+    else:
+      width, height, rgba = images.rasterize_svg(data, WORKING_SIDE)
   except (OSError, ValueError):
     # If it cannot be read here, Qt very likely cannot either - a favicon
     # served as HTML, an .ico in a variant nobody supports. Handing the path
@@ -419,11 +421,20 @@ def sender_image_pixels(stream):
   return width, height, rgba
 
 
-def fetch_site(host, scheme):
-  """Fetch one site's own HTTPS metadata and icon when the caller allows it."""
+# The best icon and one fallback: few requests to the site, and still an icon
+# when its first choice turns out not to decode.
+MAX_DOWNLOADS = 2
+
+
+def download_candidates(host, scheme):
+  """The raw bytes of up to MAX_DOWNLOADS of a site's own icons, best first.
+
+  Network only: this runs in a sandbox that can reach the internet and decodes
+  nothing. A body is kept only when its signature names a format the decoder
+  takes; deciding whether it really is one happens later, without a network."""
   host = public_hostname(host)
   if not host or scheme not in ("dark", "light"):
-    return None
+    return []
   base = "https://" + host + "/"
   candidates = []
   manifests = 0
@@ -443,26 +454,73 @@ def fetch_site(host, scheme):
   if fallback:
     candidates.append(fallback)
 
-  seen = set()
+  seen, found = set(), []
   for url in candidates:
     if url in seen:
       continue
     seen.add(url)
-    if len(seen) > MAX_ICON_REQUESTS:
+    if len(seen) > MAX_ICON_REQUESTS or len(found) >= MAX_DOWNLOADS:
       break
     try:
       data, _ = get(url, REMOTE_ICON_BYTES)
+    except Exception:
+      continue
+    if len(data) <= REMOTE_ICON_BYTES and images.sniff(data) in REMOTE_FORMATS:
+      found.append(bytes(data))
+  return found
+
+
+def store_fetched(host, scheme, blobs):
+  """Decode downloaded icon bytes, without a network, and cache the first that
+  is really an image. Returns its cache path, or None."""
+  host = public_hostname(host)
+  if not host or scheme not in ("dark", "light"):
+    return None
+  for data in blobs[:MAX_DOWNLOADS]:
+    try:
       png = normalised_remote_png(data)
-      dest = os.path.join(
-          CACHE, "web-" + hashlib.sha256((host + scheme).encode()).hexdigest() + ".png")
-      # Decoding and all resource checks above are helper-local. They do
-      # not rely on Bubblewrap because the wrapper may deliberately use
-      # its controlled direct mode when sandboxing is unavailable.
+      dest = remote_cache_path(host, scheme)
       write_bytes(dest, png)
     except Exception:
       continue
     return dest
   return None
+
+
+def fetch_site(host, scheme):
+  """Download and store in one process. Only tests use this: the launcher runs
+  the two halves in separate sandboxes, so the decoder never has a network."""
+  return store_fetched(host, scheme, download_candidates(host, scheme))
+
+
+def pack_blobs(blobs):
+  blobs = [bytes(b) for b in blobs[:MAX_DOWNLOADS]]
+  return json.dumps({"blobs": [len(b) for b in blobs]}).encode() + b"\n" + b"".join(blobs)
+
+
+def unpack_blobs(data):
+  end = data.find(b"\n", 0, 256)
+  if end < 0:
+    raise ValueError("no header")
+  header = json.loads(data[:end].decode("ascii", "strict"))
+  sizes = header.get("blobs") if isinstance(header, dict) else None
+  if (not isinstance(sizes, list) or len(sizes) > MAX_DOWNLOADS
+          or any(type(n) is not int or not 0 < n <= REMOTE_ICON_BYTES for n in sizes)
+          or sum(sizes) != len(data) - end - 1):
+    raise ValueError("bad blobs")
+  out, at = [], end + 1
+  for n in sizes:
+    out.append(data[at:at + n])
+    at += n
+  return out
+
+
+class NeedFetch(Exception):
+  """The lookup needs a site's icon downloaded; the launcher does that."""
+
+  def __init__(self, host):
+    super().__init__(host)
+    self.host = host
 
 
 def remote_cache_path(host, scheme):
@@ -538,7 +596,7 @@ def host_names(source):
   return names
 
 
-def resolve(args):
+def resolve(args, fetcher=None):
   web = host_names(args.source)
   app = [n for n in [args.app_icon, args.source, args.app] if n]
 
@@ -594,7 +652,9 @@ def resolve(args):
       if type(failed_at) not in (int, float) or not math.isfinite(failed_at):
         failed_at = 0
       if failed_at <= time.time() - RETRY_AFTER:
-        hit = fetch_site(host, args.scheme)
+        if fetcher is None:
+          raise NeedFetch(host)
+        hit = fetcher(host, args.scheme)
         note["failed_at"] = 0 if hit else time.time()
         if hit:
           note[args.scheme] = hit
@@ -613,7 +673,8 @@ def resolve(args):
 
 def main(argv=None):
   argv = list(sys.argv[1:] if argv is None else argv)
-  ap = argparse.ArgumentParser()
+  # No abbreviations: "--fetche" must not quietly mean "--fetched".
+  ap = argparse.ArgumentParser(allow_abbrev=False)
   ap.add_argument("--key", default="")
   ap.add_argument("--app", default="")
   ap.add_argument("--app-icon", default="")
@@ -622,7 +683,17 @@ def main(argv=None):
   ap.add_argument("--fetch", action="store_true")
   ap.add_argument("--why", action="store_true", help="print where it came from")
   ap.add_argument("--sender-image", action="store_true")
+  # The two halves of a fetch, run by the launcher in separate sandboxes:
+  # --download has the network and decodes nothing; --fetched decodes what
+  # it downloaded, from stdin, and has no network.
+  ap.add_argument("--download", action="store_true")
+  ap.add_argument("--fetched", action="store_true")
   args = ap.parse_args(argv)
+  if args.download:
+    if args.fetch or args.fetched or args.sender_image:
+      return 2
+    sys.stdout.buffer.write(pack_blobs(download_candidates(args.source, args.scheme)))
+    return 0
   if args.sender_image:
     if argv != ["--sender-image"]:
       return 2
@@ -635,7 +706,20 @@ def main(argv=None):
   for field in ("key", "app", "app_icon", "source"):
     if len(getattr(args, field)) > 256: return 2
   private_dir(CACHE)
-  path, how = resolve(args)
+  fetcher = None
+  if args.fetched:
+    try:
+      blobs = unpack_blobs(sys.stdin.buffer.read(MAX_DOWNLOADS * REMOTE_ICON_BYTES + 257))
+    except Exception:
+      blobs = []
+    args.fetch = True
+    wanted = public_hostname(args.source)
+    fetcher = lambda host, scheme: store_fetched(host, scheme, blobs) if host == wanted else None
+  try:
+    path, how = resolve(args, fetcher if args.fetch else None)
+  except NeedFetch as need:
+    sys.stdout.buffer.write(images.pack_nothing("fetch:" + need.host, fetch=need.host))
+    return 0
   found = normalise(path) if path else None
   # Pixels, not a path: the launcher outside the sandbox writes the PNG the
   # shell will load, somewhere no helper can write.

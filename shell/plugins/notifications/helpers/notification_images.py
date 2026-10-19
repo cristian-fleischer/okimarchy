@@ -196,8 +196,25 @@ def pack_pixels(width, height, rgba, mono=False, how=""):
   return _header(header) + bytes(rgba)
 
 
-def pack_nothing(how=""):
-  return _header({"none": True, "how": str(how)[:128]})
+def pack_nothing(how="", fetch=""):
+  header = {"none": True, "how": str(how)[:128]}
+  if fetch:
+    header["fetch"] = str(fetch)[:253]
+  return _header(header)
+
+
+def requested_fetch(data):
+  """The host a lookup asks the launcher to download icons for, or ""."""
+  import json
+  end = data.find(b"\n", 0, PIXELS_HEADER_BYTES)
+  try:
+    header = json.loads(data[:end].decode("ascii", "strict")) if end >= 0 else None
+  except ValueError:
+    return ""
+  if not isinstance(header, dict) or header.get("none") is not True:
+    return ""
+  host = header.get("fetch", "")
+  return host if isinstance(host, str) else ""
 
 
 def _header(value):

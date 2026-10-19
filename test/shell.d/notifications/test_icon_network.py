@@ -377,7 +377,7 @@ class IconResolutionTest(unittest.TestCase):
       path = icon["fetch_site"]("source.test", "dark")
       self.assertIsNotNone(path)
       self.assertTrue(Path(path).is_file())
-    self.assertEqual(requested, [
+    self.assertEqual(requested[:3], [
         "https://source.test/",
         "https://source.test/bad.webmanifest",
         "https://source.test/icon.png",
