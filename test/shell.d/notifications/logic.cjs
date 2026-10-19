@@ -829,3 +829,16 @@ for (const replay of [false, true]) { // Replay and startup restore share held r
 }
 
 console.log('notification logic: passed')
+
+{ // A burst of replacements cannot crowd a close or a settings save out of the store queue.
+  const blocked = { policyReady: false }
+  for (let i = 0; i < 400; i++) Store.write(blocked, 'store', 'put', { key: 'k' + (i % 3), summary: 'n' + i })
+  Store.write(blocked, 'store', 'close', null, ['k0', 'dismissed'])
+  Store.write(blocked, 'store', 'put', { key: 'k0', summary: 'after close' })
+  Store.write(blocked, 'store', 'quiet-save', { dnd: true })
+  Store.write(blocked, 'store', 'quiet-save', { dnd: false })
+  assert.deepEqual(Array.from(Store._queue, job => job.verb + ':' + (job.payload ? job.payload.key || job.payload.dnd : job.args[0])),
+                   ['put:k0', 'put:k1', 'put:k2', 'close:k0', 'put:k0', 'quiet-save:false'])
+  assert.equal(Store._queue[1].payload.summary, 'n397')
+  Store._queue.length = 0
+}

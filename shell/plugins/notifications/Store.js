@@ -163,9 +163,21 @@ function parseList(text) {
 var _queue = []
 var _busy = false
 
+// A pending put for the same row, or a pending settings save, is replaced by
+// the newer one, so a burst of replacements cannot crowd out a close. Only
+// puts are ever dropped.
 function write(proc, bin, verb, payload, args) {
-  if (_queue.length >= 256) return
-  _queue.push({ bin: bin, verb: verb, payload: verb === "put" ? sanitiseForPersistence(payload) : payload, args: args || [] })
+  var job = { bin: bin, verb: verb, payload: verb === "put" ? sanitiseForPersistence(payload) : payload, args: args || [] }
+  var merges = verb === "put" || verb === "quiet-save" || verb === "policy"
+  for (var i = _queue.length - 1; merges && i >= 0; i--) {
+    var queued = _queue[i]
+    if (verb === "put" && queued.verb === "close" && queued.args[0] === job.payload.key) break
+    if (queued.verb === verb && (verb !== "put" || queued.payload.key === job.payload.key)) {
+      _queue[i] = job
+      return _pump(proc)
+    }
+  }
+  if (verb !== "put" || _queue.length < 256) _queue.push(job)
   _pump(proc)
 }
 
