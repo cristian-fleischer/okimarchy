@@ -55,7 +55,7 @@ Item {
     if (!t) return ""
     var s = Math.max(0, (now - t) / 1000)
     if (s < 50) return I18n.t("notifications.now")
-    if (s < 3600) return I18n.t("notifications.minutesAgo").arg(Math.round(s / 60))
+    if (s < 3600) return I18n.t("notifications.minutesAgo").arg(I18n.formatNumber(Math.round(s / 60)))
     var then = new Date(t)
     var locale = Qt.locale(I18n.formatLocale)
     var sameDay = new Date(now).toDateString() === then.toDateString()
@@ -481,7 +481,7 @@ Item {
               textFormat: Text.PlainText
               id: badgeText
               anchors.centerIn: parent
-              text: String(card.stands)
+              text: I18n.formatNumber(card.stands)
               color: card.dimColor
               font.family: Style.font.family
               font.pixelSize: Style.font.caption * card.fontScale

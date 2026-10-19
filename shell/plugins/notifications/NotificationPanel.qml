@@ -125,8 +125,8 @@ Item {
   function waitingFor(until) {
     var left = Math.max(0, until - Date.now() / 1000)
     var minutes = Math.max(1, Math.round(left / 60))
-    if (minutes < 60) return I18n.t("notifications.minutesShort").arg(minutes)
-    if (left < 8 * 3600) return I18n.t("notifications.hoursShort").arg(Math.max(1, Math.round(left / 3600)))
+    if (minutes < 60) return I18n.t("notifications.minutesShort").arg(I18n.formatNumber(minutes))
+    if (left < 8 * 3600) return I18n.t("notifications.hoursShort").arg(I18n.formatNumber(Math.max(1, Math.round(left / 3600))))
     var when = new Date(until * 1000)
     return clockTime(when) + dayOffset(when)
   }
@@ -137,7 +137,7 @@ Item {
       return I18n.t("notifications.snoozedUntil").arg(clockTime(when) + dayOffset(when))
     }
     if (silenced) return I18n.t("notifications.dndOn")
-    if (snoozed.length > 0) return I18n.tn("notifications.sourcesSnoozed", snoozed.length).arg(snoozed.length)
+    if (snoozed.length > 0) return I18n.tn("notifications.sourcesSnoozed", snoozed.length).arg(I18n.formatNumber(snoozed.length))
     return I18n.t("notifications.enabled")
   }
 
@@ -519,7 +519,7 @@ Item {
 
             SectionToggle {
               visible: !root.quiet
-              text: I18n.t("notifications.recentHeader").arg(root.recent.length)
+              text: I18n.t("notifications.recentHeader").arg(I18n.formatNumber(root.recent.length))
               expanded: root.recentExpanded
               showTooltip: I18n.t("notifications.showRecent")
               hideTooltip: I18n.t("notifications.hideRecent")
@@ -629,7 +629,7 @@ Item {
                           readonly property int count: line.modelData.held.length
                           visible: count > 0
                           width: Math.min(implicitWidth, Math.max(0, parent.width - x))
-                          text: I18n.tn("notifications.heldCount", count).arg(count)
+                          text: I18n.tn("notifications.heldCount", count).arg(I18n.formatNumber(count))
                           elide: Text.ElideRight
                         }
                       }
@@ -739,7 +739,7 @@ Item {
             PanelSeparator { foreground: root.panelFg }
 
             SectionToggle {
-              text: I18n.t("notifications.historyHeader").arg(root.history.length)
+              text: I18n.t("notifications.historyHeader").arg(I18n.formatNumber(root.history.length))
               expanded: root.historyExpanded
               showTooltip: I18n.t("notifications.showHistory")
               hideTooltip: I18n.t("notifications.hideHistory")
