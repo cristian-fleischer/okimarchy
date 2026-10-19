@@ -92,8 +92,7 @@ wait_until "notification popup opens" 15 layer_present "omarchy-notifications"
 wait_until "notification content is visible" 15 screen_contains "Acceptance notification"
 screenshot "success-notification-popup"
 omarchy-shell notifications dismissAll >/dev/null
-# The notification canvas stays mapped while idle; the card leaving is what
-# dismissal changes.
+# The notification surface stays mapped while idle, so wait for the count.
 notifications_cleared() { [[ $(omarchy-shell notifications count) == "0" ]]; }
 wait_until "notification popup closes" 15 notifications_cleared
 

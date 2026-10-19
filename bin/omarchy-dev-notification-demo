@@ -3,31 +3,14 @@
 # omarchy:args=[--scene <name>]... [--fast] [--gap <seconds>] [--timeout <ms>] [--loop] [--shuffle] [--keep] [--list] [--replay <count> [--match <text>]]
 # omarchy:examples=omarchy dev notification demo --list | omarchy dev notification demo --scene interactive | omarchy dev notification demo --scene reply | omarchy dev notification demo --replay 10 --match slack
 # omarchy:hidden=true
-"""A realistic run of notifications, for looking at the notification UI.
-
-  --list                what scenes there are
-  --scene chat          only one part of it (repeatable); default is chat, work, personal, system
-  --scene interactive   codes, links and the sender's buttons
-  --scene routing       where a click sends you, per source
-  --scene reply         inline reply, against a stand-in phone
-  --scene close         repeated dismissals without moving the pointer
-  --fast                same scene, tighter, for a recording
-  --loop                keep going until interrupted
-  --replay N            send the last N notifications from history again
-
-The senders here are the ones that actually notify this desktop - Chrome
-announcing a web app through a leading anchor, KDE Connect naming a device in
-the summary, a terminal, a backup job - because those shapes are what the
-grouping and the markup parsing have to cope with. The words are invented;
-nothing here is anybody's real message.
-
-Notifications go straight onto the session bus, exactly as a sending app's
-would; the shell is driven through `omarchy-shell notifications <method>`.
-"""
+"""A realistic run of notifications, sent straight onto the session bus as an
+app would. The senders mimic what really notifies this desktop (Chrome web
+apps, KDE Connect, a terminal); the words are invented."""
 import argparse
 import json
 import os
 import random
+import re
 import secrets
 import selectors
 import subprocess
@@ -45,18 +28,13 @@ from notification_files import write_json  # noqa: E402
 BUS_NAME = "org.freedesktop.Notifications"
 BUS_PATH = "/org/freedesktop/Notifications"
 URGENCY = {"low": 0, "normal": 1, "critical": 2}
-
-
-# Chrome puts a link to the origin on the front of every web notification, and
-# that anchor is what tells app.slack.com apart from mail.google.com.
-def web(host, body):
-  return '<a href="https://%s/">%s</a>\n\n%s' % (host, host, body)
-
+FALLBACK_APP = "omarchy-dev-notification-demo"
+HELPER_ERRORS = (OSError, ValueError, AttributeError, TimeoutError, subprocess.TimeoutExpired)
 
 SCENES = {
-  # People. Chrome announces a web app through a leading anchor, and that
-  # anchor is the only thing that tells app.slack.com from web.whatsapp.com -
-  # both of them are "Google Chrome" as far as the bus is concerned.
+  # Chrome sends every web app as "Google Chrome"; the leading origin anchor is
+  # what tells the sites apart. The #design burst arrives faster than the pace
+  # so a stack builds.
   "chat": [
     dict(web="app.slack.com", summary="#design",
          body="Gurbinder: new spacing is in Figma, worth a look before standup"),
@@ -66,10 +44,6 @@ SCENES = {
          body="can you sanity check the quota panel numbers?"),
     dict(web="x.com", summary="Elon Musk",
          body="replied to your post: this is the part everyone gets wrong"),
-    # A channel going off. Four from one source, arriving faster than the
-    # scene's pace, so the stack builds in front of you - which is the thing
-    # worth watching and the thing a one-notification-per-source demo never
-    # shows.
     dict(web="app.slack.com", summary="#design", gap=0.7,
          body="Gurbinder: pushed the spacing pass, take a look"),
     dict(web="app.slack.com", summary="#design", gap=0.7,
@@ -79,7 +53,6 @@ SCENES = {
     dict(web="app.slack.com", summary="#design",
          body="Dominic: shipping it before standup then"),
   ],
-  # Work: the things that arrive while you are in the middle of something.
   "work": [
     dict(web="linear.app", summary="AXM-412 assigned to you",
          body="Deck stutters when a notification lands during hover"),
@@ -90,9 +63,7 @@ SCENES = {
     dict(web="app.slack.com", summary="#releases",
          body="0.43 tagged and pushed"),
   ],
-  # The machine talking about itself. Named after things this desktop actually
-  # has an icon for - a notification with a letter tile in a demo reads as a
-  # bug rather than as a fallback.
+  # Apps this desktop has icons for, so a letter tile here means a bug.
   "system": [
     dict(app="Omarchy", icon="system-software-update", summary="Updates available",
          body="14 packages, including linux 6.17.4 and hyprland 0.52"),
@@ -101,57 +72,6 @@ SCENES = {
     dict(app="ApexShot", icon="apexshot", summary="Screenshot saved",
          body="~/Screenshots/ApexShot-2026-09-03_22-41-08.png"),
   ],
-  # Filled in at run time by routing_scene(): which sites have a window open
-  # is not something that can be written down in advance.
-  "routing": [],
-  # Also filled in at run time: it has to write the stand-in phone first.
-  "reply": [],
-  # Same source, persistent cards, and a live default action: after each
-  # dismissal the next close control must work without a pointer move.
-  "close": [
-    dict(app="hi", summary="Close without opening %d" % i,
-         body="Keep the pointer on Close as the next card moves up.",
-         urgency="critical", actions=["default=Open"],
-         report_action=True, gap=0.1)
-    for i in range(1, 4)
-  ],
-  # The interactive one: everything a card can offer you, and the shapes that
-  # must NOT offer anything. A Slack message with a link, a bank code, a phone
-  # number, a forwarded message carrying the phone's own Mark as read - then a
-  # build number, an issue reference and a version, which should stay plain.
-  # If any of those last ones grows a button, the detector has regressed.
-  "interactive": [
-    dict(web="app.slack.com", summary="#design",
-         body="Gurbinder: latest build is up, take a look https://axiom.co/preview/1841"),
-    # A code from somebody who plausibly sends codes: a wrong logo on a card
-    # asking you to verify your identity is the one place it actually matters.
-    dict(web="accounts.google.com", summary="Google",
-         body="Your verification code is 482913. Do not share it with anyone."),
-    dict(app="KDE Connect", summary="WhatsApp",
-         body="Seif Lotfy: are you around later?",
-         # Deliberately not called "Reply": that word belongs to the real
-         # inline reply, which only appears when the phone offers a reply
-         # channel (see the reply scene, which sets one up).
-         actions=["read=Mark as read"]),
-    # An SMS, which is where most codes actually arrive. "Messages" has no
-    # brand to resolve, so it wears its initial - the honest answer for a
-    # phone's built-in app.
-    dict(app="KDE Connect", summary="Messages",
-         body="G-728341 is your Google verification code"),
-    # A second phone app rather than a second WhatsApp: same-summary cards
-    # group into one stack, and the card behind would be hidden exactly where
-    # the demo wants both on screen.
-    dict(app="KDE Connect", summary="Discord",
-         body="Ravi: here is my new number, +44 7911 123456",
-         actions=["read=Mark as read"]),
-    # The one that must NOT offer anything: a digit run of the right shape
-    # with no keyword near it.
-    dict(app="kitty", icon="kitty", summary="Tests passed",
-         body="412 passed, 0 failed in 2m 14s"),
-    dict(web="github.com", summary="Review requested",
-         body="axiomhq/axiom · sub-second histograms (#4412)"),
-  ],
-  # Off the clock.
   "personal": [
     dict(app="Spotify", icon="spotify", summary="Now playing",
          body="Money for Nothing - Dire Straits"),
@@ -160,42 +80,62 @@ SCENES = {
     dict(web="web.whatsapp.com", summary="Seif Lotfy",
          body="seriously, you are going to want to see this one"),
   ],
+  # Every offer a card can make, then shapes that must stay plain (a test
+  # count, an issue reference). "Mark as read" is not "Reply": the inline reply
+  # needs a phone reply channel (see the reply scene). Each phone app has its
+  # own summary so the cards do not stack.
+  "interactive": [
+    dict(web="app.slack.com", summary="#design",
+         body="Gurbinder: latest build is up, take a look https://axiom.co/preview/1841"),
+    dict(web="accounts.google.com", summary="Google",
+         body="Your verification code is 482913. Do not share it with anyone."),
+    dict(app="KDE Connect", summary="WhatsApp", body="Seif Lotfy: are you around later?",
+         actions=["read=Mark as read"]),
+    dict(app="KDE Connect", summary="Messages",
+         body="G-728341 is your Google verification code"),
+    dict(app="KDE Connect", summary="Discord",
+         body="Ravi: here is my new number, +44 7911 123456",
+         actions=["read=Mark as read"]),
+    dict(app="kitty", icon="kitty", summary="Tests passed",
+         body="412 passed, 0 failed in 2m 14s"),
+    dict(web="github.com", summary="Review requested",
+         body="axiomhq/axiom · sub-second histograms (#4412)"),
+  ],
+  # Persistent cards with a live default action: each Close must dismiss
+  # without the pointer moving, and never open the card.
+  "close": [
+    dict(app="hi", summary="Close without opening %d" % i,
+         body="Keep the pointer on Close as the next card moves up.",
+         urgency="critical", actions=["default=Open"], report_action=True, gap=0.1)
+    for i in range(1, 4)
+  ],
+  # Built at run time.
+  "routing": [],
+  "reply": [],
 }
-
-# The default run: enough sources to group, enough singles to stack.
 DEFAULT = ["chat", "work", "personal", "system"]
 
+# Candidates for the "no window open" routing case, in preference order.
+CLOSED_CANDIDATES = ("linear.app", "notion.com", "app.slack.com", "github.com", "figma.com")
 
-def slug(text):
-  out = ""
-  for ch in str(text or "").lower():
-    out += ch if ch.isalnum() else "-"
-  return "-".join(part for part in out.split("-") if part)
+# The KDE Connect helper answers only this app name from the stand-in phone,
+# and the sandbox launcher mounts only this directory for it.
+DEMO_APP = "Omarchy reply demo"
+DEMO_STATE = os.path.expanduser("~/.local/state/omarchy/notifications/reply-demo")
+DEMO_REPLY = os.path.join(DEMO_STATE, "reply.json")
 
 
 def identity(n):
-  """What the shell will make of this one: the key it groups under and the
-  fields the icon resolver needs. Kept here so the demo can warm the icon
-  cache before it starts - a demo whose first card of every source is a
-  letter tile is showing the loading state, not the product."""
+  """The group key and icon-resolver fields the shell will derive."""
   if n.get("web"):
-    return dict(key="web:" + n["web"], source=n["web"],
-                app="Google Chrome", icon="google-chrome")
-  app = n.get("app") or "omarchy-dev-notification-demo"
-  return dict(key="app:" + slug(app), source=app, app=app, icon=n.get("icon") or "")
-
-
-def scheme():
-  """dark or light, as the shell will ask for it."""
-  try:
-    mode = subprocess.run(["omarchy-theme-color", "mode", "dark"], capture_output=True,
-                          text=True, check=False, timeout=5).stdout.strip()
-  except (OSError, subprocess.TimeoutExpired):
-    mode = ""
-  return "light" if mode == "light" else "dark"
+    return dict(key="web:" + n["web"], source=n["web"], app="Google Chrome", icon="google-chrome")
+  app = n.get("app") or FALLBACK_APP
+  slug = "-".join(re.findall(r"[^\W_]+", app.lower()))
+  return dict(key="app:" + slug, source=app, app=app, icon=n.get("icon") or "")
 
 
 def bounded_output(command, limit=65536, timeout=5, env=None):
+  """stdout of a helper, capped in size and time."""
   with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env) as proc:
     data = bytearray()
     deadline = time.monotonic() + timeout
@@ -226,8 +166,8 @@ def bounded_output(command, limit=65536, timeout=5, env=None):
 
 
 def helper_policy():
-  # The shell owns the settings. Ask it rather than parsing them here; an
-  # unavailable or pending policy must not bypass a required sandbox.
+  """Icon fetching and sandbox policy, as the shell reports them. An
+  unavailable or malformed answer keeps the sandbox required."""
   fetch, required = False, True
   try:
     probe = json.loads(bounded_output(["omarchy-shell", "notifications", "probe"]))
@@ -236,46 +176,38 @@ def helper_policy():
         and isinstance(security.get("required"), bool)
         and isinstance(probe.get("fetchRemoteIcons"), bool)):
       fetch, required = probe["fetchRemoteIcons"], security["required"]
-  except (OSError, ValueError, AttributeError, TimeoutError, subprocess.TimeoutExpired):
+  except HELPER_ERRORS:
     pass
   return fetch, dict(os.environ, OMARCHY_NOTIFICATIONS_REQUIRE_SANDBOX="1" if required else "0")
 
 
 def warm(items):
-  """Resolve every icon these notifications will want, before sending any.
-
-  Resolution is a subprocess and sometimes a network fetch, so the first
-  notification from a source arrives before its icon does. That is honest
-  behaviour and invisible in normal use; in a demo it is the first thing you
-  see."""
-  seen, wanted = set(), []
-  for n in items:
-    who = identity(n)
-    if who["key"] in seen:
-      continue
-    seen.add(who["key"])
-    wanted.append(who)
+  """Resolve each source's icon up front, so first cards are not letter tiles."""
+  wanted = {}
+  for who in map(identity, items):
+    wanted.setdefault(who["key"], who)
   if not wanted:
     return
   print("warming %d icons..." % len(wanted), file=sys.stderr)
-  fetch, environment = helper_policy()
-  theme = scheme()
-  for who in wanted:
+  fetch, env = helper_policy()
+  try:
+    mode = subprocess.run(["omarchy-theme-color", "mode", "dark"], capture_output=True,
+                          text=True, check=False, timeout=5).stdout.strip()
+  except (OSError, subprocess.TimeoutExpired):
+    mode = ""
+  scheme = "light" if mode == "light" else "dark"
+  for who in wanted.values():
     command = [HELPER, "icon", "--key", who["key"], "--source", who["source"],
-               "--app", who["app"], "--app-icon", who["icon"], "--scheme", theme]
-    if fetch:
-      command.append("--fetch")
+               "--app", who["app"], "--app-icon", who["icon"], "--scheme", scheme]
     try:
-      bounded_output(command, timeout=55, env=environment)
-    except (OSError, ValueError, TimeoutError, subprocess.TimeoutExpired):
+      bounded_output(command + (["--fetch"] if fetch else []), timeout=55, env=env)
+    except HELPER_ERRORS:
       pass
 
 
 class Bus:
-  """Sends notifications the way any app does, and hears what became of them.
-
-  Cards that ask to report their action print the action key when it is
-  invoked, so a dismissal that opened the card instead shows up here."""
+  """Sends notifications like any app. Cards marked report_action print the
+  action key when invoked, so a Close that opened the card shows up here."""
 
   def __init__(self):
     self.connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
@@ -296,7 +228,7 @@ class Bus:
     who = identity(n)
     body = n.get("body", "")
     if n.get("web"):
-      body = web(n["web"], body)
+      body = '<a href="https://%s/">%s</a>\n\n%s' % (n["web"], n["web"], body)
     actions = []
     for action in n.get("actions", []):
       key, _, label = action.partition("=")
@@ -310,97 +242,64 @@ class Bus:
       who["app"], 0, who["icon"], n.get("summary", ""), body, actions, hints,
       -1 if timeout is None else timeout))
     reply = self.connection.call_sync(BUS_NAME, BUS_PATH, BUS_NAME, "Notify", parameters,
-                                      GLib.VariantType("(u)"), Gio.DBusCallFlags.NONE,
-                                      5000, None)
+                                      GLib.VariantType("(u)"), Gio.DBusCallFlags.NONE, 5000, None)
     if n.get("report_action"):
       self.reporting.add(reply.unpack()[0])
 
   def pump(self, seconds):
-    """Wait, while still hearing the shell's signals."""
+    """Wait while still hearing the shell's signals."""
     loop = GLib.MainLoop()
     GLib.timeout_add(max(1, int(seconds * 1000)), lambda: loop.quit() or False)
     loop.run()
 
-  def settle(self):
-    """Keep the reporting cards answerable until each has been dealt with."""
+  def play(self, items, gap, timeout):
+    for n in items:
+      self.send(n, timeout)
+      self.pump(min(gap, n["gap"]) if "gap" in n else gap)
     while self.reporting:
       self.pump(0.2)
 
 
 def replay(limit, match):
-  """Send notifications from history again, as they arrived.
-
-  Invented examples only exercise the shapes someone thought of. Replaying
-  what a machine actually received is how you find out that KDE Connect puts
-  the originating app in the summary, or that a site you have never
-  configured has no icon."""
+  """The last `limit` notifications from history, oldest first."""
   try:
-    _, environment = helper_policy()
-    raw = bounded_output([HELPER, "store", "history", str(limit)], limit=2 * 1024 * 1024,
-                         timeout=55, env=environment)
-    rows = json.loads(raw or "[]")
-  except (OSError, ValueError, TimeoutError, subprocess.TimeoutExpired):
+    _, env = helper_policy()
+    rows = json.loads(bounded_output([HELPER, "store", "history", str(limit)],
+                                     limit=2 * 1024 * 1024, timeout=55, env=env) or "[]")
+  except HELPER_ERRORS:
     rows = []
   needle = (match or "").lower()
   out = []
-  for r in reversed(rows):  # oldest first, as they happened
+  for r in reversed(rows):
     if not isinstance(r, dict):
       continue
-    if needle:
-      blob = " ".join(str(r.get(k) or "") for k in ("app", "source", "summary", "body")).lower()
-      if needle not in blob:
-        continue
-    out.append(dict(app=r.get("app") or "omarchy-dev-notification-demo",
-                    icon=r.get("appIcon") or "",
-                    summary=r.get("summary") or "",
-                    # The raw body where there is one: the stored body has had
-                    # the source anchor lifted off, and replaying that makes
-                    # every Chrome notification look like it came from Chrome
-                    # rather than from the site.
-                    body=r.get("rawBody") or r.get("body") or ""))
+    if needle not in " ".join(str(r.get(k) or "") for k in ("app", "source", "summary", "body")).lower():
+      continue
+    # rawBody keeps the source anchor the stored body has lost, so web
+    # notifications replay as their site rather than as Chrome.
+    out.append(dict(app=r.get("app") or FALLBACK_APP, icon=r.get("appIcon") or "",
+                    summary=r.get("summary") or "", body=r.get("rawBody") or r.get("body") or ""))
   return out
 
 
-def open_web_hosts():
-  """Sites that already have a window on this desktop.
-
-  Omarchy's web apps carry their host in the Hyprland class -
-  "chrome-web.whatsapp.com__-Default" - which is how the shell decides that a
-  notification from web.whatsapp.com belongs to that window."""
+def routing_scene():
+  """One card per click route, built from the web-app windows open now
+  (their Hyprland class is "chrome-<host>__-Default")."""
   try:
-    raw = subprocess.run(["hyprctl", "-j", "clients"], capture_output=True, text=True,
-                         check=False, timeout=5).stdout
-    clients = json.loads(raw or "[]")
+    clients = json.loads(subprocess.run(["hyprctl", "-j", "clients"], capture_output=True,
+                                        text=True, check=False, timeout=5).stdout or "[]")
   except (OSError, ValueError, subprocess.TimeoutExpired):
-    return []
-  hosts = []
+    clients = []
+  live = []
   for c in clients:
     wm = str(c.get("class") or "")
-    if not wm.startswith("chrome-"):
-      continue
     host = wm[len("chrome-"):].split("__")[0]
-    if "." in host and host not in hosts:
-      hosts.append(host)
-  return hosts
-
-
-# Candidates for the "nothing open" case, in preference order. Whichever is not
-# currently on screen gets used.
-CLOSED_CANDIDATES = ("linear.app", "notion.com", "app.slack.com", "github.com",
-                     "figma.com", "example.com")
-
-
-def routing_scene():
-  """One notification per way a click can be routed.
-
-  Built from what is actually open, because the interesting case - a site
-  that already has a window - cannot be written down in advance."""
-  live = open_web_hosts()
-  items = []
-  for host in live[:2]:
-    items.append(dict(web=host, summary=host.split(".")[0].title(),
-                      body="click me: the window showing %s should come forward" % host,
-                      expect="focus the existing %s window" % host))
+    if wm.startswith("chrome-") and "." in host and host not in live:
+      live.append(host)
+  items = [dict(web=host, summary=host.split(".")[0].title(),
+                body="click me: the window showing %s should come forward" % host,
+                expect="focus the existing %s window" % host)
+           for host in live[:2]]
   closed = next((h for h in CLOSED_CANDIDATES if h not in live), "example.com")
   items.append(dict(web=closed, summary=closed.split(".")[0].title(),
                     body="click me: nothing is showing %s, so it should open" % closed,
@@ -411,40 +310,17 @@ def routing_scene():
   return items
 
 
-# The KDE Connect helper only answers this app name from the stand-in phone,
-# and the sandbox launcher mounts only this directory for it.
-DEMO_APP = "Omarchy reply demo"
-DEMO_STATE = os.path.expanduser("~/.local/state/omarchy/notifications/reply-demo")
-DEMO_FIXTURE = os.path.join(DEMO_STATE, "notification.json")
-DEMO_REPLY = os.path.join(DEMO_STATE, "reply.json")
-
-
 def reply_scene():
-  """Create an explicit, short-lived demo session with no real phone target."""
+  """A short-lived stand-in phone message with no real phone behind it."""
   who, message = "Seif Lotfy", "did you get the build working in the end?"
-  write_json(DEMO_FIXTURE, dict(token=secrets.token_hex(16), created=time.time(),
-                                title=who, text=message))
-  return [dict(app="KDE Connect", icon="whatsapp", summary=DEMO_APP,
-               body="%s: %s" % (who, message))]
+  write_json(os.path.join(DEMO_STATE, "notification.json"),
+             dict(token=secrets.token_hex(16), created=time.time(), title=who, text=message))
+  return [dict(app="KDE Connect", icon="whatsapp", summary=DEMO_APP, body="%s: %s" % (who, message))]
 
 
-def clear():
-  # dismissAll takes every card off screen; `clear` would forget history instead.
-  subprocess.run(["omarchy-shell", "-q", "notifications", "dismissAll"], check=False)
-
-
-def run(bus, scenes, gap, timeout, shuffle):
-  for name in scenes:
-    items = list(SCENES[name])
-    if shuffle:
-      random.shuffle(items)
-    for n in items:
-      bus.send(n, timeout)
-      # A notification can ask to be followed quickly: a burst from one
-      # source is how a stack forms, and at the scene's normal pace the first
-      # card has half faded before the second lands.
-      bus.pump(min(gap, n["gap"]) if "gap" in n else gap)
-  bus.settle()
+def say(*lines):
+  for line in lines:
+    print(line, file=sys.stderr)
 
 
 def main():
@@ -458,64 +334,61 @@ def main():
   ap.add_argument("--shuffle", action="store_true")
   ap.add_argument("--keep", action="store_true", help="do not clear first")
   ap.add_argument("--list", action="store_true", help="list the scenes")
-  ap.add_argument("--replay", type=int, metavar="N",
-                  help="re-send the last N notifications from history")
+  ap.add_argument("--replay", type=int, metavar="N", help="re-send the last N notifications from history")
   ap.add_argument("--match", help="only replay ones mentioning this")
   args = ap.parse_args()
 
   if args.list:
     for name, items in sorted(SCENES.items()):
-      print("%-11s %s" % (name, "built when run" if not items else "%d notifications" % len(items)))
+      print("%-11s %s" % (name, "%d notifications" % len(items) if items else "built when run"))
     return 0
 
-  # Slow enough to actually read a card before the next one lands on it;
-  # --fast keeps the tight pacing that recordings want.
   gap = args.gap if args.gap is not None else (0.9 if args.fast else 3.2)
   scenes = args.scene or DEFAULT
 
   if "close" in scenes:
-    print("hover Close on the front card, then click it three times, waiting for each "
-          "move to finish without moving the pointer.", file=sys.stderr)
-    print("each card should dismiss; any 'default' printed here means a card was "
-          "opened instead.", file=sys.stderr)
-
+    say("hover Close on the front card, then click it three times, waiting for each move "
+        "to finish without moving the pointer.",
+        "each card should dismiss; any 'default' printed here means a card was opened instead.")
   if "reply" in scenes:
     SCENES["reply"] = reply_scene()
-    print("hover the card, press Reply, type something and hit Enter.", file=sys.stderr)
-    print("the latest reply is saved to %s - not sent to anyone." % DEMO_REPLY, file=sys.stderr)
-
+    say("hover the card, press Reply, type something and hit Enter.",
+        "the latest reply is saved to %s - not sent to anyone." % DEMO_REPLY)
   if "routing" in scenes:
     SCENES["routing"] = routing_scene()
-    print("what each one should do when you click it:", file=sys.stderr)
-    for n in SCENES["routing"]:
-      print("   %-22s %s" % (n["summary"], n["expect"]), file=sys.stderr)
+    say("what each one should do when you click it:",
+        *("   %-22s %s" % (n["summary"], n["expect"]) for n in SCENES["routing"]))
 
   bus = Bus()
-
   if args.replay:
     items = replay(args.replay, args.match)
     if not items:
-      print("nothing in the notification history matches", file=sys.stderr)
+      say("nothing in the notification history matches")
       return 1
   else:
-    items = [n for name in scenes for n in SCENES[name]]
-    warm(items)
+    warm([n for name in scenes for n in SCENES[name]])
 
   if not args.keep:
-    clear()
+    # dismissAll takes cards off screen; `clear` would forget history.
+    subprocess.run(["omarchy-shell", "-q", "notifications", "dismissAll"], check=False)
     time.sleep(0.4)
 
   try:
     if args.replay:
       print("replaying %d" % len(items))
-      for n in items:
-        bus.send(n, args.timeout)
-        bus.pump(gap)
+      bus.play(items, gap, args.timeout)
       return 0
-    run(bus, scenes, gap, args.timeout, args.shuffle)
-    while args.loop:
+    while True:
+      items = []
+      for name in scenes:
+        scene = list(SCENES[name])
+        if args.shuffle:
+          random.shuffle(scene)
+        items += scene
+      bus.play(items, gap, args.timeout)
+      if not args.loop:
+        break
       bus.pump(gap * 2)
-      run(bus, scenes, gap, args.timeout, args.shuffle)
   except KeyboardInterrupt:
     pass
   return 0

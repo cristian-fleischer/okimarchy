@@ -1,68 +1,74 @@
 # Notifications
 
-The shell is the notification daemon: `shell/plugins/notifications/Service.qml` hosts a Quickshell `NotificationServer` that claims `org.freedesktop.Notifications` on the session bus. There is no dunst or mako — anything that speaks the freedesktop notification protocol (notify-send, libnotify apps, Chromium web apps, KDE Connect) lands in the shell, which draws it as a card in a deck hanging from the top-right corner. The engine began as the Omapager plugin by Neil Jagdish Patel (MIT, https://github.com/omacom/omapager) and moved into core; `migrations/1792376022.sh` carries Omapager's state and settings across.
-
-The end-user view is in `manual/10-notices.md`; this document is the system shape behind it.
+The shell is the notification daemon: `shell/plugins/notifications/Service.qml` hosts a Quickshell `NotificationServer` that claims `org.freedesktop.Notifications` on the session bus, so anything that speaks the freedesktop protocol (notify-send, libnotify apps, Chromium web apps, KDE Connect) is drawn as a card in a deck at the top-right corner. The end-user view is in `manual/10-notices.md`.
 
 ## Files
 
 | File | Role |
 |---|---|
-| `Service.qml` | The daemon: admission, quiet rules, snoozes, the scene clock, routing a click, replies, offers, IPC, and one layer surface per output |
-| `Toast.qml`, `DeedButton.qml` | One card and its buttons. A card is told where it is; it animates nothing of its own position |
-| `NotificationPanel.qml`, `Picker.qml` | The panel and its preferences page, hosted by the bar's Dnd indicator (`shell/plugins/bar/indicators/Dnd.qml`) |
-| `Store.js` | Snapshot of a notification, normalisation, persistence redaction, restore |
-| `Markup.js` | Body markup: the safe subset, source lifting ("web:app.slack.com"), KDE Connect forwarding, one-line previews |
-| `Detect.js` | Verification codes, links, meeting links and phone numbers in the text |
-| `Security.js` | URL policy, bounds, the `omarchy-exec-argv` structural check, glyph check |
+| `Service.qml` | The daemon: admission, quiet rules, snoozes, the scene clock, click routing, replies, offers, IPC, one layer surface per output |
+| `Toast.qml`, `DeedButton.qml` | One card and its buttons; a card is positioned by the service and animates nothing itself |
+| `NotificationPanel.qml`, `Picker.qml` | The panel and its preferences page, opened from the bar's Dnd indicator (`shell/plugins/bar/indicators/Dnd.qml`) |
+| `Store.js` | Notification snapshots, normalisation, persistence redaction, restore |
+| `Markup.js` | Safe body markup, source lifting (`web:app.slack.com`), KDE Connect forwarding, one-line previews |
+| `Detect.js` | Verification codes, links, meeting links and phone numbers |
+| `Security.js` | URL policy, bounds, the `omarchy-exec-argv` and glyph checks |
 | `Layout.js` | Pure deck layout: rows in, placements out |
 | `Delivery.js` | Quiet rules, ephemeral rules, bar clearance |
-| `Settings.js` | Defaults and validation for the `notifications` object in `shell.json` |
+| `Settings.js` | Defaults and validation for `notifications` in `shell.json` |
 | `helpers/` | Python helpers: `run` (Bubblewrap launcher), `store`, `icon`, `kdeconnect` |
 
-The JS modules load in Node as well as QML, so `test/shell.d/notifications-test.sh` exercises them (and the admission and close functions lifted out of `Service.qml`) without a compositor. `test/shell.d/notification-helpers-test.sh` covers the helpers.
+The JS modules also load in Node: `test/shell.d/notifications-test.sh` covers them without a compositor, and `test/shell.d/notification-helpers-test.sh` covers the helpers.
 
 ## Decks and the scene clock
 
-Each notification gets a key of our own (`n…`), because the sender's id identifies a slot that `replaces_id` reuses, not an event. Cards group by source: per site for anything arriving through a browser (the leading `<a href>` Chromium puts on every web notification is lifted off and becomes the source), per forwarded app for KDE Connect, per app name otherwise. Only a browser's leading anchor names a site, and only through an http(s) href that passes the URL policy; another app's leading link is just a link, so a chat message cannot dress itself up as a bank. KDE Connect is recognised by its exact app names. `stacking: "all"` puts everything in one deck instead.
+Each notification gets its own key (`n…`); the sender's id names a slot that `replaces_id` reuses, not an event. Cards group by source: per site for browser notifications (the leading `<a href>` Chromium adds is lifted off and becomes the source, but only from a browser and only for an http(s) href that passes the URL policy), per forwarded app for KDE Connect (recognised by exact app name), per app name otherwise. `stacking: "all"` puts everything in one deck.
 
-A collapsed deck draws its cards at the front card's height, peeking out beneath it; hovering a deck opens it. While the pointer is on an open deck, or a reply is being typed, a genuinely new card is held back rather than inserted under the pointer, for at most 30 seconds. Every card's position, scale, opacity and height come from one clock (`Service.at()`): a change snapshots where everything is, recomputes the layout, and starts one move for all cards from that instant. A leaving card keeps its model row until that move finishes, so its fade and the gap closing are one motion.
+A collapsed deck draws its cards at the front card's height; hovering opens it. While the pointer is on an open deck or a reply is being typed, new cards are held back for at most 30 seconds. All positions, scales, opacities and heights come from one clock (`Service.at()`): a change snapshots the current state, recomputes the layout, and starts one move for every card. A leaving card keeps its model row until that move finishes.
 
-The live `Notification` objects stay in a plain JS map (`refs`), never in a ListModel role, which would become a dangling pointer when the server destroys the object. At most 100 notifications are live at once.
+Live `Notification` objects are kept in a plain JS map (`refs`), never a ListModel role, which would dangle once the server destroys the object. At most 100 are live.
 
-The surface is one fixed-width `WlrLayer.Overlay` window per output under the namespace `omarchy-notifications`, masked to the deck so everything else stays click-through. It stays mapped while idle — a layer surface coming and going makes Hyprland re-evaluate focus, which drags a scrolling layout's viewport — except that `fullscreenOverlay` (default `all`) unmaps it under a fullscreen window when there is nothing to show, so the window can be scanned out directly. The `-away` variants never cover a fullscreen window: cards go to another output, or wait in Recent.
+The surface is one fixed-width `WlrLayer.Overlay` window per output (namespace `omarchy-notifications`), input-masked to the deck. It stays mapped while idle, because a layer surface coming and going makes Hyprland re-evaluate focus and drags a scrolling layout's viewport. The exception is `fullscreenOverlay` (default `all`), which unmaps it over a fullscreen window when nothing is showing so the window can be scanned out directly; the `-away` variants never cover a fullscreen window and send cards to another output or to Recent.
 
 ## Toast lifecycle
 
-A card lives on screen for at least 5s (low), 8s (normal), or forever (critical), stretched up to 30s if the sender asked for a longer `expire_timeout`. The countdown pauses while the deck is open or a reply is being typed, and a content update restarts it. Left-click activates (see below), middle-click dismisses, right-click opens the source menu (snooze lengths, Do Not Disturb).
+A card stays at least 5s (low), 8s (normal), or until dismissed (critical), stretched up to 30s by a longer `expire_timeout`. The countdown pauses while the deck is open or a reply is being typed; a content update restarts it. Left-click activates, middle-click dismisses, right-click opens the source menu (snooze, Do Not Disturb).
 
-A click runs, in order: the card's `omarchy-exec-argv` command; the sender's `default` action (`allowDefaultActionOnCardClick`, on by default); the sender's own window, found by the sender's pid; a window showing the source (an exact class match, then, for a site, a browser window whose title names it); the site itself; the first link in the text; and finally `omarchy-hyprland-focus-app` by app name.
+A click tries, in order: the card's `omarchy-exec-argv` command; the sender's `default` action (`allowDefaultActionOnCardClick`); the sender's window by pid; a window showing the source (exact class, then for a site a browser window whose title names it); the site itself; the first link in the text; `omarchy-hyprland-focus-app` by app name.
 
 ## Persistence
 
-The store (`helpers/store`) keeps one file per notification under `~/.local/state/omarchy/notifications/`: `live/KEY.json` while a card is on screen (or was, when the shell went down), moved to `history/<ms>-KEY.json` when it closes. History is trimmed to 100 entries and `historyHours` (default 24, `0` keeps none). A notification whose text carries a verification code is redacted before it is written. Rows carry `execArgv` and `glyph`, so a card restored after a shell restart — `omarchy update` restarts the shell under its own installer toasts — clicks through exactly like the live one. Restored cards get a 20s grace rather than their original timeout. `quiet.json` holds Do Not Disturb, snoozes and the code exception; `icons/` is the icon helper's own working cache (fetched site icons and their index), which the shell never reads.
+`helpers/store` keeps one file per notification under `~/.local/state/omarchy/notifications/`: `live/KEY.json` while on screen, moved to `history/<ms>-KEY.json` on close. History is capped at 100 entries and `historyHours` (default 24; `0` keeps none). Text with a verification code is redacted before writing. Rows keep `execArgv` and `glyph`, so a card restored after a shell restart clicks through like the live one; restored cards get a 20s grace. `quiet.json` holds Do Not Disturb, snoozes and the code exception; `icons/` is the icon helper's private cache, never read by the shell.
 
-The helpers run under Bubblewrap when it works. Without a working sandbox the store and KDE Connect helpers run directly as the user, unless `requireSandbox` is set, in which case they are blocked too; the icon helper never runs unsandboxed, because decoding images from websites and senders is the riskiest thing the helpers do, so cards fall back to a letter tile. `omarchy-shell notifications probe` reports the mode, and the panel's preferences say when icons are off.
+## Helper sandbox
 
-Icons resolve per source, once: a sender's own image wins, then a local or themed icon, then, with `fetchRemoteIcons` on, the site's own icon fetched over HTTPS from a public address. Fetching and decoding never share a sandbox: the lookup runs without a network and only names the site it needs; a separate download sandbox, the only one with a network, fetches up to two candidates, keeps bodies whose signature names a supported format, decodes nothing and can write nowhere, and cannot create Unix sockets (a seccomp filter, so the host's abstract sockets stay out of reach); a third, network-less sandbox decodes them. A decoder is always chosen by a file's bytes, never its name, extension or Content-Type. Every image the helpers read, local, fetched or sent, is decoded by ImageMagick (`helpers/notification_images.py`) under the bundled `helpers/policy.xml`, which denies every coder, delegate, filter and `@file` read except the few below. The format is sniffed from its signature first, so only PNG, JPEG, WebP and ICO (at most 64 frames) reach their own coder, with memory, size and time limits. Local SVG icons are rasterised by librsvg from stdin, where an `<image>` or entity naming another file has nothing to resolve against; no SVG ever reaches Qt. A sender's own image file is opened and read by a forked child of the launcher under a 5-second deadline, so a stalled mount cannot hold the launcher, and is refused if it is empty, oversized, not a regular file, or lives on a kernel filesystem (`/proc`, `/sys`, `/dev`, checked by path and by filesystem type); the reader dies with the launcher, and the helper decodes a sealed in-memory copy (a memfd sealed against writes, growth and shrinking). The helper hands back raw pixels, never a file: the launcher (`helpers/run`, outside the sandbox) reads at most one 128px RGBA image from its pipe, builds the PNG itself, and publishes it as `~/.cache/omarchy/notification-icons/<sha256>[-mono].png`, a directory no sandbox mounts, or, for a sender's image, as a `data:image/png` URL. The shell reads that answer through a capped parser and takes only a digest-named path in that directory, from a launcher that exited cleanly, or a data URL that starts with a PNG header, so nothing a decoder wrote is ever opened by Qt. Favicon pages are read with the stdlib HTML parser, which is linear in the page, and one icon job gets 20 seconds. User overrides go in `~/.config/omarchy/notifications/icons/`.
+Helpers run under Bubblewrap when it works. Without a working sandbox, `store` and `kdeconnect` run directly as the user unless `requireSandbox` is set, in which case they are blocked; `icon` never runs unsandboxed, so cards fall back to a letter tile. `omarchy-shell notifications probe` reports the mode, and the preferences page says when icons are off.
+
+Icons resolve once per source: the sender's image, then a local or themed icon, then, with `fetchRemoteIcons`, the site's icon over HTTPS from a public address. User overrides go in `~/.config/omarchy/notifications/icons/`.
+
+- Lookup, download and decode are separate sandboxes. Lookup has no network and only names the site. Download is the only one with a network: it fetches up to two candidates, keeps bodies whose signature is a supported format, decodes nothing, writes nowhere, and cannot create Unix sockets (seccomp). Decode has no network.
+- Decoders are chosen by content signature, never name, extension or Content-Type. ImageMagick (`helpers/notification_images.py`) runs under `helpers/policy.xml`, which allows only PNG, JPEG, WebP and ICO (at most 64 frames) with memory, size and time limits. Local SVGs go through librsvg from stdin, so external references resolve to nothing; no SVG reaches Qt.
+- A sender's image file is read by a forked child of the launcher under a 5s deadline and refused if empty, oversized, not a regular file, or on `/proc`, `/sys` or `/dev` (by path and filesystem type). The helper decodes a sealed memfd copy.
+- Helpers return raw pixels, never files. The launcher (`helpers/run`, outside the sandbox) reads at most one 128px RGBA image, encodes the PNG itself, and publishes `~/.cache/omarchy/notification-icons/<sha256>[-mono].png` (mounted by no sandbox) or, for a sender's image, a `data:image/png` URL. The shell accepts only a digest-named path in that directory or a data URL with a PNG header, from a launcher that exited cleanly.
+- Favicon pages are parsed with the stdlib HTML parser (linear time); one icon job gets 20s.
 
 ## Silencing and snoozing
 
-Do Not Disturb is a boolean persisted in `quiet.json` and toggled via shell IPC (`omarchy-shell notifications toggleDnd` / `setDnd` / `dndState`). `omarchy-toggle-notification-silencing` wraps the toggle. A snooze is the same quiet with an end time, per source (`groupKey`) or for everything (key `*`); snoozing everything replaces Do Not Disturb.
+Do Not Disturb is a boolean in `quiet.json`, toggled via `omarchy-shell notifications toggleDnd` / `setDnd` / `dndState`; `omarchy-toggle-notification-silencing` wraps the toggle. A snooze is the same quiet with an end time, per source (`groupKey`) or for everything (key `*`, which replaces Do Not Disturb).
 
-Three kinds of notification punch through every kind of quiet, chosen to be intentional and rare:
+Three kinds of notification get through every kind of quiet:
 
-- `app_name` = `omarchy-action` — Omarchy's own user-action confirmation toasts ("Theme changed"). The user just did something; their feedback shows.
-- urgency critical *and* `app_name` = `notify-send` — bare-CLI emergency alerts. Critical alone is not enough, because chat apps abuse it to force visibility; they set `app_name` to their brand, which fails this rule.
-- a detected verification code, while `codesBypassQuiet` is on (the panel's key button).
+- `app_name` = `omarchy-action`: Omarchy's own confirmation toasts for something the user just did.
+- urgency critical *and* `app_name` = `notify-send`: bare-CLI emergency alerts. Critical alone is not enough, because chat apps use it to force visibility under their own app name.
+- a detected verification code, while `codesBypassQuiet` is on.
 
-A quieted notification that anyone might look back at is recorded as held, which the panel lists by source. Ephemeral ones (the freedesktop `transient` hint, or an `app_name` of `notify-send`/`omarchy-action`) are dropped entirely.
+Quieted notifications are recorded as held and listed by source in the panel. Ephemeral ones (the `transient` hint, or `app_name` `notify-send`/`omarchy-action`) are dropped.
 
-When the Hyprland portal starts a screen-share stream, the bell offers a timed snooze. It never mutes anything by itself.
+When the Hyprland portal starts a screen-share stream, the bell offers a timed snooze; nothing is muted automatically.
 
 ## Preferences
 
-Preferences live in the `notifications` object of `~/.config/omarchy/shell.json`; every key is optional and `Settings.js` holds the defaults. The panel's preferences page writes `displayMode`/`displayName`, `fullscreenOverlay`, `stacking`, `showCountdown` and `offerSnoozeWhenSharing`. The rest are hand-edited: `edgeSpacing` (unset follows the theme's outer gap), `fontScale`, `actionsAlign`, `hideSettingsAction`, `snoozeDurations`, `wakeHour`, `smartRaise`, `codesBypassQuiet`, `timeFormat`, `sourceLimit`, `heldPerSource`, `recentCount`, `fetchRemoteIcons`, `requireSandbox`, `allowDefaultActionOnCardClick`, `historyHours`, `clipboardTimeout`. Colours, borders and corner rounding come from the theme like every other shell surface: `[notifications]` in `shell.toml` for cards, `[popups]` for the panel, Hyprland's `decoration:rounding` for corners.
+Preferences live in the `notifications` object of `~/.config/omarchy/shell.json`; every key is optional, and `Settings.js` holds defaults and valid values. The preferences page writes `displayMode`/`displayName`, `fullscreenOverlay`, `stacking`, `showCountdown` and `offerSnoozeWhenSharing`. Hand-edited keys: `edgeSpacing` (unset follows the theme's outer gap), `fontScale`, `actionsAlign`, `hideSettingsAction`, `snoozeDurations`, `wakeHour`, `smartRaise`, `codesBypassQuiet`, `timeFormat`, `sourceLimit`, `heldPerSource`, `recentCount`, `fetchRemoteIcons`, `requireSandbox`, `allowDefaultActionOnCardClick`, `historyHours`, `clipboardTimeout`. Colours come from the theme: `[notifications]` in `shell.toml` for cards, `[popups]` for the panel, Hyprland's `decoration:rounding` for corners.
 
 ## The sender contract
 
@@ -165,12 +171,7 @@ Keybindings live in `default/hypr/bindings/utilities.lua`: `Super+comma`
 variants map to the IPC methods `dismissOne`, `dismissAll`, `invokeLast`,
 `showHistory` (put the last few back on screen), and the silencing toggle.
 
-The `notifications` IPC target also answers `dismissStack`, `count`, `expand`,
-`snooze <minutes>`, `snoozeAll <minutes>`, `unsnooze <key>`, `snoozes`,
-`codes <on|off>`, `act <identifier>`, `offer <code|link|phone>`,
-`reply <text>`, `togglePanel`, `openPanel`, `openSettings`, `closePanel`,
-`probe`, and `clear` (forget recorded history). `omarchy-dev-notification-demo`
-sends realistic scenes through all of it for testing.
+The `notifications` IPC target also answers `dismissStack`, `count`, `expand`, `snooze <minutes>`, `snoozeAll <minutes>`, `unsnooze <key>`, `snoozes`, `codes <on|off>`, `act <identifier>`, `offer <code|link|phone>`, `reply <text>`, `togglePanel`, `openPanel`, `openSettings`, `closePanel`, `probe`, and `clear` (forget history). `omarchy-dev-notification-demo` sends test scenes through it.
 
 ## How subsystems plug in
 
