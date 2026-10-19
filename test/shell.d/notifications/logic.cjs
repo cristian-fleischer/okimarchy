@@ -580,7 +580,7 @@ for (const held of [true, false]) { // Capacity: at most 100 live senders, held 
   assert.equal(replacements[0].body, 'Synthetic body: Latest replacement')
 }
 
-{ // A pruned icon file is resolved again, once per source, on every card from it.
+{ // A pruned icon file is resolved again on every card from its source, at most once a minute.
   const s = newCapacityScope()
   let wanted = 0
   s.wantIcon = () => { wanted++ }
@@ -592,6 +592,14 @@ for (const held of [true, false]) { // Capacity: at most 100 live senders, held 
   assert.equal(wanted, 1)
   assert.equal(s.iconCache['app:x'], undefined)
   assert.ok(s.toasts.rows.every(row => row.stored_image === ''))
+  // Pruned again later in the session: resolved again.
+  s.iconCache['app:x'] = '/gone.png'
+  for (const row of s.toasts.rows) row.stored_image = '/gone.png'
+  s.forgetIcon('a')
+  assert.equal(wanted, 1)
+  s.iconRetried['app:x'] -= 61000
+  s.forgetIcon('a')
+  assert.equal(wanted, 2)
 }
 
 { // Visible replacements keep their position and expose only the latest sender's actions.

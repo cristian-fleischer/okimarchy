@@ -672,13 +672,14 @@ Item {
   function iconKeyFor(row) { return String(row.groupKey || row.source || row.app || "") }
 
   // The launcher prunes old icons, so a cached path can go missing: resolve
-  // it again, once per source, so a file that will not load cannot loop.
+  // it again, at most once a minute per source, so a file that will not load
+  // cannot loop.
   function forgetIcon(rowKey) {
     var at = rowIndexFor(rowKey)
     if (at < 0) return
     var row = toasts.get(at), key = iconKeyFor(row)
-    if (!key || iconRetried[key] || iconCache[key] !== row.stored_image) return
-    iconRetried[key] = true
+    if (!key || Date.now() - (iconRetried[key] || 0) < 60000 || iconCache[key] !== row.stored_image) return
+    iconRetried[key] = Date.now()
     delete iconCache[key]
     for (var i = 0; i < toasts.count; i++)
       if (iconKeyFor(toasts.get(i)) === key) toasts.setProperty(i, "stored_image", "")
