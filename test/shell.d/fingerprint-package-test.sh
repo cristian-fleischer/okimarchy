@@ -290,7 +290,7 @@ check_enroll enroll-completed $'  ✓ Enrolled.'
 check_enroll enroll-retry-scan "  That one didn't read. Again."
 check_enroll enroll-swipe-too-short '  Too short. Again.'
 check_enroll enroll-finger-not-centered '  Not centered: use the middle of the sensor. Again.'
-check_enroll enroll-remove-and-retry '  Lift your finger off the sensor, then: Again.'
+check_enroll enroll-remove-and-retry '  Lift your finger off the sensor, then try again.'
 check_enroll enroll-too-fast '  Too fast. Again.'
 check_enroll enroll-duplicate $'  ✗ That finger is already enrolled.'
 check_enroll enroll-data-full $'  ✗ The reader has no room for another fingerprint.'
@@ -307,7 +307,10 @@ check_verify 'verify-no-match (done)' $'  ✗ No match.'
 check_verify 'verify-retry-scan (not done)' "  That one didn't read. Again."
 check_verify 'verify-swipe-too-short (not done)' '  Too short. Again.'
 check_verify 'verify-finger-not-centered (not done)' '  Not centered: use the middle of the sensor. Again.'
-check_verify 'verify-remove-and-retry (not done)' '  Lift your finger off the sensor, then: Again.'
+check_verify 'verify-remove-and-retry (not done)' '  Lift your finger off the sensor, then try again.'
+# The line names no gesture, so it reads right on press and swipe readers alike.
+[[ $(printf 'Enroll result: enroll-remove-and-retry\n' | enroll_progress "Swipe it again.") == '  Lift your finger off the sensor, then try again.' ]] ||
+  fail "a swipe reader asked to lift its finger isn't told to touch"
 check_verify 'verify-too-fast (not done)' '  Too fast. Again.'
 check_verify 'verify-disconnected (done)' $'  ✗ The reader was disconnected.'
 check_verify 'verify-unknown-error (done)' $'  ✗ The check stopped (verify-unknown-error).'
