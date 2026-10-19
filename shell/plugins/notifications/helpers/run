@@ -196,12 +196,15 @@ def open_sender_image(stream, timeout=SENDER_READ_SECONDS):
   and the sender-image queue behind it - back. The launcher never touches the
   path itself."""
   path = sender_path(stream)
+  launcher = os.getpid()
   read_end, write_end = os.pipe()
   pid = os.fork()
   if pid == 0:
     status = 1
     try:
       os.close(read_end)
+      # Dies with the launcher, however the launcher ends.
+      die_with_parent(launcher)
       # A reader stuck on a stalled mount must not hold the caller's pipes
       # open after the launcher has given up on it.
       null = os.open(os.devnull, os.O_RDWR)
@@ -234,14 +237,31 @@ def open_sender_image(stream, timeout=SENDER_READ_SECONDS):
       reap_killed(pid)
   if status is None or os.waitstatus_to_exitcode(status) != 0:
     raise ValueError("sender image unavailable")
-  fd = os.memfd_create("sender-image", os.MFD_CLOEXEC)
+  import fcntl
+  fd = os.memfd_create("sender-image", os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
   try:
-    os.write(fd, data)
+    view = memoryview(data)
+    while view:
+      view = view[os.write(fd, view):]
+    # Sealed: nothing can change the copy once it is made.
+    fcntl.fcntl(fd, fcntl.F_ADD_SEALS, fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW
+                | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL)
     os.lseek(fd, 0, os.SEEK_SET)
     return fd
   except BaseException:
     os.close(fd)
     raise
+
+
+def die_with_parent(parent):
+  import ctypes
+  libc = ctypes.CDLL(None, use_errno=True)
+  PR_SET_PDEATHSIG = 1
+  if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
+    raise OSError(ctypes.get_errno(), "prctl failed")
+  # The launcher may already have gone before the request took effect.
+  if os.getppid() != parent:
+    os._exit(1)
 
 
 def read_bounded(stream, limit, deadline):

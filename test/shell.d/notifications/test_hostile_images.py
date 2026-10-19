@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -239,8 +240,55 @@ class SenderFiles(unittest.TestCase):
         source.write_bytes(b"replaced afterwards")
         self.assertTrue(os.readlink("/proc/self/fd/%d" % fd).startswith("/memfd:"))
         self.assertEqual(os.read(fd, 65536), png((8, 8)))
+        import fcntl
+        seals = fcntl.fcntl(fd, fcntl.F_GET_SEALS)
+        for seal in (fcntl.F_SEAL_WRITE, fcntl.F_SEAL_GROW, fcntl.F_SEAL_SHRINK, fcntl.F_SEAL_SEAL):
+          self.assertTrue(seals & seal, seal)
+        for change in (lambda: os.pwrite(fd, b"x", 0), lambda: os.ftruncate(fd, 1),
+                       lambda: os.ftruncate(fd, 1 << 20)):
+          with self.assertRaises(PermissionError):
+            change()
       finally:
         os.close(fd)
+
+  def test_the_reader_dies_with_its_launcher(self):
+    # A launcher killed mid-read takes its reader with it.
+    with tempfile.TemporaryDirectory() as temp:
+      marker = Path(temp) / "reader.pid"
+      script = (
+          "import sys, time\n"
+          "sys.path.insert(0, %r)\n"
+          "from support import load_helper\n"
+          "runner = load_helper('run')\n"
+          "import io\n"
+          "runner.read_sender_file = lambda _p: (open(%r, 'w').write(str(__import__('os').getpid())), time.sleep(3600))\n"
+          "runner.open_sender_image(io.BytesIO(b'/stalled.png'), timeout=600)\n"
+      ) % (str(Path(__file__).parent), str(marker))
+      launcher = subprocess.Popen([sys.executable, "-B", "-c", script])
+      reader = None
+      try:
+        deadline = time.monotonic() + 10
+        while not (marker.exists() and marker.read_text()) and time.monotonic() < deadline:
+          time.sleep(0.05)
+        reader = int(marker.read_text())
+        launcher.kill()
+        launcher.wait(timeout=5)
+        deadline = time.monotonic() + 5
+        while Path("/proc/%d" % reader).exists() and time.monotonic() < deadline:
+          state = Path("/proc/%d/stat" % reader).read_text().split()[2] if Path("/proc/%d/stat" % reader).exists() else "X"
+          if state == "Z":
+            break
+          time.sleep(0.05)
+        alive = Path("/proc/%d/stat" % reader).exists() and Path("/proc/%d/stat" % reader).read_text().split()[2] != "Z"
+        self.assertFalse(alive, "the reader outlived its launcher")
+      finally:
+        if launcher.poll() is None:
+          launcher.kill()
+        if reader:
+          try:
+            os.kill(reader, 9)
+          except ProcessLookupError:
+            pass
 
   def test_pseudo_filesystems_are_refused_by_type_wherever_they_are_mounted(self):
     with tempfile.TemporaryDirectory() as temp:
