@@ -26,12 +26,15 @@ def load_helper(name, module_name=None):
   return module
 
 
-def have_pillow():
-  try:
-    import PIL  # noqa: F401
-  except ImportError:
-    return False
-  return True
+def have_magick():
+  return Path("/usr/bin/magick").is_file()
+
+
+def png(size, colour=(20, 40, 60, 255)):
+  """An RGBA PNG of one colour, written without any imaging library."""
+  import notification_images
+  width, height = size
+  return notification_images.encode_png(width, height, bytes(colour) * (width * height))
 
 
 def have_openssl():

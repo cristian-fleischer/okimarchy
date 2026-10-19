@@ -44,7 +44,7 @@ The store (`helpers/store`) keeps one file per notification under `~/.local/stat
 
 The helpers run under Bubblewrap when it works and directly as the user otherwise, unless `requireSandbox` is set, in which case they are blocked. `omarchy-shell notifications probe` reports which.
 
-Icons resolve per source, once: a sender's own image wins, then a local or themed icon, then, with `fetchRemoteIcons` on, the site's own icon fetched over HTTPS from a public address and re-encoded by Pillow. User overrides go in `~/.config/omarchy/notifications/icons/`.
+Icons resolve per source, once: a sender's own image wins, then a local or themed icon, then, with `fetchRemoteIcons` on, the site's own icon fetched over HTTPS from a public address. Every raster the helpers read, local, fetched or sent, is decoded by ImageMagick (`helpers/notification_images.py`): the format is sniffed from its signature first, only PNG, JPEG, WebP and ICO reach their own coder, with memory, size and time limits, and the result is re-encoded as a PNG with zlib. User overrides go in `~/.config/omarchy/notifications/icons/`.
 
 ## Silencing and snoozing
 

@@ -21,7 +21,7 @@ import time
 import unittest
 from unittest import mock
 
-from support import have_openssl, have_pillow, load_helper
+from support import have_magick, have_openssl, load_helper, png
 
 PUBLIC = "93.184.216.34"
 PUBLIC_V6 = "2606:4700:4700::1111"
@@ -355,11 +355,10 @@ class IconResolutionTest(unittest.TestCase):
             "https://source.test/site.webmanifest", "https://source.test/"), [])
 
   def test_malformed_manifest_does_not_hide_a_later_page_icon(self):
-    if not have_pillow():
-      self.skipTest("python-pillow is not installed")
-    from PIL import Image
+    if not have_magick():
+      self.skipTest("imagemagick is not installed")
     icon = self.load_icon()
-    image = io_bytes_png(Image, (32, 32))
+    image = png((32, 32))
     requested = []
 
     def get(url, _limit):
@@ -397,15 +396,14 @@ class IconResolutionTest(unittest.TestCase):
           self.assertEqual(list(Path(temp).iterdir()), [])
 
   def test_fetch_disabled_uses_valid_cache_without_any_request(self):
-    if not have_pillow():
-      self.skipTest("python-pillow is not installed")
-    from PIL import Image
+    if not have_magick():
+      self.skipTest("imagemagick is not installed")
     icon = self.load_icon()
     args = argparse.Namespace(source="source.test", app_icon="", app="", key="",
                               scheme="dark", fetch=False)
     with tempfile.TemporaryDirectory() as temp, mock.patch.dict(icon, {"CACHE": temp}):
       cached = icon["remote_cache_path"]("source.test", "dark")
-      Path(cached).write_bytes(io_bytes_png(Image, (32, 32)))
+      Path(cached).write_bytes(png((32, 32)))
       os.chmod(cached, 0o600)
       index = {"source.test": {"dark": cached}}
 
@@ -433,13 +431,6 @@ class IconResolutionTest(unittest.TestCase):
 def json_bytes(value):
   import json
   return json.dumps(value).encode()
-
-
-def io_bytes_png(image_module, size):
-  import io
-  buffer = io.BytesIO()
-  image_module.new("RGBA", size, (20, 40, 60, 255)).save(buffer, format="PNG")
-  return buffer.getvalue()
 
 
 if __name__ == "__main__":

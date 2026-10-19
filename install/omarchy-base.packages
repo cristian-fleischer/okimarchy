@@ -114,7 +114,6 @@ plymouth
 postgresql-libs
 power-profiles-daemon
 python-gobject
-python-pillow
 python-poetry-core
 qt6-base
 qt6-declarative

@@ -8,7 +8,7 @@ source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/base-test.sh"
 # the sandbox launcher, the store, icon resolution and the KDE Connect bridge.
 # The unit tests live in notifications/ as Python unittest modules; tap.py runs
 # them and prints one ok/SKIP/not ok line per test. Checks that need
-# python-pillow, Bubblewrap or openssl skip themselves when it is missing.
+# ImageMagick, Bubblewrap or openssl skip themselves when it is missing.
 
 require_command python3
 

@@ -1,6 +1,5 @@
 """Sender images become self-contained data: URLs through `run icon --sender-image`."""
 import base64
-import io
 import json
 import os
 from pathlib import Path
@@ -9,7 +8,7 @@ import tempfile
 import unittest
 
 
-from support import RUN, have_pillow
+from support import RUN, have_magick, png
 
 DATA_URL_PREFIX = "data:image/png;base64,"
 
@@ -17,10 +16,10 @@ DATA_URL_PREFIX = "data:image/png;base64,"
 class SenderImage(unittest.TestCase):
   @classmethod
   def setUpClass(cls):
-    if not have_pillow():
-      raise unittest.SkipTest("python-pillow is not installed")
-    from PIL import Image
-    cls.Image = Image
+    if not have_magick():
+      raise unittest.SkipTest("imagemagick is not installed")
+    import notification_images
+    cls.images = notification_images
 
   def setUp(self):
     self.temp = tempfile.TemporaryDirectory(prefix="omarchy-notification-sender-image-")
@@ -68,7 +67,7 @@ class SenderImage(unittest.TestCase):
 
   def make_png(self, name="sender.png"):
     path = self.inputs / name
-    self.Image.new("RGBA", (192, 96), (17, 83, 149, 255)).save(path, format="PNG")
+    path.write_bytes(png((192, 96), (17, 83, 149, 255)))
     return path
 
   def assert_decoded_png(self, result):
@@ -77,11 +76,11 @@ class SenderImage(unittest.TestCase):
     self.assertTrue(output.startswith(DATA_URL_PREFIX))
     self.assertLessEqual(len(output), 131072)
     png = base64.b64decode(output[len(DATA_URL_PREFIX):], validate=True)
-    with self.Image.open(io.BytesIO(png)) as image:
-      self.assertEqual(image.format, "PNG")
-      image.load()
-      self.assertEqual(image.size, (128, 64))
-      self.assertEqual(image.getpixel((64, 32)), (17, 83, 149, 255))
+    self.assertEqual(self.images.sniff(png), "PNG")
+    width, height, rgba = self.images.decode(png, ("PNG",), 128, 128 * 128, 128)
+    self.assertEqual((width, height), (128, 64))
+    i = (32 * width + 64) * 4
+    self.assertEqual(tuple(rgba[i:i + 4]), (17, 83, 149, 255))
 
   def test_png_becomes_self_contained_bounded_data_url_in_available_modes(self):
     status = self.mode_status()

@@ -14,7 +14,6 @@ import argparse
 import base64
 import glob
 import hashlib
-import io
 import json
 import math
 import os
@@ -23,7 +22,7 @@ import stat
 import sys
 import time
 import urllib.parse
-import warnings
+import notification_images as images
 from notification_http import fetch as get, parse_url, public_hostname
 from notification_files import private_dir, write_bytes, write_json, read_json
 
@@ -59,7 +58,12 @@ REMOTE_FORMATS = ("PNG", "JPEG", "WEBP", "ICO")
 SENDER_IMAGE_DATA_URL_CHARS = 131072
 
 
-def is_mono_glyph(im, opaque):
+LOCAL_ICON_BYTES = 4 * 1024 * 1024
+LOCAL_FORMATS = ("PNG", "JPEG", "WEBP", "ICO")
+WORKING_SIDE = 512                     # local icons are trimmed at this size
+
+
+def is_mono_glyph(width, height, rgba, opaque):
   """Is this a one-colour mark on nothing?
 
   KDE Connect's Messages icon is a black speech bubble on transparency. On a
@@ -70,17 +74,19 @@ def is_mono_glyph(im, opaque):
   its own backdrop, or any real colour in it, is left alone."""
   if opaque:
     return False                       # it brought its own background
-  small = im.resize((32, 32))   # default resampling: PIL is imported inside normalise
   spread = 0
   lums = []
-  # getdata() is deprecated from Pillow 12.1 and goes in Pillow 14.
-  pixels = (small.get_flattened_data() if hasattr(small, "get_flattened_data")
-            else small.getdata())
-  for r, g, b, a in pixels:
-    if a < 40:
-      continue
-    spread += max(r, g, b) - min(r, g, b)
-    lums.append((r * 299 + g * 587 + b * 114) // 1000)
+  # A 32x32 sample of the mark is plenty to judge its colours by.
+  for sy in range(32):
+    y = min(height - 1, (sy * height) // 32)
+    for sx in range(32):
+      x = min(width - 1, (sx * width) // 32)
+      i = (y * width + x) * 4
+      r, g, b, a = rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3]
+      if a < 40:
+        continue
+      spread += max(r, g, b) - min(r, g, b)
+      lums.append((r * 299 + g * 587 + b * 114) // 1000)
   n = len(lums)
   if n < 24:                             # too little ink to judge
     return False
@@ -101,6 +107,50 @@ def is_mono_glyph(im, opaque):
           and (mean < 90 or mean > 170))
 
 
+def crop_to_ink(width, height, rgba):
+  """Drop fully transparent padding."""
+  alpha = rgba[3::4]
+  rows = [y for y in range(height) if any(alpha[y * width:(y + 1) * width])]
+  if not rows:
+    return width, height, rgba
+  top, bottom = rows[0], rows[-1] + 1
+  left, right = width, 0
+  for y in range(top, bottom):
+    line = alpha[y * width:(y + 1) * width]
+    for x in range(width):
+      if line[x]:
+        left = min(left, x)
+        break
+    for x in range(width - 1, -1, -1):
+      if line[x]:
+        right = max(right, x + 1)
+        break
+  if (left, top, right, bottom) == (0, 0, width, height):
+    return width, height, rgba
+  out = b"".join(rgba[(y * width + left) * 4:(y * width + right) * 4] for y in range(top, bottom))
+  return right - left, bottom - top, out
+
+
+def round_corners(width, height, rgba, radius):
+  """Clear the pixels outside a rounded rectangle."""
+  pixels = bytearray(rgba)
+  for y in range(height):
+    for x in range(width):
+      cx = radius if x < radius else (width - 1 - radius if x > width - 1 - radius else x)
+      cy = radius if y < radius else (height - 1 - radius if y > height - 1 - radius else y)
+      if (x - cx) ** 2 + (y - cy) ** 2 > radius * radius:
+        pixels[(y * width + x) * 4 + 3] = 0
+  return bytes(pixels)
+
+
+def read_local_icon(path):
+  with open(path, "rb") as source:
+    data = source.read(LOCAL_ICON_BYTES + 1)
+  if len(data) > LOCAL_ICON_BYTES:
+    raise ValueError("oversized icon")
+  return data
+
+
 def normalise(path):
   """Render an icon to one consistent shape.
 
@@ -110,54 +160,46 @@ def normalise(path):
   file's dimensions but how much of them the mark actually fills. This trims
   each one to its own content, fits it into a common canvas with a margin,
   and rounds the corners of the ones that carry their own background."""
-  try:
-    from PIL import Image, ImageDraw
-  except ImportError:
-    return path
   if path.lower().endswith(".svg"):
     return path                        # left to Qt, which renders SVG well
   try:
-    Image.MAX_IMAGE_PIXELS = 2048 * 2048
-    im = Image.open(path)
-    if max(im.size) > 2048: return None
-    im = im.convert("RGBA")
-  except Exception:
-    # If PIL cannot read it, Qt very likely cannot either - a favicon
-    # served as HTML, an .ico in a variant nobody supports. Handing the
-    # path over anyway produced a card with a broken-image box and a stream
-    # of decoding errors in the log. Better to have no icon.
+    width, height, rgba = images.decode(read_local_icon(path), LOCAL_FORMATS, 2048,
+                                        2048 * 2048, WORKING_SIDE)
+  except (OSError, ValueError):
+    # If it cannot be read here, Qt very likely cannot either - a favicon
+    # served as HTML, an .ico in a variant nobody supports. Handing the path
+    # over anyway produced a card with a broken-image box and a stream of
+    # decoding errors in the log. Better to have no icon.
     return None
-  if im.width < 8 or im.height < 8:
+  if width < 8 or height < 8:
     return None
 
-  box = im.getbbox()                     # drop transparent padding
-  if box:
-    im = im.crop(box)
-
-  alpha = im.getchannel("A")
-  opaque = alpha.getextrema()[0] > 250   # no transparency: it has a backdrop
-  mono = is_mono_glyph(im, opaque)
+  width, height, rgba = crop_to_ink(width, height, rgba)
+  opaque = min(rgba[3::4]) > 250         # no transparency: it has a backdrop
+  mono = is_mono_glyph(width, height, rgba, opaque)
 
   # A mark with its own background keeps more of the canvas and gets rounded
   # corners; a bare glyph is inset a little further so it does not out-weigh
-  # the boxed ones sitting above and below it.
+  # the boxed ones sitting above and below it. Scaled up as well as down: a
+  # 32px favicon left at 32px came out a quarter the size of the icon next to
+  # it.
   fill = 0.94 if opaque else 0.82
   side = int(NORM * fill)
-  # Resize, not thumbnail: thumbnail only ever shrinks, so a 32px favicon
-  # stayed 32px on a 128px canvas and came out a quarter the size of the
-  # icon next to it. That was the whole "different sizes" problem.
-  scale = side / float(max(im.width, im.height))
-  im = im.resize((max(1, int(im.width * scale)), max(1, int(im.height * scale))),
-                 Image.LANCZOS)
-
+  scale = side / float(max(width, height))
+  new_width, new_height = max(1, int(width * scale)), max(1, int(height * scale))
+  try:
+    rgba = images.resize(width, height, rgba, new_width, new_height)
+  except ValueError:
+    return None
+  width, height = new_width, new_height
   if opaque:
-    mask = Image.new("L", im.size, 0)
-    ImageDraw.Draw(mask).rounded_rectangle([0, 0, im.width - 1, im.height - 1],
-                                           radius=int(min(im.size) * 0.22), fill=255)
-    im.putalpha(mask)
+    rgba = round_corners(width, height, rgba, int(min(width, height) * 0.22))
 
-  canvas = Image.new("RGBA", (NORM, NORM), (0, 0, 0, 0))
-  canvas.paste(im, ((NORM - im.width) // 2, (NORM - im.height) // 2), im)
+  canvas = bytearray(NORM * NORM * 4)
+  left, top = (NORM - width) // 2, (NORM - height) // 2
+  for y in range(height):
+    start = ((top + y) * NORM + left) * 4
+    canvas[start:start + width * 4] = rgba[y * width * 4:(y + 1) * width * 4]
 
   # The name carries the finding: a monochrome glyph is drawn in the theme's
   # own text colour instead of as-is, and the drawing happens in QML, which
@@ -166,9 +208,7 @@ def normalise(path):
                       + ("-mono" if mono else "") + ".png")
   try:
     os.makedirs(CACHE, exist_ok=True)
-    buf = io.BytesIO()
-    canvas.save(buf, format="PNG")
-    write_bytes(dest, buf.getvalue())
+    write_bytes(dest, images.encode_png(NORM, NORM, bytes(canvas)))
   except Exception:
     return None
   return dest
@@ -340,44 +380,15 @@ def from_manifest(url, base):
   return result
 
 
-def checked_raster(data, formats, max_side):
-  """Fully verify and decode bounded image bytes, returning an RGBA copy."""
-  if not isinstance(data, bytes):
-    raise ValueError("image bytes required")
-  from PIL import Image
-  Image.MAX_IMAGE_PIXELS = MAX_REMOTE_PIXELS
-
-  def metadata(image):
-    if (image.format not in formats or not image.width or not image.height
-            or max(image.size) > max_side
-            or image.width * image.height > MAX_REMOTE_PIXELS
-            or getattr(image, "n_frames", 1) != 1):
-      raise ValueError("unsupported image")
-
-  with warnings.catch_warnings():
-    warnings.simplefilter("error", Image.DecompressionBombWarning)
-    with Image.open(io.BytesIO(data)) as probe:
-      metadata(probe)
-      probe.verify()
-    with Image.open(io.BytesIO(data)) as image:
-      metadata(image)
-      image.load()
-      return image.convert("RGBA")
-
-
 def normalised_remote_png(data):
+  """A fully decoded, re-encoded PNG of a fetched or sender-supplied image."""
   if not isinstance(data, bytes) or len(data) > REMOTE_ICON_BYTES:
     raise ValueError("oversized image")
-  image = checked_raster(data, REMOTE_FORMATS, MAX_REMOTE_SIDE)
-  try:
-    if image.width < 8 or image.height < 8:
-      raise ValueError("image too small")
-    image.thumbnail((NORM, NORM))
-    output = io.BytesIO()
-    image.save(output, format="PNG")
-    return output.getvalue()
-  finally:
-    image.close()
+  width, height, rgba = images.decode(data, REMOTE_FORMATS, MAX_REMOTE_SIDE,
+                                      MAX_REMOTE_PIXELS, NORM)
+  if width < 8 or height < 8:
+    raise ValueError("image too small")
+  return images.encode_png(width, height, rgba)
 
 
 def sender_image_data_url(stream):
@@ -470,8 +481,7 @@ def safe_cached_remote_icon(host, scheme, cached):
       os.close(fd)
     if len(data) > CACHED_ICON_BYTES:
       return None
-    image = checked_raster(bytes(data), ("PNG",), NORM)
-    image.close()
+    images.decode(bytes(data), ("PNG",), NORM, NORM * NORM, NORM)
   except Exception:
     return None
   return expected

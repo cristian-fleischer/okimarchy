@@ -1,8 +1,7 @@
 echo "Move notifications to the new notification engine and retire the Omapager plugin"
 
-# Website icons and sender images are decoded by Pillow, and the notification
-# helpers run under Bubblewrap when it is available.
-omarchy-pkg-add bubblewrap python-pillow
+# The notification helpers run under Bubblewrap when it is available.
+omarchy-pkg-add bubblewrap
 
 state="$HOME/.local/state/omarchy"
 root="$state/notifications"

@@ -13,7 +13,7 @@ import time
 import unittest
 from unittest.mock import patch, MagicMock
 
-from support import HELPERS, have_pillow, load_helper
+from support import HELPERS, have_magick, load_helper, png
 import notification_http as net
 import notification_files as files
 
@@ -378,19 +378,54 @@ class Icons(unittest.TestCase):
 
 class Raster(unittest.TestCase):
   def test_valid_raster_and_dimension_limit(self):
-    if not have_pillow():
-      self.skipTest("python-pillow is not installed")
-    from PIL import Image
+    if not have_magick():
+      self.skipTest("imagemagick is not installed")
+    import notification_images
     icon=module('icon')
     for size,accepted in [((256,256),True),((2049,1),False)]:
-      buf=io.BytesIO();Image.new('RGB',size).save(buf,format='PNG')
-      with tempfile.TemporaryDirectory() as temp,patch.object(icon,'CACHE',temp),patch.object(icon,'get',return_value=(buf.getvalue(),'https://example.com')):
+      with tempfile.TemporaryDirectory() as temp,patch.object(icon,'CACHE',temp),patch.object(icon,'get',return_value=(png(size,(0,0,0,255)),'https://example.com')):
         path=icon.fetch_site('example.com','dark')
         self.assertEqual(bool(path),accepted)
         if path:
-          with Image.open(path) as im:
-            self.assertEqual(im.format,'PNG')
-            self.assertLessEqual(max(im.size),128)
+          data=Path(path).read_bytes()
+          self.assertEqual(notification_images.sniff(data),'PNG')
+          self.assertLessEqual(max(notification_images.frames(data,'PNG')[0]),128)
           self.assertEqual(Path(path).stat().st_mode&0o777,0o600)
+
+  def test_only_sniffed_rasters_reach_a_coder(self):
+    if not have_magick():
+      self.skipTest("imagemagick is not installed")
+    import subprocess
+    import notification_images
+    svg=b'<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64"/></svg>'
+    msl=b'<?xml version="1.0"?><image><read filename="/etc/passwd"/></image>'
+    anim=subprocess.run(['magick','-size','8x8','xc:red','xc:blue','-loop','0','webp:-'],stdout=subprocess.PIPE,check=True).stdout
+    for data in (svg,msl,b'not an image',b'\x89PNG\r\n\x1a\ntruncated',anim):
+      with self.assertRaises(ValueError):
+        notification_images.decode(data,('PNG','JPEG','WEBP','ICO'),2048,2048*2048,128)
+    ico=subprocess.run(['magick','-size','64x64','xc:red','-define','icon:auto-resize=16,32,64','ico:-'],stdout=subprocess.PIPE,check=True).stdout
+    self.assertEqual(notification_images.decode(ico,('ICO',),2048,2048*2048,128)[:2],(64,64))
+
+  def test_local_icons_normalise_to_one_canvas(self):
+    if not have_magick():
+      self.skipTest("imagemagick is not installed")
+    import notification_images
+    icon=module('icon')
+    # A small opaque square and a padded transparent plus come out the same
+    # canvas size; the opaque one is inset less and has its corners cleared.
+    opaque=png((16,16),(200,40,40,255))
+    glyph=notification_images.encode_png(64,64,b''.join(
+      bytes((0,0,0,255) if 16<=x<48 and 16<=y<48 and (28<=x<36 or 28<=y<36) else (0,0,0,0)) for y in range(64) for x in range(64)))
+    with tempfile.TemporaryDirectory() as temp,patch.object(icon,'CACHE',temp):
+      for name,data,mono in (('opaque.png',opaque,False),('glyph.png',glyph,True)):
+        source=Path(temp)/name;source.write_bytes(data)
+        out=icon.normalise(str(source))
+        self.assertTrue(out.endswith('-mono.png')==mono,out)
+        w,h,rgba=notification_images.decode(Path(out).read_bytes(),('PNG',),128,128*128,128)
+        self.assertEqual((w,h),(128,128))
+        self.assertEqual(rgba[(64*128+64)*4+3],255)
+      corner=notification_images.decode(Path(icon.normalise(str(Path(temp)/'opaque.png'))).read_bytes(),('PNG',),128,128*128,128)[2]
+      self.assertEqual(corner[(4*128+4)*4+3],0)
+      self.assertIsNone(icon.normalise(str(Path(temp)/'missing.png')))
 
 if __name__=='__main__':unittest.main()
