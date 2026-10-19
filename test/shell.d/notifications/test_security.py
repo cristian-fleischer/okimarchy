@@ -1,5 +1,4 @@
-"""Store redaction and file safety, redirect handling, KDE Connect replies, icon paths."""
-import argparse
+"""Store redaction and file safety, KDE Connect replies, icon paths."""
 import contextlib
 import io
 import json
@@ -12,8 +11,7 @@ import time
 import unittest
 from unittest.mock import patch, MagicMock
 
-from support import HELPERS, fetch_site, have_magick, load_helper, png
-import notification_http as net
+from support import HELPERS, have_magick, load_helper, png
 import notification_files as files
 
 STATE = '.local/state/omarchy/notifications'
@@ -203,16 +201,6 @@ class Storage(unittest.TestCase):
           self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
 
-class Redirects(unittest.TestCase):
-  def test_hostile_locations_are_refused_before_another_request(self):
-    for target in ('http://127.0.0.1', 'http://10.0.0.1', 'file:///etc/passwd', 'https://user@example.com',
-                   'https://example.com:22', '\nhttps://example.com'):
-      with self.subTest(target=target), patch.object(net, 'fetch_once', return_value=(None, target)) as once:
-        with self.assertRaises(ValueError):
-          net.fetch('https://example.com')
-        self.assertEqual(once.call_count, 1)
-
-
 class Replies(unittest.TestCase):
   PATH = '/modules/kdeconnect/devices/device/notifications/1'
 
@@ -284,25 +272,6 @@ class Icons(unittest.TestCase):
     for call in glob.call_args_list:
       self.assertNotIn('../', call.args[0])
 
-  def test_a_cache_entry_that_is_not_a_validated_raster_is_deleted(self):
-    # A cache hit used to be trusted for being inside CACHE, so a pre-hardening
-    # entry - a raw remote SVG - reached the UI on every later run.
-    with tempfile.TemporaryDirectory() as temp:
-      legacy = os.path.join(temp, 'web-example-com-dark.svg')
-      Path(legacy).write_text('<svg xmlns="http://www.w3.org/2000/svg"><script>evil()</script></svg>')
-      index = os.path.join(temp, 'index.json')
-      fetcher = MagicMock(return_value=None)
-      args = argparse.Namespace(source='example.com', app_icon='', app='', key='', scheme='dark', fetch=True)
-      with patch.object(self.icon, 'CACHE', temp), patch.object(self.icon, 'INDEX', index), \
-              patch.object(self.icon, 'load_index', return_value={'example.com': {'dark': legacy}}), \
-              patch.object(self.icon, 'from_config', return_value=None), \
-              patch.object(self.icon, 'from_icon_theme', return_value=None), \
-              patch.object(self.icon, 'from_desktop_entries', return_value=None):
-        self.assertEqual(self.icon.resolve(args, fetcher), (None, 'none'))
-      self.assertFalse(os.path.exists(legacy), 'poisoned cache entry must be deleted, not reused')
-      fetcher.assert_called_once_with('example.com', 'dark')
-      self.assertNotIn('dark', json.loads(Path(index).read_text())['example.com'])
-
   def test_local_theme_svgs_are_found(self):
     with tempfile.TemporaryDirectory() as temp:
       theme = Path(temp) / 'hicolor/scalable/apps'
@@ -317,18 +286,17 @@ class Raster(unittest.TestCase):
   def setUp(self):
     self.icon = load_helper('icon')
 
-  def test_valid_raster_and_dimension_limit(self):
-    import notification_images
+  def test_sender_raster_and_dimension_limit(self):
     for size, accepted in (((256, 256), True), ((2049, 1), False)):
-      with tempfile.TemporaryDirectory() as temp, patch.object(self.icon, 'CACHE', temp), \
-              patch.object(self.icon, 'get', return_value=(png(size, (0, 0, 0, 255)), 'https://example.com')):
-        path = fetch_site(self.icon, 'example.com', 'dark')
-        self.assertEqual(bool(path), accepted)
-        if path:
-          data = Path(path).read_bytes()
-          self.assertEqual(notification_images.sniff(data), 'PNG')
-          self.assertLessEqual(max(notification_images.frames(data, 'PNG')[0]), 128)
-          self.assertEqual(Path(path).stat().st_mode & 0o777, 0o600)
+      with self.subTest(size=size):
+        try:
+          width, height, rgba = self.icon.sender_pixels(png(size, (0, 0, 0, 255)))
+        except ValueError:
+          self.assertFalse(accepted)
+        else:
+          self.assertTrue(accepted)
+          self.assertLessEqual(max(width, height), 128)
+          self.assertEqual(len(rgba), width * height * 4)
 
   def test_local_icons_normalise_to_one_canvas(self):
     import notification_images
@@ -338,7 +306,7 @@ class Raster(unittest.TestCase):
     glyph = notification_images.encode_png(64, 64, b''.join(
         bytes((0, 0, 0, 255) if 16 <= x < 48 and 16 <= y < 48 and (28 <= x < 36 or 28 <= y < 36) else (0, 0, 0, 0))
         for y in range(64) for x in range(64)))
-    with tempfile.TemporaryDirectory() as temp, patch.object(self.icon, 'CACHE', temp):
+    with tempfile.TemporaryDirectory() as temp:
       for name, data, mono in (('opaque.png', opaque, False), ('glyph.png', glyph, True)):
         source = Path(temp) / name
         source.write_bytes(data)

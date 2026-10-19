@@ -184,11 +184,8 @@ def pack_pixels(width, height, rgba, mono=False, how=""):
   return _header(header) + bytes(rgba)
 
 
-def pack_nothing(how="", fetch=""):
-  header = {"none": True, "how": str(how)[:128]}
-  if fetch:
-    header["fetch"] = str(fetch)[:253]
-  return _header(header)
+def pack_nothing(how=""):
+  return _header({"none": True, "how": str(how)[:128]})
 
 
 def _parse_header(data):
@@ -199,16 +196,6 @@ def _parse_header(data):
   if not isinstance(header, dict):
     raise ValueError("bad header")
   return header, data[end + 1:]
-
-
-def requested_fetch(data):
-  """The host a lookup asks the launcher to download icons for, or ""."""
-  try:
-    header = _parse_header(data)[0]
-  except ValueError:
-    return ""
-  host = header.get("fetch", "") if header.get("none") is True else ""
-  return host if isinstance(host, str) else ""
 
 
 def _header(value):

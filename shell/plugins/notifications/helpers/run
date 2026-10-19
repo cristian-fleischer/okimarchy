@@ -27,7 +27,6 @@ from urllib.parse import unquote
 sys.dont_write_bytecode = True
 from notification_files import private_dir, read_bounded, write_bytes  # noqa: E402
 import notification_images as images  # noqa: E402
-from notification_http import public_hostname  # noqa: E402
 
 
 # Resolved through symlinks (a dev checkout behind a linked OMARCHY_PATH) so
@@ -40,8 +39,7 @@ STATE = HOME_DIR / ".local/state/omarchy/notifications"
 PUBLISHED = HOME_DIR / ".cache/omarchy/notification-icons"
 PUBLISHED_KEEP = 512
 ICON_OUTPUT_BYTES = images.PIXELS_HEADER_BYTES + 128 * 128 * 4
-DOWNLOAD_OUTPUT_BYTES = 256 + 2 * 1024 * 1024
-ICON_JOB_SECONDS = 40
+ICON_JOB_SECONDS = 20
 SENDER_DATA_URL_CHARS = 131072
 BWRAP = Path("/usr/bin/bwrap")
 PYTHON = Path("/usr/bin/python3")
@@ -250,46 +248,11 @@ def python_helper(kind, args, root=SANDBOX_ROOT):
   return [str(PYTHON), "-B", "-E", "-s", f"{root}/{kind}", *args]
 
 
-# The download sandbox shares the host network, and with it the host's abstract
-# Unix sockets, which no mount can hide. This classic BPF program (the form
-# bwrap --seccomp reads) refuses AF_UNIX sockets and kills any syscall from a
-# foreign ABI or the x32 range (bit 30, which x86_64 reports under its own
-# arch), so neither entry point goes around it. Loopback stays reachable for
-# DNS (127.0.0.53); the HTTP client refuses non-public addresses.
-SECCOMP_ARCH = {"x86_64": (0xC000003E, 41), "aarch64": (0xC00000B7, 198)}
-X32_SYSCALL_BIT = 0x40000000
-
-
-def no_unix_sockets_filter():
-  machine = os.uname().machine
-  if machine not in SECCOMP_ARCH:
-    raise RuntimeError("no seccomp filter for " + machine)
-  arch, socket_nr = SECCOMP_ARCH[machine]
-  ld, jeq, jge, ret = 0x20, 0x15, 0x35, 0x06
-  allow, kill, refuse = 0x7FFF0000, 0x80000000, 0x00050000 | 13   # EACCES
-  program = [
-      (ld, 0, 0, 4),                 # 0  seccomp_data.arch
-      (jeq, 1, 0, arch),             # 1  native ABI -> 3
-      (ret, 0, 0, kill),             # 2
-      (ld, 0, 0, 0),                 # 3  seccomp_data.nr
-      (jge, 0, 1, X32_SYSCALL_BIT),  # 4  x32 (no aarch64 number is this high) -> 5, else 6
-      (ret, 0, 0, kill),             # 5
-      (jeq, 1, 0, socket_nr),        # 6  socket() -> 8
-      (ret, 0, 0, allow),            # 7
-      (ld, 0, 0, 16),                # 8  args[0], the domain (low word)
-      (jeq, 0, 1, 1),                # 9  AF_UNIX -> 10, else 11
-      (ret, 0, 0, refuse),           # 10
-      (ret, 0, 0, allow),            # 11
-  ]
-  import struct
-  return b"".join(struct.pack("=HBBI", *op) for op in program)
-
-
-def sandbox_command(kind, args, bwrap, environ, seccomp_fd=None):
+def sandbox_command(kind, args, bwrap, environ):
   if kind not in (*HELPER_KINDS, "check"):
     raise ValueError("unknown helper")
-  cmd = [bwrap] + (["--seccomp", str(seccomp_fd)] if seccomp_fd is not None else []) + [
-         "--die-with-parent", "--new-session", "--unshare-all",
+  # --unshare-all includes the network: no helper sandbox ever has one.
+  cmd = [bwrap, "--die-with-parent", "--new-session", "--unshare-all",
          "--cap-drop", "ALL", "--ro-bind", "/usr", "/usr", "--proc", "/proc",
          "--dev", "/dev", "--tmpfs", "/tmp", "--tmpfs", "/home",
          "--dir", str(HOME_DIR), "--clearenv", "--setenv", "HOME", str(HOME_DIR),
@@ -306,20 +269,12 @@ def sandbox_command(kind, args, bwrap, environ, seccomp_fd=None):
     return cmd + ["/usr/bin/true"]
 
   sender_image = kind == "icon" and args == ["--sender-image"]
-  download = kind == "icon" and args[:1] == ["--download"]
-  if not sender_image and not download:
+  if kind != "icon":
     private_dir(STATE)
   if kind == "store":
     cmd += ["--bind", str(STATE), str(STATE)]
-  elif download:
-    # The only sandbox with a network: it decodes nothing and writes nowhere.
-    cmd += ["--share-net"]
-    for name in ("/etc/resolv.conf", "/etc/ssl/certs", "/etc/ca-certificates"):
-      if Path(name).exists():
-        cmd += ["--ro-bind", name, name]
   elif kind == "icon" and not sender_image:
-    icons = private_dir(STATE / "icons")
-    cmd += ["--bind", str(icons), str(icons)]
+    # A lookup reads icons and writes nowhere.
     for part in (".local/share/icons", ".local/share/applications",
                  ".config/omarchy/notifications/icons"):
       path = HOME_DIR / part
@@ -391,7 +346,7 @@ def stop_process_group(proc):
     pass
 
 
-def run_supervised(argv, environ, timeout, stdin_descriptor=None, capture=None, pass_fds=(), deadline=None):
+def run_supervised(argv, environ, timeout, stdin_descriptor=None, capture=None):
   handled_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
   previous = {}
 
@@ -408,12 +363,9 @@ def run_supervised(argv, environ, timeout, stdin_descriptor=None, capture=None, 
     # session so termination and deadlines reap its whole group.
     proc = subprocess.Popen(argv, env=environ, preexec_fn=lambda: prepare_child(old_mask),
                             stdin=stdin_descriptor, start_new_session=True,
-                            stdout=subprocess.PIPE if capture else None, pass_fds=pass_fds)
+                            stdout=subprocess.PIPE if capture else None)
     masked = False
     signal.pthread_sigmask(signal.SIG_SETMASK, old_mask)
-    if deadline is not None:
-      # Measured from now, after the spawn, against the caller's whole budget.
-      timeout = max(0.1, min(timeout, deadline - time.monotonic()))
     try:
       if not capture:
         return proc.wait(timeout=timeout)
@@ -486,58 +438,18 @@ def run_helper(kind, args, required, environ, stdin_descriptor=None):
     # The only execution: a failure is never replayed in a less restricted mode.
     return run_supervised(argv, child_environment, 45, stdin_descriptor)
 
-  # One icon job resolves one source inside one deadline, so a slow or hostile
-  # site cannot hold the icon queue. Its output is bounded pixels.
-  deadline = time.monotonic() + ICON_JOB_SECONDS
-  if not sender_image:
+  # One icon job is one sandboxed run under one deadline, and its output is
+  # bounded pixels.
+  if sender_image:
+    icon_args = args
+  else:
     fields, flags, scheme = icon_lookup(args)
-    lookup = fields + ["--scheme", scheme] + (["--why"] if "--why" in flags else [])
-
-  def icon(icon_args, stdin, limit):
-    seccomp = None
-    try:
-      if icon_args[:1] == ["--download"]:
-        seccomp = sealed_memfd("download-seccomp", no_unix_sockets_filter())
-        os.set_inheritable(seccomp, True)
-      command = sandbox_command("icon", icon_args, bwrap, environ, seccomp)
-      # Setup time counts against the job's budget.
-      if deadline - time.monotonic() <= 1:
-        raise subprocess.TimeoutExpired("icon", 0)
-      return run_supervised(command, clean_environment(), 20, stdin, limit,
-                            (seccomp,) if seccomp is not None else (), deadline)
-    finally:
-      if seccomp is not None:
-        os.close(seccomp)
-
-  # The lookup never has a network; with --fetch it names the site it needs.
-  first = args if sender_image else lookup + (["--fetch"] if "--fetch" in flags else [])
-  code, output = icon(first, stdin_descriptor, ICON_OUTPUT_BYTES)
+    icon_args = fields + ["--scheme", scheme] + (["--why"] if "--why" in flags else [])
+  command = sandbox_command("icon", icon_args, bwrap, environ)
+  code, output = run_supervised(command, clean_environment(), ICON_JOB_SECONDS,
+                                stdin_descriptor, ICON_OUTPUT_BYTES)
   if code != 0:
     return code
-  host = "" if sender_image or "--fetch" not in flags else images.requested_fetch(output)
-  if host:
-    # Downloading and decoding never share a sandbox. The lookup only asks: the
-    # site downloaded is always the notification's own source, and only for a
-    # well-formed answer with nothing after it.
-    expected = public_hostname(lookup_source(fields)) or ""
-    images.unpack_pixels(output, 128)
-    host = expected if host == expected else ""
-    blobs = b'{"blobs":[]}\n'
-    if host:
-      try:
-        code, downloaded = icon(["--download", "--source=" + host, "--scheme", scheme], None,
-                                DOWNLOAD_OUTPUT_BYTES)
-        if code == 0:
-          blobs = downloaded
-      except (subprocess.TimeoutExpired, ValueError, OSError):
-        pass  # decode nothing: the card falls back to its letter
-    sealed = sealed_memfd("downloaded-icons", blobs)
-    try:
-      code, output = icon(["--fetched"] + lookup, sealed, ICON_OUTPUT_BYTES)
-    finally:
-      os.close(sealed)
-    if code != 0:
-      return code
   sys.stdout.write(publish_icon(output, sender_image, "--why" in args))
   return 0
 
@@ -545,22 +457,16 @@ def run_helper(kind, args, required, environ, stdin_descriptor=None):
 ICON_FIELDS = ("--key=", "--app=", "--app-icon=", "--source=")
 
 
-def lookup_source(fields):
-  """The lookup's last --source=, as argparse reads it."""
-  sources = [field[len("--source="):] for field in fields if field.startswith("--source=")]
-  return sources[-1] if sources else ""
-
-
 def icon_lookup(args):
-  """The only shapes a lookup may take: the four `--name=value` fields, optional
-  `--fetch` and `--why`, and a scheme. Values attach with `=`, so a dash-leading
+  """The only shapes a lookup may take: the four `--name=value` fields, an
+  optional `--why`, and a scheme. Values attach with `=`, so a dash-leading
   value stays a value, and no caller argument reaches an internal mode."""
   fields, flags, scheme, i = [], set(), "dark", 0
   while i < len(args):
     arg = args[i]
     if arg.startswith(ICON_FIELDS):
       fields.append(arg)
-    elif arg in ("--fetch", "--why"):
+    elif arg == "--why":
       flags.add(arg)
     elif arg == "--scheme" and i + 1 < len(args) and args[i + 1] in ("dark", "light"):
       scheme = args[i + 1]

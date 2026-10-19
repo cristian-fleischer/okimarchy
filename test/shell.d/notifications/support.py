@@ -6,7 +6,6 @@ source loader to patch their module globals without running main().
 import importlib.machinery
 import importlib.util
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import unittest
@@ -52,11 +51,3 @@ def png(size, colour=(20, 40, 60, 255)):
   width, height = size
   return notification_images.encode_png(width, height, bytes(colour) * (width * height))
 
-
-def have_openssl():
-  return shutil.which("openssl") is not None
-
-
-def fetch_site(icon, host, scheme):
-  """Both halves of a fetch in one process; the launcher runs them in separate sandboxes."""
-  return icon.store_fetched(host, scheme, icon.download_candidates(host, scheme))

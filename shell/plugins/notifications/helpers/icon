@@ -2,32 +2,21 @@
 # icon - work out what picture belongs to a notification.
 #
 #   run icon --key=web:app.slack.com --app="Google Chrome" \
-#            --app-icon=google-chrome --source=app.slack.com --scheme dark [--fetch]
+#            --app-icon=google-chrome --source=app.slack.com --scheme dark
 #   run icon --sender-image      (an image path on stdin; prints a data: URL)
 #
 # Prints pixels for the launcher, which publishes the PNG. Your own icons win,
-# then installed ones, and only then the site itself: the one step that
-# touches the network, and so the one that has to be asked for.
+# then installed ones. A site's icon is never fetched: the site name comes from
+# the notification, so fetching it would let any sender make this machine
+# contact a host of its choosing.
 import argparse
 import glob
-import hashlib
-import json
-import math
 import os
 import re
-import stat
 import sys
-import time
-import urllib.parse
-from html.parser import HTMLParser
 import notification_images as images
-from notification_http import fetch as get, parse_url, public_hostname
-from notification_files import private_dir, write_bytes, write_json, read_json
 
 CONFIG = os.path.expanduser("~/.config/omarchy/notifications/icons")
-CACHE = os.path.expanduser("~/.local/state/omarchy/notifications/icons")
-INDEX = os.path.join(CACHE, "index.json")
-RETRY_AFTER = 7 * 86400          # do not hammer a site that has no icon
 
 ICON_DIRS = [
     os.path.expanduser("~/.local/share/icons"),
@@ -41,23 +30,12 @@ APP_DIRS = [
 EXTS = (".png", ".svg", ".jpg", ".jpeg", ".webp", ".ico")
 
 NORM = 128          # every icon ends up this size, however it arrived
-PAGE_BYTES = 512 * 1024
-MANIFEST_BYTES = 256 * 1024
-REMOTE_ICON_BYTES = 1024 * 1024
-CACHED_ICON_BYTES = 256 * 1024
-MAX_ICON_LINKS = 16
-MAX_PAGE_LINKS = 256
-MAX_MANIFESTS = 2
-MAX_MANIFEST_ICONS = 16
-MAX_ICON_REQUESTS = 6
-MAX_REMOTE_SIDE = 2048
-MAX_REMOTE_PIXELS = MAX_REMOTE_SIDE * MAX_REMOTE_SIDE
-RASTER_FORMATS = tuple(images.FORMATS)  # never SVG from a site or a sender
+SENDER_IMAGE_BYTES = 1024 * 1024
+MAX_SENDER_SIDE = 2048
+MAX_SENDER_PIXELS = MAX_SENDER_SIDE * MAX_SENDER_SIDE
+RASTER_FORMATS = tuple(images.FORMATS)  # never SVG from a sender
 LOCAL_ICON_BYTES = 4 * 1024 * 1024
 WORKING_SIDE = 512                     # local icons are trimmed at this size
-# The best icon and one fallback: few requests to the site, and still an icon
-# when its first choice turns out not to decode.
-MAX_DOWNLOADS = 2
 
 
 def is_mono_glyph(width, height, rgba, opaque):
@@ -249,255 +227,37 @@ def from_desktop_entries(names):
   return None
 
 
-# ---------------------------------------------------------------- 3. the site
-def load_index():
-  value = read_json(INDEX)
-  return value if isinstance(value, dict) else {}
-
-
-def https_candidate(raw, base):
-  """Resolve one metadata URL and accept only the hardened HTTPS grammar."""
-  if not isinstance(raw, str):
-    return None
-  try:
-    url = urllib.parse.urljoin(base, raw)
-    parse_url(url)
-  except (TypeError, ValueError):
-    return None
-  return url
-
-
-class LinkTags(HTMLParser):
-  """Collects <link> attributes. The stdlib parser is linear in the page; a
-  regex over raw HTML backtracked quadratically on a page of unclosed tags."""
-
-  def __init__(self):
-    super().__init__(convert_charrefs=True)
-    self.links = []
-
-  def handle_starttag(self, tag, attrs):
-    if tag == "link" and len(self.links) < MAX_PAGE_LINKS:
-      self.links.append({key.lower(): value or "" for key, value in attrs if key})
-
-  handle_startendtag = handle_starttag
-
-
-def icon_links(html, base, scheme):
-  """Every valid HTTPS icon the page offers, best first."""
-  if not isinstance(html, str):
-    return []
-  parser = LinkTags()
-  try:
-    parser.feed(html)
-    parser.close()
-  except Exception:
-    pass
-  out, themed = [], []
-  for attrs in parser.links:
-    rel = attrs.get("rel", "").lower()
-    url = https_candidate(attrs.get("href"), base)
-    if not url:
-      continue
-    bucket = themed if scheme in attrs.get("media", "").lower() else out
-    if "apple-touch-icon" in rel:
-      bucket.append((0, url))
-    elif "icon" in rel and "mask" not in rel:
-      try:
-        rank = -int(attrs.get("sizes", "").split("x", 1)[0])
-      except ValueError:
-        rank = 1
-      bucket.append((rank, url))
-    elif rel == "manifest":
-      out.append((50, ("manifest", url)))
-    if len(themed) + len(out) >= MAX_ICON_LINKS:
-      break
-  ordered = ([url for _, url in sorted(themed, key=lambda item: item[0])]
-             + [url for _, url in sorted(out, key=lambda item: item[0])])
-  return ordered[:MAX_ICON_LINKS]
-
-
-def from_manifest(url, base):
-  try:
-    raw, final = get(url, MANIFEST_BYTES)
-    data = json.loads(raw.decode("utf-8", "replace"))
-  except Exception:
-    return []
-  if not isinstance(data, dict):
-    return []
-  icons = data.get("icons")
-  if not isinstance(icons, list):
-    return []
-  icons = [item for item in icons[:MAX_MANIFEST_ICONS]
-           if isinstance(item, dict)]
-
-  def area(item):
-    try:
-      return -int(str(item.get("sizes", "0x0")).split("x", 1)[0])
-    except (TypeError, ValueError):
-      return 0
-
-  result = []
-  for item in sorted(icons, key=area):
-    candidate = https_candidate(item.get("src"), final or base)
-    if candidate:
-      result.append(candidate)
-  return result
-
-
-def remote_pixels(data):
-  """(width, height, rgba) of a fetched or sender-supplied image, fully decoded."""
-  if not isinstance(data, bytes) or len(data) > REMOTE_ICON_BYTES:
+# ---------------------------------------------------------------- the sender
+def sender_pixels(data):
+  """(width, height, rgba) of a sender-supplied image, fully decoded."""
+  if not isinstance(data, bytes) or len(data) > SENDER_IMAGE_BYTES:
     raise ValueError("oversized image")
-  width, height, rgba = images.decode(data, RASTER_FORMATS, MAX_REMOTE_SIDE, MAX_REMOTE_PIXELS, NORM)
+  width, height, rgba = images.decode(data, RASTER_FORMATS, MAX_SENDER_SIDE, MAX_SENDER_PIXELS, NORM)
   if width < 8 or height < 8:
     raise ValueError("image too small")
   return width, height, rgba
 
 
-def download_candidates(host, scheme):
-  """The raw bytes of up to MAX_DOWNLOADS of a site's own icons, best first.
-
-  Runs in the networked sandbox and decodes nothing: a body is kept only when
-  its signature names a decoder format, and is decoded later without a network."""
-  host = public_hostname(host)
-  if not host or scheme not in ("dark", "light"):
-    return []
-  base = "https://" + host + "/"
-  candidates = []
-  manifests = 0
-  try:
-    raw, final = get(base, PAGE_BYTES)
-    html = raw.decode("utf-8", "replace")
-    for entry in icon_links(html, final, scheme):
-      if isinstance(entry, tuple) and entry[0] == "manifest":
-        if manifests < MAX_MANIFESTS:
-          manifests += 1
-          candidates.extend(from_manifest(entry[1], final))
-      else:
-        candidates.append(entry)
-  except Exception:
-    pass
-  fallback = https_candidate("/favicon.ico", base)
-  if fallback:
-    candidates.append(fallback)
-
-  seen, found = set(), []
-  for url in candidates:
-    if url in seen:
-      continue
-    seen.add(url)
-    if len(seen) > MAX_ICON_REQUESTS or len(found) >= MAX_DOWNLOADS:
-      break
-    try:
-      data, _ = get(url, REMOTE_ICON_BYTES)
-    except Exception:
-      continue
-    if len(data) <= REMOTE_ICON_BYTES and images.sniff(data) in RASTER_FORMATS:
-      found.append(bytes(data))
-  return found
-
-
-def store_fetched(host, scheme, blobs):
-  """Decode downloaded icon bytes, without a network, and cache the first that
-  is really an image. Returns its cache path, or None."""
-  host = public_hostname(host)
-  if not host or scheme not in ("dark", "light"):
-    return None
-  for data in blobs[:MAX_DOWNLOADS]:
-    try:
-      png = images.encode_png(*remote_pixels(data))
-      dest = remote_cache_path(host, scheme)
-      write_bytes(dest, png)
-    except Exception:
-      continue
-    return dest
-  return None
-
-
-def pack_blobs(blobs):
-  blobs = [bytes(b) for b in blobs[:MAX_DOWNLOADS]]
-  return json.dumps({"blobs": [len(b) for b in blobs]}).encode() + b"\n" + b"".join(blobs)
-
-
-def unpack_blobs(data):
-  end = data.find(b"\n", 0, 256)
-  if end < 0:
-    raise ValueError("no header")
-  header = json.loads(data[:end].decode("ascii", "strict"))
-  sizes = header.get("blobs") if isinstance(header, dict) else None
-  if (not isinstance(sizes, list) or len(sizes) > MAX_DOWNLOADS
-          or any(type(n) is not int or not 0 < n <= REMOTE_ICON_BYTES for n in sizes)
-          or sum(sizes) != len(data) - end - 1):
-    raise ValueError("bad blobs")
-  out, at = [], end + 1
-  for n in sizes:
-    out.append(data[at:at + n])
-    at += n
-  return out
-
-
-class NeedFetch(Exception):
-  """The lookup needs a site's icon downloaded; the launcher does that."""
-
-  def __init__(self, host):
-    super().__init__(host)
-    self.host = host
-
-
-def remote_cache_path(host, scheme):
-  """Where a validated fetch for this host and theme is cached."""
-  return os.path.join(CACHE, "web-" + hashlib.sha256((host + scheme).encode()).hexdigest() + ".png")
-
-
-def safe_cached_remote_icon(host, scheme, cached):
-  """The cache entry for this host and theme, if it is exactly the PNG a fetch writes."""
-  if not isinstance(cached, str):
-    return None
-  expected = os.path.abspath(remote_cache_path(host, scheme))
-  if os.path.abspath(cached) != expected:
-    return None
-  try:
-    fd = os.open(expected, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
-    with os.fdopen(fd, "rb") as source:
-      info = os.fstat(fd)
-      if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
-              or info.st_nlink != 1 or not 0 < info.st_size <= CACHED_ICON_BYTES):
-        return None
-      os.set_blocking(fd, True)
-      data = source.read(CACHED_ICON_BYTES + 1)
-    if len(data) > CACHED_ICON_BYTES:
-      return None
-    images.decode(data, ("PNG",), NORM, NORM * NORM, NORM)
-  except Exception:
-    return None
-  return expected
-
-
-def invalidate_cached_remote_icon(host, scheme, cached):
-  """Unlink a rejected web-cache entry without following it anywhere."""
-  if not isinstance(cached, str):
-    return
-  candidate = os.path.abspath(cached)
-  root = os.path.abspath(CACHE)
-  name = os.path.basename(candidate)
-  expected = os.path.basename(remote_cache_path(host, scheme))
-  legacy = ("web-" + slug(host) + "-" + scheme + ".",
-            "web-" + slug(host).replace(".", "-") + "-" + scheme + ".")
-  if (os.path.dirname(candidate) != root
-          or (name != expected and not name.startswith(legacy))):
-    return
-  try:
-    # unlink removes a planted symlink itself; it never touches its target.
-    os.unlink(candidate)
-  except OSError:
-    pass
-
-
 # ---------------------------------------------------------------- resolve
+def site_hostname(raw):
+  """A site name lifted from a browser notification, as a lowercase DNS name,
+  or None for anything else (an address, a local name, stray text)."""
+  if not isinstance(raw, str) or len(raw) > 253:
+    return None
+  h = raw.lower().removesuffix(".")
+  if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+", h):
+    return None
+  if (h.split(".")[-1].isdigit() or re.fullmatch(r"0x[0-9a-f]*", h.split(".")[-1])
+          or h.endswith((".local", ".localhost", ".localdomain", ".internal",
+                         ".home", ".home.arpa", ".lan"))):
+    return None
+  return h
+
+
 def host_names(source):
   """app.slack.com -> slack, app.slack.com. The middle label is almost always
   the name of the thing."""
-  s = public_hostname(source)
+  s = site_hostname(source)
   if not s:
     return []
   labels = [l for l in s.split(".") if l not in ("www", "app", "web", "my", "m")]
@@ -509,7 +269,7 @@ def host_names(source):
   return names
 
 
-def resolve(args, fetcher=None):
+def resolve(args):
   web = host_names(args.source)
   app = [n for n in [args.app_icon, args.source, args.app] if n]
 
@@ -532,41 +292,8 @@ def resolve(args, fetcher=None):
     if hit:
       return hit, "from_icon_theme:hint"
 
-  if web:
-    index = load_index()
-    host = web[0]  # Never guess or contact a parent domain.
-    stored = index.get(host)
-    note = dict(stored) if isinstance(stored, dict) else {}
-    cached = note.get(args.scheme)
-    if cached:
-      safe = safe_cached_remote_icon(host, args.scheme, cached)
-      if safe:
-        # A validated public cache stays useful while fetching is off.
-        return safe, "cache"
-      invalidate_cached_remote_icon(host, args.scheme, cached)
-      note.pop(args.scheme, None)
-      note["failed_at"] = 0
-      index[host] = note
-      write_json(INDEX, index)
-
-    # The network boundary: nothing past local caches without --fetch.
-    if args.fetch:
-      failed_at = note.get("failed_at", 0)
-      if type(failed_at) not in (int, float) or not math.isfinite(failed_at):
-        failed_at = 0
-      if failed_at <= time.time() - RETRY_AFTER:
-        if fetcher is None:
-          raise NeedFetch(host)
-        hit = fetcher(host, args.scheme)
-        note["failed_at"] = 0 if hit else time.time()
-        if hit:
-          note[args.scheme] = hit
-        index[host] = note
-        write_json(INDEX, index)
-        if hit:
-          return hit, "fetched:" + host
-
-  # Whatever delivered it, as a last resort before the letter tile.
+  # Whatever delivered it - for a site, the browser - as a last resort before
+  # the letter tile.
   for step in (from_icon_theme, from_desktop_entries):
     hit = step(app)
     if hit:
@@ -576,52 +303,28 @@ def resolve(args, fetcher=None):
 
 def main(argv=None):
   argv = list(sys.argv[1:] if argv is None else argv)
-  # No abbreviations: "--fetche" must not quietly mean "--fetched".
+  # No abbreviations: a prefix must never quietly name another flag.
   ap = argparse.ArgumentParser(allow_abbrev=False)
   ap.add_argument("--key", default="")
   ap.add_argument("--app", default="")
   ap.add_argument("--app-icon", default="")
   ap.add_argument("--source", default="")
   ap.add_argument("--scheme", default="dark", choices=["dark", "light"])
-  ap.add_argument("--fetch", action="store_true")
   ap.add_argument("--why", action="store_true", help="print where it came from")
   ap.add_argument("--sender-image", action="store_true")
-  # A fetch's two halves, in separate sandboxes: --download has the network and
-  # decodes nothing; --fetched decodes those bytes from stdin, with no network.
-  ap.add_argument("--download", action="store_true")
-  ap.add_argument("--fetched", action="store_true")
   args = ap.parse_args(argv)
-  if args.download:
-    if args.fetch or args.fetched or args.sender_image:
-      return 2
-    sys.stdout.buffer.write(pack_blobs(download_candidates(args.source, args.scheme)))
-    return 0
   if args.sender_image:
     if argv != ["--sender-image"]:
       return 2
     try:
-      width, height, rgba = remote_pixels(sys.stdin.buffer.read(REMOTE_ICON_BYTES + 1))
+      width, height, rgba = sender_pixels(sys.stdin.buffer.read(SENDER_IMAGE_BYTES + 1))
     except Exception:
       return 1
     sys.stdout.buffer.write(images.pack_pixels(width, height, rgba))
     return 0
   if any(len(getattr(args, field)) > 256 for field in ("key", "app", "app_icon", "source")):
     return 2
-  private_dir(CACHE)
-  fetcher = None
-  if args.fetched:
-    try:
-      blobs = unpack_blobs(sys.stdin.buffer.read(MAX_DOWNLOADS * REMOTE_ICON_BYTES + 257))
-    except Exception:
-      blobs = []
-    args.fetch = True
-    wanted = public_hostname(args.source)
-    fetcher = lambda host, scheme: store_fetched(host, scheme, blobs) if host == wanted else None
-  try:
-    path, how = resolve(args, fetcher)
-  except NeedFetch as need:
-    sys.stdout.buffer.write(images.pack_nothing("fetch:" + need.host, fetch=need.host))
-    return 0
+  path, how = resolve(args)
   found = normalise(path) if path else None
   if found:
     sys.stdout.buffer.write(images.pack_pixels(NORM, NORM, found[0], found[1], how))

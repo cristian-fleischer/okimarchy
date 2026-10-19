@@ -1,4 +1,4 @@
-"""Hostile input on the image path: pages, SVGs, ICOs and the decoder policy."""
+"""Hostile input on the image path: SVGs, ICOs and the decoder policy."""
 import io
 import os
 from pathlib import Path
@@ -25,28 +25,6 @@ ENTITY_SVG = b"""<?xml version="1.0"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="200" height="20"><text y="15">&secret;</text></svg>"""
 
 
-class FaviconPages(unittest.TestCase):
-  def test_unclosed_tags_parse_in_linear_time(self):
-    icon = load_helper("icon")
-    # A regex over raw HTML took 30 seconds on this page before it was killed.
-    for page in ("<link " * 87380, "<link rel=icon href=" + "x" * 500000, "<" * 500000):
-      started = time.monotonic()
-      self.assertEqual(icon.icon_links(page, "https://source.test/", "dark"), [])
-      self.assertLess(time.monotonic() - started, 2.0)
-
-  def test_links_are_read_in_order_and_only_over_https(self):
-    icon = load_helper("icon")
-    page = ('<link rel="icon" sizes="32x32" href="/a.png"><link rel=icon href=/b.png />'
-            '<LINK REL="apple-touch-icon" href="https://source.test/c.png"><link rel="manifest" href="/m.json">'
-            '<link href><link rel="icon" href="//target.test/d.png">'
-            '<link rel="icon" href="http://target.test/downgrade.png">'
-            '<link rel="icon" href="https://user:secret@target.test/private.png">')
-    self.assertEqual(icon.icon_links(page, "https://source.test/app/", "dark"), [
-        "https://source.test/a.png", "https://source.test/c.png", "https://source.test/b.png",
-        "https://target.test/d.png", ("manifest", "https://source.test/m.json")])
-    self.assertEqual(icon.icon_links(None, "https://source.test/", "dark"), [])
-
-
 class Svg(unittest.TestCase):
   @needs_magick
   def test_external_images_in_an_svg_are_never_loaded(self):
@@ -66,7 +44,7 @@ class Svg(unittest.TestCase):
   @needs_magick
   def test_local_svg_icons_come_back_as_pixels(self):
     icon = load_helper("icon")
-    with tempfile.TemporaryDirectory() as temp, patch.object(icon, "CACHE", temp):
+    with tempfile.TemporaryDirectory() as temp:
       source = Path(temp) / "mark.svg"
       source.write_bytes(SVG)
       rgba, mono = icon.normalise(str(source))
@@ -200,7 +178,7 @@ class Publishing(unittest.TestCase):
 
   def test_the_published_directory_is_outside_every_sandbox(self):
     real = load_helper("run")
-    for kind, args in (("icon", ["--fetch"]), ("icon", ["--sender-image"]), ("store", ["restore"])):
+    for kind, args in (("icon", ["--key=x"]), ("icon", ["--sender-image"]), ("store", ["restore"])):
       command = real.sandbox_command(kind, args, "/usr/bin/bwrap", {})
       mounted = [command[i + 1] for i, word in enumerate(command) if word in ("--bind", "--ro-bind")]
       for path in mounted:

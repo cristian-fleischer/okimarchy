@@ -46,19 +46,26 @@ class Sandbox(unittest.TestCase):
     cut = command.index("/usr/bin/python3")
     subprocess.run(command[:cut] + ["/usr/bin/python3", "-c", code], check=True, timeout=10)
 
-  def test_store_and_icon_see_only_their_own_state_and_no_network(self):
+  def test_only_the_store_writes_state_and_neither_has_a_network(self):
     for kind in ("store", "icon"):
       with self.subTest(kind=kind):
         command = self.r.sandbox_command(kind, [], self.bwrap, os.environ)
-        writable = self.r.STATE if kind == "store" else self.r.STATE / "icons"
+        check = self.r.STATE / ("check-" + kind)
+        writes = kind == "store"
         self.run_inside(command, f"""import os,socket
 assert not os.path.exists({str(self.secret)!r})
 assert not os.path.exists({str(HELPERS.resolve().parents[3])!r})
 assert os.path.isfile('/opt/omarchy-notifications/{kind}')
 s=socket.socket();s.settimeout(.2)
 assert s.connect_ex(('1.1.1.1',443)) != 0
-open({str(writable / 'check')!r}, 'w').write('ok')
+try:
+  open({str(check)!r}, 'w').write('ok')
+except OSError:
+  assert not {writes!r}
+else:
+  assert {writes!r}
 """)
+        self.assertEqual(check.exists(), writes)
 
   def test_kdeconnect_gets_the_bus_and_only_the_demo_directory_it_asked_for(self):
     self.r.STATE.mkdir(parents=True)
