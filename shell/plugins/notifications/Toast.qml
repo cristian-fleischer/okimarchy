@@ -451,21 +451,10 @@ Item {
           font.pixelSize: (thumb.compact ? Style.font.icon : Style.font.displayLarge) * card.fontScale
         }
 
-        // A one-colour glyph is painted in the theme's text colour rather
-        // than drawn as it came, or a dark mark disappears into a dark card.
-        Rectangle {
-          anchors.fill: parent
-          visible: thumb.mono && thumb.pictured
-          color: Commons.Color.notifications.text
-          opacity: 0.85
-          layer.enabled: visible
-          layer.effect: MultiEffect { maskEnabled: true; maskSource: picture }
-        }
-
         Image {
           id: picture
           anchors.fill: parent
-          visible: thumb.pictured && !thumb.mono
+          visible: thumb.pictured
           source: thumb.best
           onStatusChanged: if (status === Image.Error && source == thumb.sent) thumb.sentFailed = true
           // A photo fills its square; an app icon keeps its own shape.
@@ -474,9 +463,20 @@ Item {
           sourceSize.width: thumb.slot * Screen.devicePixelRatio
           sourceSize.height: thumb.slot * Screen.devicePixelRatio
           asynchronous: true
-          // Rounded like the card only when the theme rounds corners at all.
-          layer.enabled: visible && thumb.photo && Style.cornerRadius > 0
-          layer.effect: MultiEffect { maskEnabled: true; maskSource: mask }
+          // A one-colour glyph is repainted in the theme's text colour, or a
+          // dark mark disappears into a dark card: brightened to a silhouette,
+          // then tinted, which keeps its own anti-aliased edge. A photo is
+          // rounded like the card, and only when the theme rounds at all.
+          readonly property bool rounded: thumb.photo && Style.cornerRadius > 0
+          opacity: thumb.mono ? 0.85 : 1
+          layer.enabled: visible && (thumb.mono || rounded)
+          layer.effect: MultiEffect {
+            maskEnabled: picture.rounded
+            maskSource: mask
+            brightness: thumb.mono ? 1.0 : 0.0
+            colorization: thumb.mono ? 1.0 : 0.0
+            colorizationColor: Commons.Color.notifications.text
+          }
         }
 
         Rectangle {
