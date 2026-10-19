@@ -11,7 +11,7 @@ mkdir -p "$root"
 # anything already in the new store.
 omapager="$state/omapager"
 if [[ -d $omapager && ! -L $omapager ]]; then
-  for dir in live history icons reply-demo; do
+  for dir in live history reply-demo; do
     [[ -d $omapager/$dir ]] || continue
     mkdir -p "$root/$dir"
     find "$omapager/$dir" -mindepth 1 -maxdepth 1 -exec mv -n -t "$root/$dir" {} +
@@ -24,6 +24,10 @@ if [[ -d $omapager && ! -L $omapager ]]; then
   done
   rmdir "$omapager" 2>/dev/null || true
 fi
+
+# Site icons are no longer fetched, so their cache has no reader.
+rm -rf "$omapager/icons" "$root/icons"
+rmdir "$omapager" 2>/dev/null || true
 
 # Carry the old engine's Do Not Disturb over unless quiet state already exists.
 legacy_settings="$state/notifications.json"
