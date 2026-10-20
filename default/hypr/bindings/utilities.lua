@@ -103,7 +103,7 @@ o.bind("SUPER + CTRL + ALT + D", "Calendar", { panel = "omarchy.clock" })
 o.bind("SUPER + CTRL + ALT + E", "World clock", { panel = "omarchy.elsewhen" })
 o.bind("SUPER + CTRL + W", "Network", { panel = "omarchy.network" })
 o.bind("SUPER + CTRL + P", "Power", { panel = "omarchy.power" })
-o.bind("SUPER + CTRL + T", "Activity", { tui = "btop" })
+o.bind("SUPER + SHIFT + T", "Activity", { tui = "btop" })
 
 -- The letters above name a panel; the numbers count them. 1 is the leftmost
 -- panel in the bar's right section, and a widget with no panel of its own (the
