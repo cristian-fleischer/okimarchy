@@ -1,6 +1,6 @@
 [Unit]
-Description=Fcitx5 input method (XCompose sequences)
-# fcitx5 turns the CapsLock compose sequences in ~/.XCompose into text for
+Description=Fcitx5 input methods and XCompose sequences
+# fcitx5 turns the Shift + CapsLock compose sequences in ~/.XCompose into text for
 # Wayland clients.
 #
 # Wait for the compositor: fcitx5 needs WAYLAND_DISPLAY and DISPLAY, which uwsm
@@ -19,9 +19,12 @@ PartOf=graphical-session.target
 ConditionEnvironment=WAYLAND_DISPLAY
 
 [Service]
-Type=simple
+Type=dbus
+BusName=org.fcitx.Fcitx5
 # notificationitem duplicates the tray entry omarchy already renders itself.
-ExecStart=/usr/bin/fcitx5 --disable notificationitem
+# --replace takes the bus name from a fcitx5 started outside the unit (a user
+# autostart, say), which would otherwise make every restart exit on arrival.
+ExecStart=/usr/bin/fcitx5 --replace --disable notificationitem
 # always, not on-failure: fcitx5 exits 0 when it detects another instance owning
 # its bus name, and a clean exit still leaves the user with no input method.
 Restart=always
