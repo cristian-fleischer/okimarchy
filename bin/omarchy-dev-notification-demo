@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # omarchy:summary=Play a realistic run of notifications to look at the notification UI
 # omarchy:args=[--scene <name>]... [--fast] [--gap <seconds>] [--timeout <ms>] [--loop] [--shuffle] [--keep] [--list] [--replay <count> [--match <text>]]
-# omarchy:examples=omarchy dev notification demo --list | omarchy dev notification demo --scene interactive | omarchy dev notification demo --scene reply | omarchy dev notification demo --replay 10 --match slack
+# omarchy:examples=omarchy dev notification demo --list | omarchy dev notification demo --scene interactive | omarchy dev notification demo --replay 10 --match slack
 # omarchy:hidden=true
 """A realistic run of notifications, sent straight onto the session bus as an
 app would. The senders mimic what really notifies this desktop (Chrome web
@@ -10,10 +10,8 @@ import argparse
 import json
 import os
 import random
-import secrets
 import subprocess
 import sys
-import tempfile
 import time
 
 from gi.repository import Gio, GLib
@@ -73,9 +71,8 @@ SCENES = {
          body="seriously, you are going to want to see this one"),
   ],
   # Every offer a card can make, then shapes that must stay plain (a test
-  # count, an issue reference). "Mark as read" is not "Reply": the inline reply
-  # needs a phone reply channel (see the reply scene). Each phone app has its
-  # own summary so the cards do not stack.
+  # count, an issue reference). Each phone app has its own summary so the
+  # cards do not stack.
   "interactive": [
     dict(web="app.slack.com", summary="#design",
          body="Gurbinder: latest build is up, take a look https://axiom.co/preview/1841"),
@@ -103,17 +100,12 @@ SCENES = {
   ],
   # Built at run time.
   "routing": [],
-  "reply": [],
 }
 DEFAULT = ["chat", "work", "personal", "system"]
 
 # Candidates for the "no window open" routing case, in preference order.
 CLOSED_CANDIDATES = ("linear.app", "notion.com", "app.slack.com", "github.com", "figma.com")
 
-# The KDE Connect helper answers only this app name from the stand-in phone.
-DEMO_APP = "Omarchy reply demo"
-DEMO_STATE = os.path.expanduser("~/.local/state/omarchy/notifications/reply-demo")
-DEMO_REPLY = os.path.join(DEMO_STATE, "reply.json")
 # Written by the shell, newest first.
 HISTORY = os.path.expanduser("~/.local/state/omarchy/notifications/history.json")
 
@@ -123,20 +115,6 @@ def identity(n):
   if n.get("web"):
     return dict(app="Google Chrome", icon="google-chrome")
   return dict(app=n.get("app") or FALLBACK_APP, icon=n.get("icon") or "")
-
-
-def write_private_json(path, value):
-  """Replace `path` whole, readable only by you."""
-  directory = os.path.dirname(path)
-  os.makedirs(directory, mode=0o700, exist_ok=True)
-  fd, temp = tempfile.mkstemp(prefix=".reply-", dir=directory)
-  try:
-    with os.fdopen(fd, "w") as f:
-      json.dump(value, f, separators=(",", ":"))
-    os.replace(temp, path)
-  finally:
-    if os.path.exists(temp):
-      os.unlink(temp)
 
 
 class Bus:
@@ -246,14 +224,6 @@ def routing_scene():
   return items
 
 
-def reply_scene():
-  """A short-lived stand-in phone message with no real phone behind it."""
-  who, message = "Seif Lotfy", "did you get the build working in the end?"
-  write_private_json(os.path.join(DEMO_STATE, "notification.json"),
-             dict(token=secrets.token_hex(16), created=time.time(), title=who, text=message))
-  return [dict(app="KDE Connect", icon="whatsapp", summary=DEMO_APP, body="%s: %s" % (who, message))]
-
-
 def say(*lines):
   for line in lines:
     print(line, file=sys.stderr)
@@ -286,10 +256,6 @@ def main():
     say("hover Close on the front card, then click it three times, waiting for each move "
         "to finish without moving the pointer.",
         "each card should dismiss; any 'default' printed here means a card was opened instead.")
-  if "reply" in scenes:
-    SCENES["reply"] = reply_scene()
-    say("hover the card, press Reply, type something and hit Enter.",
-        "the latest reply is saved to %s - not sent to anyone." % DEMO_REPLY)
   if "routing" in scenes:
     SCENES["routing"] = routing_scene()
     say("what each one should do when you click it:",

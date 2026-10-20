@@ -14,25 +14,15 @@ else
   fail "notification logic holds its policies" "$output"
 fi
 
-# The KDE Connect reply bridge, in a scratch HOME so its demo fixture paths
-# never reach the real ~/.local/state.
-require_command python3
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-if output=$(cd "$tmp" && HOME="$tmp" python3 -I -B "$SHELL_TEST_DIR/notifications/kdeconnect-test.py" 2>&1); then
-  pass "the KDE Connect reply bridge matches and replies safely"
-else
-  fail "the KDE Connect reply bridge matches and replies safely" "$output"
-fi
-[[ -z $(find "$ROOT/shell/plugins/notifications/helpers" -name __pycache__) ]] ||
-  fail "the KDE Connect test leaves no bytecode in the checkout"
 
 service="$ROOT/shell/plugins/notifications/Service.qml"
 
 # The startup step that makes the state directory and clears older layouts'
 # leftovers, run as the service runs it, on a scratch HOME. It must keep the
-# current files and the reply demo, never reach through a symlink, and leave
-# the directory and the files the shell writes private.
+# current files, never reach through a symlink, and leave the directory and
+# the files the shell writes private.
 prepare=$(node -e '
   const source = require("node:fs").readFileSync(process.argv[1], "utf8")
   const m = source.match(/id: storePrepare\s+command: \["bash", "-c",([^]*?),\s*"omarchy-notifications-state"/)
@@ -50,7 +40,7 @@ ln -s "$tmp/outside" "$state/images/outside"
 bash -c "$prepare" omarchy-notifications-state "$state" "$tmp/.cache/omarchy/notification-icons" ||
   fail "the state directory is prepared"
 left=$(cd "$state" && find . | sort | tr '\n' ' ')
-[[ $left == ". ./1-linked.json ./history.json ./live.json ./quiet.json ./reply-demo ./reply-demo/notification.json " ]] ||
+[[ $left == ". ./1-linked.json ./history.json ./live.json ./quiet.json " ]] ||
   fail "older layouts' leftovers are cleared and nothing else" "$left"
 [[ -f $tmp/outside/keep.json && -f $tmp/outside/1-2.json && ! -e $tmp/.cache/omarchy/notification-icons ]] ||
   fail "leftover cleanup never reaches through a symlink"
@@ -81,8 +71,3 @@ grep -q 'WlrLayershell.namespace: "omarchy-notifications"' "$service" ||
 grep -q 'omarchy-notifications' "$ROOT/default/hypr/toggles/window-glassy.lua" ||
   fail "glassy toggle still matches the notification layer namespace"
 pass "notification surface keeps the omarchy-notifications layer namespace"
-
-# The helper the service runs is the one that ships beside it.
-[[ -f $ROOT/shell/plugins/notifications/helpers/kdeconnect ]] ||
-  fail "the KDE Connect helper ships beside the service"
-pass "the KDE Connect helper ships beside the service"

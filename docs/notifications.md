@@ -6,7 +6,7 @@ The shell is the notification daemon: `shell/plugins/notifications/Service.qml` 
 
 | File | Role |
 |---|---|
-| `Service.qml` | The daemon: admission, quiet rules, snoozes, the scene clock, click routing, replies, offers, IPC, one layer surface per output |
+| `Service.qml` | The daemon: admission, quiet rules, snoozes, the scene clock, click routing, offers, IPC, one layer surface per output |
 | `Toast.qml`, `DeedButton.qml` | One card and its buttons; a card is positioned by the service and animates nothing itself |
 | `NotificationPanel.qml`, `Picker.qml` | The panel and its preferences page, opened from the bar's Dnd indicator (`shell/plugins/bar/indicators/Dnd.qml`) |
 | `Store.js` | Notification snapshots, normalisation, what a stored row keeps, the stored file formats, restore |
@@ -17,15 +17,14 @@ The shell is the notification daemon: `shell/plugins/notifications/Service.qml` 
 | `Layout.js` | Pure deck layout: rows in, placements out |
 | `Delivery.js` | Quiet rules, ephemeral rules, bar clearance |
 | `Settings.js` | Defaults and validation for `notifications` in `shell.json` |
-| `helpers/kdeconnect` | The KDE Connect reply bridge (Python) |
 
-The JS modules also load in Node: `test/shell.d/notifications-test.sh` covers them without a compositor, along with the KDE Connect bridge and the startup cleanup.
+The JS modules also load in Node: `test/shell.d/notifications-test.sh` covers them without a compositor, along with the startup cleanup.
 
 ## Decks and the scene clock
 
 Each notification gets its own key (`n…`); the sender's id names a slot that `replaces_id` reuses, not an event. Cards group by source: per site for browser notifications (the leading `<a href>` Chromium adds is lifted off and becomes the source, but only from a browser and only for an http(s) href that passes the URL policy), per forwarded app for KDE Connect (recognised by exact app name), per app name otherwise. `stacking: "all"` puts everything in one deck.
 
-A collapsed deck draws its cards at the front card's height; hovering opens it. While the pointer is on an open deck or a reply is being typed, new cards are held back for at most 30 seconds. All positions, scales, opacities and heights come from one clock (`Service.at()`): a change snapshots the current state, recomputes the layout, and starts one move for every card. A leaving card keeps its model row until that move finishes.
+A collapsed deck draws its cards at the front card's height; hovering opens it. While the pointer is on an open deck, new cards are held back for at most 30 seconds. All positions, scales, opacities and heights come from one clock (`Service.at()`): a change snapshots the current state, recomputes the layout, and starts one move for every card. A leaving card keeps its model row until that move finishes.
 
 Live `Notification` objects are kept in a plain JS map (`refs`), never a ListModel role, which would dangle once the server destroys the object. At most 100 are live.
 
@@ -33,7 +32,7 @@ The surface is one fixed-width `WlrLayer.Overlay` window per output (namespace `
 
 ## Toast lifecycle
 
-A card stays at least 5s (low), 8s (normal), or until dismissed (critical), stretched up to 30s by a longer `expire_timeout`. The countdown pauses while the deck is open or a reply is being typed; a content update restarts it. Left-click activates, middle-click dismisses, right-click opens the source menu (snooze, Do Not Disturb).
+A card stays at least 5s (low), 8s (normal), or until dismissed (critical), stretched up to 30s by a longer `expire_timeout`. The countdown pauses while the deck is open; a content update restarts it. Left-click activates, middle-click dismisses, right-click opens the source menu (snooze, Do Not Disturb).
 
 A click tries, in order: the card's `omarchy-exec-argv` command; the sender's `default` action (`allowDefaultActionOnCardClick`); the sender's window by pid; a window showing the source (exact class, then for a site a browser window whose title names it); the site itself; the first link in the text; `omarchy-hyprland-focus-app` by app name.
 
@@ -45,15 +44,11 @@ The shell keeps its state in `~/.local/state/omarchy/notifications/` (0700), thr
 - `history.json`: closed rows, newest first, each with `closed_ts` and `closed_reason`. Capped at 100 entries and `historyHours` (default 24; `0` keeps none). Rows whose reason is `snoozed` or `silenced` were held back by quiet and are what the panel lists under each source.
 - `quiet.json`: `{ snoozes, dnd, silencedSince, codesBypassQuiet }`. While it is still empty, Do Not Disturb is read from the previous engine's `~/.local/state/omarchy/notifications.json`.
 
-`Store.persistable` decides what a row keeps: its scalar fields, never images, reply handles, detected links or phone numbers, or derived text. Text with a verification code is stored only as the redacted placeholder, the click command and glyph included. A live row is cut to 16K characters and a history row, shown as a one-line preview, to 4K. Rows keep `execArgv` and `glyph`, so a card restored after a shell restart clicks through like the live one. Rows are re-checked the same way when read back; a file that is not an array of keyed objects, or is oversized, reads as empty, and a file that does not read back exactly as it would be written is rewritten.
+`Store.persistable` decides what a row keeps: its scalar fields, never images, detected links or phone numbers, or derived text. Text with a verification code is stored only as the redacted placeholder, the click command and glyph included. A live row is cut to 16K characters and a history row, shown as a one-line preview, to 4K. Rows keep `execArgv` and `glyph`, so a card restored after a shell restart clicks through like the live one. Rows are re-checked the same way when read back; a file that is not an array of keyed objects, or is oversized, reads as empty, and a file that does not read back exactly as it would be written is rewritten.
 
 Writes go through one short timer, started (not restarted) by a change, so a burst of arrivals writes each file once and a flood writes at most four times a second; no file is written before it has been read. `FileView` writes atomically, which keeps the mode of the file it replaces, so the files are created at 0600 before anything writes them.
 
-At startup one process makes the directory and those files, and removes older layouts' leftovers, which hold old message content: the per-file `live/` and `history/` directories and `policy.json` of the Python store, the previous engine's `<ms>-<id>.json` popups and `images/`, fetched site icons in `icons/`, and `~/.cache/omarchy/notification-icons/`. A symlink in place of a state file is replaced, and nothing is followed through a symlink. Persistence starts no other process.
-
-## Replies
-
-A phone notification forwarded by KDE Connect can be answered from its card. KDE Connect keeps an object per phone notification on the session bus with a `sendReply` method, but the desktop notification carries no handle to it, so `helpers/kdeconnect` (run as `python3 -I`, only when such a card arrives or is answered) finds it with `busctl` by exact app name and body text and refuses ambiguous matches; a reply re-matches before it is sent. The demo app `Omarchy reply demo` (`omarchy-dev-notification-demo --scene reply`) is answered from a short-lived private fixture in `reply-demo/` instead, and its reply is saved there rather than sent.
+At startup one process makes the directory and those files, and removes older layouts' leftovers, which hold old message content: the per-file `live/` and `history/` directories and `policy.json` of the Python store, the previous engine's `<ms>-<id>.json` popups and `images/`, fetched site icons in `icons/`, `~/.cache/omarchy/notification-icons/`, and the `reply-demo/` fixture of an earlier demo. A symlink in place of a state file is replaced, and nothing is followed through a symlink. Persistence starts no other process.
 
 ## Icons
 
@@ -190,7 +185,7 @@ Keybindings live in `default/hypr/bindings/utilities.lua`: `Super+comma`
 variants map to the IPC methods `dismissOne`, `dismissAll`, `invokeLast`,
 `showHistory` (put the last few back on screen), and the silencing toggle.
 
-The `notifications` IPC target also answers `dismissStack`, `count`, `expand`, `snooze <minutes>`, `snoozeAll <minutes>`, `unsnooze <key>`, `snoozes`, `codes <on|off>`, `act <identifier>`, `offer <code|link|phone>`, `reply <text>`, `togglePanel`, `openPanel`, `openSettings`, `closePanel`, `probe`, and `clear` (forget history). `omarchy-dev-notification-demo` sends test scenes through it.
+The `notifications` IPC target also answers `dismissStack`, `count`, `expand`, `snooze <minutes>`, `snoozeAll <minutes>`, `unsnooze <key>`, `snoozes`, `codes <on|off>`, `act <identifier>`, `offer <code|link|phone>`, `togglePanel`, `openPanel`, `openSettings`, `closePanel`, `probe`, and `clear` (forget history). `omarchy-dev-notification-demo` sends test scenes through it.
 
 ## How subsystems plug in
 

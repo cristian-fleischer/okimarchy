@@ -30,8 +30,6 @@ Item {
   property var shell: null
 
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
-  // -I: no PYTHON* variables, user site or script directory on its path.
-  readonly property var kdeBin: ["/usr/bin/python3", "-I", Qt.resolvedUrl("helpers/kdeconnect").toString().replace(/^file:\/\//, "")]
 
   // ------------------------------------------------------------- settings
   //
@@ -646,7 +644,7 @@ Item {
   // New cards wait while the deck is held open, so nothing moves mid-read.
   property var held: []
 
-  function holding() { return (pointerIn && expanded) || replyingKey !== "" }
+  function holding() { return pointerIn && expanded }
 
   function releaseHeld() {
     if (!held.length) return
@@ -863,7 +861,6 @@ Item {
     }
 
     storePut(row)
-    lookForReply(row)
 
     // Only a new card waits while the deck is held; an update changes a card in place.
     if (service.holding() && service.rowIndexFor(key) < 0) {
@@ -993,7 +990,6 @@ Item {
   }
 
   function finishClose(key, reason) {
-    if (replyingKey === key) replyingKey = ""
     var rest = {}
     for (var k in leaving) if (k !== key) rest[k] = leaving[k]
     leaving = rest
@@ -1237,114 +1233,6 @@ Item {
     closeToast(key, "activated")
   }
 
-  // ------------------------------------------------------------- replying
-  //
-  // Phone notifications forwarded by KDE Connect can be answered; the helper
-  // matches our row to KDE Connect's object by app and text.
-  property string replyingKey: ""
-  property string replyError: ""
-
-  Process {
-    id: replyProc
-    property string replyKey: ""
-    running: false
-    onExited: function(code, status) {
-      if (code === 0) { service.replyingKey = ""; service.closeToast(replyKey, "activated") }
-      else service.replyError = I18n.t("notifications.replyFailed")
-    }
-  }
-
-  // A reply box holds the keyboard, so it must not be able to hold it forever.
-  Timer {
-    id: replyGiveUp
-    interval: 120000
-    running: service.replyingKey !== ""
-    onTriggered: service.replyingKey = ""
-  }
-
-  Process {
-    id: findProc
-    property var job: ({})
-    running: false
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        var job = findProc.job || {}
-        var path = "", who = ""
-        try {
-          var found = JSON.parse(String(text) || "{}")
-          path = String(found.path || "")
-          who = String(found.title || "")
-        } catch (e) {}
-        var key = String(job.key || ""), at = service.rowIndexFor(key)
-        // A card still waiting to be shown carries the answer in with it.
-        var pending = service.liveKeys[key]
-        var waiting = at < 0 && pending && pending.row ? pending.row : null
-        if (path && at >= 0) {
-          toasts.setProperty(at, "replyPath", path)
-          if (who) toasts.setProperty(at, "replyTo", who)
-        } else if (path && waiting) {
-          waiting.replyPath = path
-          if (who) waiting.replyTo = who
-        } else if (!path && (at >= 0 || waiting) && (job.tries || 0) < 1) {
-          // The phone's side may not have appeared yet. Once more, shortly.
-          job.tries = (job.tries || 0) + 1
-          var queue = service.replyQueue.slice(0, 99)
-          queue.push(job)
-          service.replyQueue = queue
-          replyRetry.restart()
-        }
-        Qt.callLater(service.pumpReplies)
-      }
-    }
-  }
-
-  property var replyQueue: []
-
-  function lookForReply(row) {
-    if (!Markup.isKdeConnect(row.app)) return
-    var queue = replyQueue.slice()
-    queue.push({ key: String(row.key || ""), source: String(row.source || ""),
-                 body: String(row.bodyLine || row.body || ""), tries: 0 })
-    replyQueue = queue
-    pumpReplies()
-  }
-
-  function pumpReplies() {
-    if (findProc.running || replyQueue.length === 0) return
-    var queue = replyQueue.slice()
-    var job = queue.shift()
-    replyQueue = queue
-    findProc.job = job
-    findProc.command = kdeBin.concat(["find", job.source, job.body])
-    findProc.running = true
-  }
-
-  Timer {
-    id: replyRetry
-    interval: 1500
-    onTriggered: service.pumpReplies()
-  }
-
-  function sendReply(key, text) {
-    var at = rowIndexFor(key)
-    if (at < 0) return
-    var path = String(toasts.get(at).replyPath || "")
-    if (!path || !String(text).trim() || String(text).length > 4096 || replyProc.running) return
-    replyProc.replyKey = key
-    replyProc.command = kdeBin.concat(["reply", path, String(text), String(toasts.get(at).source), String(toasts.get(at).bodyLine)])
-    replyProc.running = true
-  }
-
-  function openReply(key) {
-    var at = rowIndexFor(key)
-    if (at < 0) return
-    replyError = ""
-    replyingKey = key
-    pointerEntered(Layout.deckKeyFor(toasts.get(at), stacking))
-    hoverKey = key
-  }
-
   // ------------------------------------------------------------- offers
   //
   // Acting on what Detect.js found in a card: copy the code, open the link.
@@ -1577,14 +1465,15 @@ Item {
   // Once at startup: the private directory and its files, and the leftovers
   // of older layouts, which hold old message content (per-file rows, the
   // previous engine's popups and images, fetched site icons and their
-  // published copies). rm and find never follow a symlink they are given.
+  // published copies, the reply demo's fixture). rm and find never follow a
+  // symlink they are given.
   Process {
     id: storePrepare
     command: ["bash", "-c",
       "umask 077\n" +
       "dir=$1\n" +
       "mkdir -p -- \"$dir\" && chmod 700 -- \"$dir\" || exit 1\n" +
-      "rm -rf -- \"$dir/live\" \"$dir/history\" \"$dir/images\" \"$dir/icons\" \"$dir/policy.json\" \"$2\"\n" +
+      "rm -rf -- \"$dir/live\" \"$dir/history\" \"$dir/images\" \"$dir/icons\" \"$dir/reply-demo\" \"$dir/policy.json\" \"$2\"\n" +
       "find \"$dir/\" -maxdepth 1 -type f \\( -regex '.*/[0-9]+-[^/]+\\.json' -o -name '.omarchy-notification-*' \\) -delete\n" +
       "for name in live.json history.json quiet.json; do\n" +
       "  file=$dir/$name\n" +
@@ -1833,19 +1722,6 @@ Item {
       return "performed"
     }
 
-    // Answer the front card; with no text, just open the reply field.
-    function reply(text: string): string {
-      if (toasts.count === 0) return "nothing"
-      var key = String(toasts.get(0).key)
-      if (!String(toasts.get(0).replyPath || "")) return "not repliable"
-      if (!String(text || "").trim()) {
-        service.openReply(key)
-        return "open"
-      }
-      service.sendReply(key, String(text))
-      return "sent"
-    }
-
     function togglePanel(): string { return service.requestPanel("toggle") }
     function openPanel(): string { return service.requestPanel("open") }
     function openSettings(): string { return service.requestPanel("settings") }
@@ -1886,8 +1762,7 @@ Item {
       readonly property bool showingNotifications: service.showsOn(String(modelData.name))
       readonly property var margins: service.marginsFor(String(modelData.name))
       readonly property bool stepAside: service.fullscreenOn(String(modelData.name))
-      readonly property bool hasSomethingToShow: showingNotifications
-        && (toasts.count > 0 || service.replyingKey !== "")
+      readonly property bool hasSomethingToShow: showingNotifications && toasts.count > 0
       // Holds the canvas for the last card's exit animation.
       property bool lingering: false
       onHasSomethingToShowChanged: {
@@ -1900,10 +1775,6 @@ Item {
 
       WlrLayershell.namespace: "omarchy-notifications"
       WlrLayershell.layer: WlrLayer.Overlay
-      // Exclusive only while a reply is being typed; nothing otherwise. Escape,
-      // answering and the reply timeout all give the keyboard back.
-      WlrLayershell.keyboardFocus: surface.showingNotifications && service.replyingKey !== ""
-                                   ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       exclusionMode: ExclusionMode.Ignore
 
       // Constant width and full height, so the buffer is allocated once.
@@ -2013,11 +1884,6 @@ Item {
               fontScale: service.fontScale
               showCountdown: service.showCountdown
               actionsAlign: service.actionsAlign
-              replyError: service.replyingKey === model.key ? service.replyError : ""
-              replying: service.replyingKey === model.key
-              onReplyRequested: service.openReply(model.key)
-              onReplySent: function(text) { service.sendReply(model.key, text) }
-              onReplyCancelled: service.replyingKey = ""
               hoverX: service.hoverX
               hoverY: service.hoverY
               onActionInvoked: function(identifier) { service.invokeAction(model.key, identifier) }
@@ -2028,7 +1894,7 @@ Item {
                         && (service.stacking !== "source" || service.openDeck === Layout.deckKeyFor(model, service.stacking))
               // Hover opens the body only when there is nothing else to open.
               sole: toasts.count === 1
-              paused: service.expanded || service.replyingKey !== ""
+              paused: service.expanded
 
               drawnHeight: service.at(model.key, "height")
               // A hidden output collapses child visibility; its measurements

@@ -372,7 +372,7 @@ function newCapacityScope() {
   const s = {
     toasts, refs: {}, refsRevision: 0, keySeed: 0, liveKeys: Object.create(null),
     maxLiveNotifications: 100, heights: {}, leaving: {}, layoutRevision: 0,
-    replyingKey: '', held: [], doNotDisturb: false, globalSnoozeUntil: 0,
+    held: [], doNotDisturb: false, globalSnoozeUntil: 0,
     recentRows: [], recentLimit: 20,
     liveEntries: [], historyEntries: [], historyHours: 24, unsaved: {}, liveLoaded: false,
     saveTimer: { running: false, start() {} },
@@ -385,7 +385,7 @@ function newCapacityScope() {
     lowDuration: 5000, normalDuration: 8000, maxDuration: 30000,
     snoozedUntil: key => s.snoozes[key] || 0,
     liveSnoozes: () => Object.keys(s.snoozes).map(key => ({ key })),
-    lookForReply: () => {}, Security: S, Delivery, Store,
+    Security: S, Delivery, Store,
     NotificationUrgency: { Critical: 2, Normal: 1, Low: 0 },
     Qt: { callLater: f => later.push(f),
       md5: value => require('node:crypto').createHash('md5').update(value).digest('hex') },
@@ -847,10 +847,10 @@ const plain = value => JSON.parse(JSON.stringify(value))
 const eq = (actual, expected, message) => assert.deepEqual(plain(actual), plain(expected), message)
 
 { // A stored row keeps only its scalar fields: no codes, links, phones,
-  // images, reply handles or derived text.
+  // images or derived text.
   const saved = Store.persistable({ key: 'n1', app: 'Chat', summary: 'Hi', body: 'Call +44 7911 123456 or https://example.com',
     code: '1234', codes: '1234', link: 'https://example.com', meeting: true, phone: '+44 7911 123456', image: '/tmp/a.png',
-    replyPath: '/modules/kdeconnect/devices/d/notifications/1', replyTo: 'Seif', bodyRich: '<b>x</b>', transient: true })
+    bodyRich: '<b>x</b>', transient: true })
   eq(Object.keys(saved).sort(), [...Store.STORED].sort())
   assert.equal(saved.rawBody, '', 'a raw body the same as the body is not stored twice')
 }
@@ -867,7 +867,7 @@ const eq = (actual, expected, message) => assert.deepEqual(plain(actual), plain(
     { rawBody: 'Your OTP is 938\n271', body: 'Open the app' }]
   for (const text of secrets) {
     const entry = { key: 'k', urgency: 1, app: 'alternate-secret', source: 'alternate-secret', appIcon: 'alternate-secret',
-                    replyTo: 'alternate-secret', image: '/etc/passwd', glyph: '\u{f0306}',
+                    image: '/etc/passwd', glyph: '\u{f0306}',
                     execArgv: JSON.stringify(['xdg-open', 'https://example.com/938271']), ...text }
     for (const saved of [Store.persistable(entry), Store.parseLive(JSON.stringify([entry]))[0],
                          Store.parseHistory(JSON.stringify([{ ...entry, closed_ts: 1 }]))[0]]) {
@@ -944,9 +944,9 @@ const eq = (actual, expected, message) => assert.deepEqual(plain(actual), plain(
   eq(Store.parseLive(' '.repeat(Store.LIVE_LIMIT * Store.LIVE_ROW_CHARS * 2 + 1) + '[{"key":"a"}]'), [],
                    'an oversized file is not parsed at all')
   const [row] = Store.parseLive(JSON.stringify([{ key: '__proto__', summary: 's', image: '/tmp/a.png', bodyRich: '<img src=x>',
-    link: 'https://evil.example/', meeting: true, phone: '+1 555 0100', replyPath: '/x', urgency: 'high', ts: 'soon', glyph: '\n' }]))
-  eq([row.key, row.image, row.link, row.phone, row.replyPath, row.urgency, row.ts, row.glyph, 'bodyRich' in row],
-                   ['__proto__', undefined, undefined, undefined, undefined, 1, 0, '', false])
+    link: 'https://evil.example/', meeting: true, phone: '+1 555 0100', urgency: 'high', ts: 'soon', glyph: '\n' }]))
+  eq([row.key, row.image, row.link, row.phone, row.urgency, row.ts, row.glyph, 'bodyRich' in row],
+                   ['__proto__', undefined, undefined, undefined, 1, 0, '', false])
   assert.equal(Store.parseLive('[{"key":"a","summary":"first"},{"key":"a","summary":"second"}]').length, 1)
   // The previous engine's rows had no key; rows without a close time are not history.
   eq(Store.parseHistory('[{"id":7,"summary":"Legacy","timestamp":1},{"key":"n1","summary":"open"}]'), [])

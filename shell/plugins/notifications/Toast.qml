@@ -32,8 +32,6 @@ Item {
   property string actionsAlign: "right"      // right | left
   property var snoozeOptions: []             // the daemon's, from settings
   property var actions: []                   // what the sender put on the wire
-  property string replyError: ""
-  property bool replying: false
   property bool deedsOpen: false
   property bool menuOpen: false
 
@@ -77,9 +75,6 @@ Item {
   signal silenceRequested()
   signal offerTaken(string kind, string value)
   signal actionInvoked(string identifier)
-  signal replyRequested()
-  signal replySent(string text)
-  signal replyCancelled()
 
   readonly property bool critical: row.urgency === 2
   readonly property color dimColor: Qt.darker(Commons.Color.notifications.text, 1.4)
@@ -125,14 +120,8 @@ Item {
                  value: String(row.link) })
     if (String(row.phone || ""))
       out.push({ kind: "phone", label: I18n.t("notifications.copyNumber"), value: String(row.phone) })
-    if (String(row.replyPath || ""))
-      out.push({ kind: "reply", label: I18n.t("notifications.reply"), value: "" })
-    for (var i = 0; i < actions.length; i++) {
-      // Our reply types the answer here; the phone's own "Reply" is dropped.
-      if (String(row.replyPath || "") && /^reply$/i.test(String(actions[i].text || "")))
-        continue
+    for (var i = 0; i < actions.length; i++)
       out.push({ kind: "action", label: String(actions[i].text || ""), value: String(actions[i].id) })
-    }
     return out
   }
 
@@ -204,7 +193,6 @@ Item {
     if (kind === "more") { deedsOpen = !deedsOpen; return }
     if (kind === "snooze") { menuOpen = false; snoozeRequested(Number(deed.value)); return }
     if (kind === "silence") { menuOpen = false; silenceRequested(); return }
-    if (kind === "reply") { menuOpen = false; replyRequested(); return }
     if (kind === "action") { actionInvoked(String(deed.value)); return }
     offerTaken(kind, String(deed.value))
     takenKind = kind + ":" + String(deed.value)
@@ -221,7 +209,7 @@ Item {
   // time, and gets a fresh display period of its own duration. Its picture
   // may be new at the same path, so the image is read again too.
   property real remaining: Number(row.duration || 0)
-  readonly property bool ticking: Number(row.duration || 0) > 0 && !paused && !replying
+  readonly property bool ticking: Number(row.duration || 0) > 0 && !paused
   readonly property string arrival: String(row.ts) + ":" + String(row.duration)
   property bool reloading: false
   onArrivalChanged: {
@@ -645,22 +633,20 @@ Item {
           }
         }
 
-        // The space under the body does one job at a time: reply field, the
-        // right-click menu, the "More" list, or the button row. Lists are drawn
-        // in the card, not as popups, because the surface is clipped. The row
-        // shows only under the pointer in an open deck.
+        // The space under the body does one job at a time: the right-click
+        // menu, the "More" list, or the button row. Lists are drawn in the
+        // card, not as popups, because the surface is clipped. The row shows
+        // only under the pointer in an open deck.
         Item {
           id: deedArea
           width: parent.width
 
-          readonly property string mode: card.replying ? "reply"
-                                       : card.menuOpen ? "menu"
+          readonly property string mode: card.menuOpen ? "menu"
                                        : card.deedsOpen ? "list"
                                        : (card.hovered && card.expanded
                                           && card.allDeeds.length > 0) ? "row" : ""
 
-          readonly property real contentHeight: mode === "reply" ? replyBox.height
-                                              : mode === "menu" ? menuColumn.implicitHeight
+          readonly property real contentHeight: mode === "menu" ? menuColumn.implicitHeight
                                               : mode === "list" ? deedColumn.implicitHeight
                                               : mode === "row" ? deedRow.implicitHeight : 0
           // What the state asks for; the drawn height is whatever slack the
@@ -694,72 +680,6 @@ Item {
               deed: card.moreDeed
               toast: card
             }
-          }
-
-          Item {
-            id: replyBox
-            width: parent.width
-            // A step, not an animation: the layout reads this height.
-            height: card.replying ? replyInput.implicitHeight + Style.space(3) : 0
-            visible: height > 0
-            anchors.bottom: parent.bottom
-            clip: true
-
-            TextField {
-              id: replyInput
-              anchors.fill: parent
-              anchors.topMargin: Style.space(3)
-              foreground: Commons.Color.notifications.text
-              font.family: Style.font.family
-              font.pixelSize: Style.font.body * card.fontScale
-              leftPadding: horizontalPadding + Border.left(_borderSpec)
-                           + (sendButton.visible && sendButton.isRtl
-                              ? sendButton.width + Style.spacing.controlGap : 0)
-              rightPadding: horizontalPadding + Border.right(_borderSpec)
-                            + (sendButton.visible && !sendButton.isRtl
-                               ? sendButton.width + Style.spacing.controlGap : 0)
-              placeholderText: card.replyError || I18n.t("notifications.replyTo").arg(String(card.row.replyTo || card.row.summary || ""))
-              onAccepted: { card.replySent(text); text = "" }
-              Keys.onEscapePressed: { text = ""; card.replyCancelled() }
-
-              // At the field's trailing edge, which is the left when the reply
-              // reads right-to-left.
-              Button {
-                id: sendButton
-                x: isRtl
-                   ? Border.left(replyInput._borderSpec) + replyInput.horizontalPadding
-                   : parent.width - width - Border.right(replyInput._borderSpec)
-                     - replyInput.horizontalPadding
-                anchors.verticalCenter: parent.verticalCenter
-                visible: replyInput.text.length > 0
-                text: I18n.t("notifications.send")
-                bordered: false
-                foreground: Commons.Color.notifications.text
-                fontFamily: Style.font.family
-                fontSize: Style.font.body * card.fontScale
-                onClicked: { card.replySent(replyInput.text); replyInput.text = "" }
-
-                // Whether the first strongly directional character is RTL.
-                property bool isRtl: {
-                  var t = replyInput.text;
-                  for (var i = 0; i < t.length;) {
-                    var c = t.codePointAt(i);
-                    i += c > 0xFFFF ? 2 : 1;                         // step past surrogate pairs
-                    if (c <= 0x7F && !(c >= 0x41 && c <= 0x5A)
-                                  && !(c >= 0x61 && c <= 0x7A))
-                      continue;                                       // skip all ASCII non-letters
-                    if (c <= 0x024F) return false;                    // Latin
-                    if (c >= 0x0590 && c <= 0x08FF) return true;      // Hebrew, Arabic, Syriac, Thaana
-                    if (c >= 0xFB50 && c <= 0xFDFF) return true;      // Arabic Presentation Forms-A
-                    if (c >= 0xFE70 && c <= 0xFEFF) return true;      // Arabic Presentation Forms-B
-                    return false;
-                  }
-                  return false;
-                }
-              }
-            }
-
-            onVisibleChanged: if (visible) replyInput.forceActiveFocus()
           }
 
           DeedList {

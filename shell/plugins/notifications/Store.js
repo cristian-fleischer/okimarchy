@@ -68,7 +68,7 @@ function snapshot(n, key, urgencyEnum) {
 var ROLES = ["originalId", "senderPid", "execArgv", "glyph", "transient", "app", "appIcon", "summary", "body", "rawBody", "bodyRich",
              "bodyLine", "source", "groupKey", "image", "urgency",
              "expireTimeout", "duration", "ts",
-             "code", "codes", "link", "meeting", "phone", "replyPath", "replyTo"]
+             "code", "codes", "link", "meeting", "phone"]
 
 function applyTo(model, index, row) {
   var current = model.get(index)
@@ -88,7 +88,7 @@ var RESTORE_GRACE = 20000
 var SHAPE = {
   key: "", originalId: 0, senderPid: 0, execArgv: "", glyph: "", transient: false, app: "", appIcon: "", summary: "", body: "",
   bodyRich: "", bodyLine: "", rawBody: "", source: "", groupKey: "", image: "",
-  code: "", codes: "", link: "", meeting: false, phone: "", replyPath: "", replyTo: "",
+  code: "", codes: "", link: "", meeting: false, phone: "",
   urgency: 1, expireTimeout: 0, duration: 0, ts: 0,
   restored: false
 }
@@ -158,8 +158,8 @@ var HISTORY_ROW_CHARS = 4096
 var HELD_REASONS = ["snoozed", "silenced"]
 
 // What a stored row keeps. Derived text is recomputed on restore; codes,
-// links, phones, images and reply handles never persist, so a stored row
-// cannot assert a capability.
+// links, phones and images never persist, so a stored row cannot assert a
+// capability.
 var STORED = ["key", "originalId", "senderPid", "execArgv", "glyph", "app", "appIcon", "summary", "body",
               "rawBody", "source", "groupKey", "urgency", "expireTimeout", "duration", "ts"]
 
@@ -347,6 +347,6 @@ function sanitiseForPersistence(row) {
     out.bodyLine = out.body
     out.bodyRich = out.body
   }
-  out.replyPath = ""; out.replyTo = ""; out.image = ""
+  out.image = ""
   return out
 }
