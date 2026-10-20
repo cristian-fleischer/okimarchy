@@ -244,7 +244,7 @@ rm -f "$preferences" "$preferences.omarchy-copy-url-repair.bak"
 brave_origin_preferences="$home/.config/BraveSoftware/Brave-Origin/Default/Preferences"
 mkdir -p "$(dirname "$brave_origin_preferences")"
 jq -n --arg ghost "$ghost_id" '{extensions: {commands: {"linux:Alt+Shift+L": {command_name: "copy-url", extension: $ghost, global: false}}, settings: {}}}' >"$brave_origin_preferences"
-HOME="$home" PATH="$stub_bin:$PATH" OMARCHY_PATH="$ROOT" bash -euo pipefail "$ROOT/migrations/1788604821.sh" >/dev/null 2>&1 ||
+HOME="$home" PATH="$stub_bin:$PATH" OMARCHY_PATH="$ROOT" bash -euo pipefail "$ROOT/migrations/1792474908.sh" >/dev/null 2>&1 ||
   fail "Brave Origin rerun migration repairs the shortcut"
 jq -e --arg pinned "$pinned_id" '.extensions.commands["linux:Alt+Shift+L"].extension == $pinned' "$brave_origin_preferences" >/dev/null ||
   fail "Brave Origin rerun migration rebinds the Copy URL shortcut in a Brave Origin profile"
@@ -256,7 +256,7 @@ write_stale_preferences
 run_migration || fail "first repair before the rerun scenario"
 [[ -f $preferences.omarchy-copy-url-repair.bak ]] || fail "rerun scenario has a backup from the first repair"
 open_browser
-HOME="$home" PATH="$stub_bin:$PATH" OMARCHY_PATH="$ROOT" bash -euo pipefail "$ROOT/migrations/1788604821.sh" >/dev/null 2>&1 ||
+HOME="$home" PATH="$stub_bin:$PATH" OMARCHY_PATH="$ROOT" bash -euo pipefail "$ROOT/migrations/1792474908.sh" >/dev/null 2>&1 ||
   fail "Brave Origin rerun migration leaves profiles the first repair fixed alone"
 close_browser
 pass "Brave Origin rerun migration leaves profiles the first repair fixed alone"
