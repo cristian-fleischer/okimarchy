@@ -159,10 +159,18 @@ Panel {
 
   // A tap on the globe: a city on this machine's zone becomes here, and the
   // zone's own city goes back to being the default.
+  // The tapped city brings what is known of where it is - a tracked or jumped-to
+  // town's own coordinates and region - so here is never geocoded by name again.
   function claimHome(label, zone) {
     var stored = Model.homeCityAfterTap(label, zone, hereZone && hereZone.chosen ? hereZone.label : "", localZone)
     if (stored === null) return
-    setHere(stored === "" ? { label: Model.labelForZoneId(localZone), id: localZone } : { label: stored, id: zone })
+    if (stored === "") { setHere({ label: Model.labelForZoneId(localZone), id: localZone }); return }
+    var pick = { label: stored, id: zone }
+    var known = zones.concat(sessionCities).filter(function(c) { return c.label === label && c.id === zone })[0]
+    var place = known && known.lat !== undefined ? known : placeOf(pick)
+    if (place) { pick.lat = place.lat; pick.lon = place.lon }
+    if (known && known.region) pick.region = known.region
+    setHere(pick)
   }
 
   // Here moves, and the row that stood for it follows, keeping its people. A
@@ -173,7 +181,8 @@ Panel {
     if (!next) return
     if (next.zoneChange !== "") {
       if (timezoneProc.running) return
-      timezoneProc.pending = next
+      // Only here waits on the clock; the list is whatever it is by then.
+      timezoneProc.pending = { here: next.here, zoneChange: next.zoneChange }
       timezoneProc.command = Model.timezoneCommand(next.zoneChange)
       timezoneProc.running = true
       return
@@ -183,7 +192,7 @@ Panel {
 
   function applyHere(next) {
     var values = { here: next.here === null ? undefined : next.here, homeCity: undefined }
-    if (next.zones !== zones) { values.cities = Model.serializeCities(next.zones); values.zones = undefined }
+    if (next.zones && next.zones !== zones) { values.cities = Model.serializeCities(next.zones); values.zones = undefined }
     persistSettings(values)
     refreshFacts()
   }
@@ -625,11 +634,13 @@ Panel {
 
   function fetchWeather() {
     var now = Date.now()
+    // A reading for somewhere else is stale too: a city's coordinates can move under its name.
     var stale = factsRequest.map(Model.factsKey).filter(function(key) {
-      return coordsFor(key) && Model.weatherStale(weather[key], now)
+      return coordsFor(key) && Model.weatherStale(weather[key], now, coordsFor(key))
     })
     if (stale.length === 0) { publishFacts(); return }
     weatherProc.keys = stale
+    weatherProc.points = stale.map(coordsFor)
     weatherProc.command = ["curl", "-fsS", "--max-time", "8", Model.forecastUrl(stale.map(coordsFor))]
     weatherProc.running = true
   }
@@ -855,9 +866,10 @@ Panel {
   Process {
     id: weatherProc
     property var keys: []
+    property var points: []
     stdout: StdioCollector {
       onStreamFinished: {
-        root.weather = Object.assign({}, root.weather, Model.parseForecast(text, weatherProc.keys, Date.now()))
+        root.weather = Object.assign({}, root.weather, Model.parseForecast(text, weatherProc.keys, Date.now(), weatherProc.points))
         root.publishFacts()
       }
     }

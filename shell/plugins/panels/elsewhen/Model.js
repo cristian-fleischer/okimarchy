@@ -511,26 +511,46 @@ function setPeopleAt(zones, index, people) {
   return out
 }
 
-// argv that refreshes each handle's cached profile and avatar when missing or a
-// week old, then prints one JSON line per handle it has a profile for. Handles
-// are arguments, never script text, and are checked before they get here.
+// argv that refreshes each handle's cached profile when missing or a week old,
+// and its avatar along with it or whenever the avatar is missing, then prints
+// one JSON line per handle it has a profile for. Handles are arguments, never
+// script text, and are checked before they get here.
+//
+// The API's answer is not trusted to name a URL: the avatar is fetched from
+// GitHub's own avatar host by the account's numeric id, and curl may speak
+// nothing but HTTPS, redirects included. Downloads land in fresh temporary
+// files in a private directory and are renamed into place, so nothing planted
+// at a predictable name is written through. Every monitor has its own panel,
+// so each handle is refreshed under a lock, and checked again once it is held.
 function profilesCommand(handles) {
   var script = [
     'dir="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/elsewhen/people"',
-    'mkdir -p "$dir"',
+    'mkdir -p "$dir" && chmod 700 "$dir" || exit 0',
+    'fetch() {',
+    '  local tmp',
+    '  tmp=$(mktemp "$dir/.fetch.XXXXXX") || return 1',
+    '  if curl -fsSL --max-time 8 --proto =https --proto-redir =https --globoff -o "$tmp" --url "$1"; then',
+    '    mv -f "$tmp" "$2"',
+    '  else',
+    '    rm -f "$tmp"',
+    '    return 1',
+    '  fi',
+    '}',
     'for h; do',
     '  json="$dir/$h.json" img="$dir/$h.avatar"',
-    '  if [[ ! -s $json || -n $(find "$json" -mmin +10080) ]]; then',
-    '    if curl -fsSL --max-time 8 "https://api.github.com/users/$h" -o "$json.tmp"; then',
-    '      mv "$json.tmp" "$json"',
-    '      url=$(jq -r \'.avatar_url // empty\' "$json")',
-    '      if [[ -n $url ]] && curl -fsSL --max-time 8 "$url&s=96" -o "$img.tmp"; then mv "$img.tmp" "$img"; else rm -f "$img.tmp"; fi',
-    '    else',
-    '      rm -f "$json.tmp"',
+    '  (',
+    '    flock -w 30 9 || exit 0',
+    '    fresh=1',
+    '    if [[ ! -s $json || -n $(find "$json" -mmin +10080) ]]; then',
+    '      fetch "https://api.github.com/users/$h" "$json" && fresh=0',
     '    fi',
-    '  fi',
+    '    if [[ -s $json ]] && { (( fresh == 0 )) || [[ ! -s $img ]]; }; then',
+    '      id=$(jq -r \'.id // empty | tostring\' "$json")',
+    '      [[ $id =~ ^[0-9]+$ ]] && fetch "https://avatars.githubusercontent.com/u/$id?s=96" "$img"',
+    '    fi',
+    '  ) 9>>"$dir/.$h.lock"',
     '  [[ -s $img ]] || img=""',
-    '  [[ -s $json ]] && jq -c --arg h "$h" --arg img "$img" \'{handle: $h, login: (.login // $h), name: (.name // ""), avatar: $img}\' "$json"',
+    '  [[ -s $json ]] && jq -c --arg h "$h" --arg img "$img" \'{handle: $h, login: (.login // $h | tostring), name: (.name // "" | tostring), avatar: $img}\' "$json"',
     'done',
     'true'
   ].join("\n")
@@ -573,15 +593,25 @@ function hasEntry(zones, id, label) {
 }
 
 // Returns the same array when nothing changes, so callers can skip the write.
-// `place` may carry the city's coordinates and region from a place search.
+// `place` may carry the city's coordinates and region from a place search. A
+// second town with a name and zone already on the list is a different place
+// when the coordinates say so, and is named with its region to tell them apart:
+// a row is known by its name and zone.
 function addZone(zones, id, label, place) {
   var zoneId = String(id || "").trim()
   if (zoneId === "" || !ZONE_ID.test(zoneId)) return zones
   var name = cleanLabel(label)
   if (name === "") name = labelForZoneId(zoneId)
-  if (hasEntry(zones, zoneId, name)) return zones
+  var row = withPlace({ label: name, id: zoneId }, place)
+  var at = indexOfZone(zones, name, zoneId)
+  if (at >= 0) {
+    var region = row.region ? cleanLabel(row.region.split(",")[0]) : ""
+    if (row.lat === undefined || zones[at].lat === undefined || nearPlace(zones[at], row) || region === "") return zones
+    row.label = name + " (" + region + ")"
+    if (hasEntry(zones, zoneId, row.label)) return zones
+  }
   var out = zones.slice()
-  out.push(withPlace({ label: name, id: zoneId }, place))
+  out.push(row)
   return out
 }
 
@@ -675,10 +705,24 @@ function placeRegion(result) {
   return parts.join(", ")
 }
 
+// The geocoder's results, or null when the answer is not one. Only a real
+// array, and only as many entries as were asked for: the answer comes off the
+// network, and a `{"length": 1e300}` would otherwise hold the shell's UI thread
+// in a loop.
+var GEOCODE_COUNT = 10
+
+function geocodeResults(text) {
+  var payload
+  try { payload = JSON.parse(text) } catch (e) { return null }
+  var results = payload && payload.results
+  if (results === undefined || results === null) return []
+  return Array.isArray(results) ? results.slice(0, GEOCODE_COUNT) : []
+}
+
 // Geocoder answer -> picker options carrying the place, [] when it failed.
 function placeOptions(text) {
-  var results
-  try { results = JSON.parse(text).results || [] } catch (e) { return [] }
+  var results = geocodeResults(text)
+  if (!results) return []
   var out = []
   var seen = {}
   for (var i = 0; i < results.length; i++) {
@@ -696,19 +740,39 @@ function placeOptions(text) {
   return out
 }
 
+// Within about a kilometre: the same place, whichever list it came from.
+function nearPlace(a, b) {
+  return a.lat !== undefined && b.lat !== undefined
+    && Math.abs(a.lat - b.lat) < 0.01 && Math.abs(a.lon - b.lon) < 0.01
+}
+
+function sameName(option, label, zone) {
+  return option.value === zone && String(option.label).toLowerCase() === String(label).toLowerCase()
+}
+
 // The offline matches first, so three letters and Return still pick what they
-// did; then the geocoder's places. An offline city the geocoder also found
-// takes its region and coordinates from it rather than being listed twice.
+// did; then the geocoder's places. The first place an offline city's name and
+// zone match lends it a region and coordinates rather than being listed twice;
+// any other town of that name and zone - Springfield, Illinois and Springfield,
+// Missouri both keep Central time - is a place of its own and listed as one.
+// A place already on the list is left out, known by where it is - or, for a
+// row with no coordinates, by its name.
 function mergePlaces(offline, places, existing, limit) {
   var out = (offline || []).slice()
+  var offlineCount = out.length
   for (var i = 0; i < (places || []).length; i++) {
     var p = places[i]
-    if (existing && hasEntry(existing, p.value, p.label)) continue
+    var tracked = false
+    for (var k = 0; existing && k < existing.length && !tracked; k++) {
+      var row = existing[k]
+      tracked = row.id === p.value && (nearPlace(row, p)
+        || (row.lat === undefined && String(row.label).toLowerCase() === p.label.toLowerCase()))
+    }
+    if (tracked) continue
     var twin = -1
-    for (var j = 0; j < out.length && twin < 0; j++)
-      if (out[j].value === p.value && String(out[j].label).toLowerCase() === p.label.toLowerCase()) twin = j
-    if (twin < 0) out.push(p)
-    else if (out[twin].lat === undefined) out[twin] = withPlace(Object.assign({}, out[twin]), p)
+    for (var j = 0; j < offlineCount && twin < 0; j++) if (sameName(out[j], p.label, p.value)) twin = j
+    if (twin >= 0 && out[twin].lat === undefined) out[twin] = withPlace(Object.assign({}, out[twin]), p)
+    else if (twin < 0 || !nearPlace(out[twin], p)) out.push(p)
   }
   return limit === undefined ? out : out.slice(0, limit)
 }
@@ -857,18 +921,18 @@ function factsKey(zone) {
 var WEATHER_TTL_MS = 20 * 60 * 1000
 
 function geocodeUrl(label) {
-  return "https://geocoding-api.open-meteo.com/v1/search?count=10&language=en&format=json&name="
+  return "https://geocoding-api.open-meteo.com/v1/search?count=" + GEOCODE_COUNT + "&language=en&format=json&name="
     + encodeURIComponent(label)
 }
 
 // { place, answered }: a place in the row's own zone beats the top result, and
 // `answered` is false when the request itself failed.
 function pickGeocode(text, zone) {
-  var results
-  try { results = JSON.parse(text).results || [] } catch (e) { return { place: null, answered: false } }
+  var results = geocodeResults(text)
+  if (!results) return { place: null, answered: false }
   var best = null
-  for (var i = 0; i < results.length && !best; i++) if (results[i].timezone === zone) best = results[i]
-  if (!best && results.length > 0) best = results[0]
+  for (var i = 0; i < results.length && !best; i++) if (results[i] && results[i].timezone === zone) best = results[i]
+  if (!best && results.length > 0 && results[0] && typeof results[0] === "object") best = results[0]
   return { place: best ? { lat: best.latitude, lon: best.longitude } : null, answered: true }
 }
 
@@ -893,7 +957,9 @@ function forecastUrl(points) {
 }
 
 // Open-Meteo answers one point as an object and several as an array, in request order.
-function parseForecast(text, keys, nowMs) {
+// `points`, when given, are the coordinates each reading was asked for; a
+// reading remembers them, so a city that moves does not keep another's weather.
+function parseForecast(text, keys, nowMs, points) {
   var payload
   try { payload = JSON.parse(text) } catch (e) { return {} }
   if (!Array.isArray(payload)) payload = [payload]
@@ -902,12 +968,15 @@ function parseForecast(text, keys, nowMs) {
     var current = (payload[i] && payload[i].current) || {}
     if (current.temperature_2m === undefined || current.temperature_2m === null) continue
     out[keys[i]] = { c: Math.round(current.temperature_2m * 10) / 10, w: current.weather_code, at: nowMs }
+    if (points && points[i]) { out[keys[i]].lat = points[i].lat; out[keys[i]].lon = points[i].lon }
   }
   return out
 }
 
-function weatherStale(entry, nowMs) {
-  return !entry || nowMs - entry.at >= WEATHER_TTL_MS
+// Twenty minutes old, or read for somewhere other than `coords`.
+function weatherStale(entry, nowMs, coords) {
+  if (!entry || nowMs - entry.at >= WEATHER_TTL_MS) return true
+  return !!coords && entry.lat !== undefined && !nearPlace(entry, coords)
 }
 
 // { "label|zone": { lat, lon, c, w } }, each field only when known.

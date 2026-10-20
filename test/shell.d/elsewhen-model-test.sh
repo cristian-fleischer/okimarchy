@@ -461,4 +461,40 @@ assertEqual(M.dragTargetFor(3, -50, 40, -1, 4, [40, 60, 40, 40]), 2, 'elsewhen m
 assertEqual(M.dropOffset(0, 2, 40, [40, 60, 40, 40]), 100, 'elsewhen drops a row past the heights it passed')
 assertEqual(M.dropOffset(3, 1, 40, [40, 60, 50, 40]), -110, 'elsewhen drops a row upward past the heights it passed')
 assertEqual(M.dropOffset(1, 1, 40, [40, 60]), 0, 'elsewhen drops a row in place')
+// ---- untrusted answers
+assertDeepEqual(M.placeOptions(JSON.stringify({ results: { length: 1e300 } })), [], 'elsewhen ignores geocoder results that are not a list, rather than looping on them')
+assertDeepEqual(M.pickGeocode(JSON.stringify({ results: { length: 1e300 } }), NY), { place: null, answered: true }, 'elsewhen reads no geocode from results that are not a list')
+assertDeepEqual(M.pickGeocode('{"results":[null, 7]}', NY), { place: null, answered: true }, 'elsewhen skips geocode entries that are not places')
+assertEqual(M.placeOptions(JSON.stringify({ results: Array.from({ length: 50 }, (_, i) => ({ name: 'P' + i, latitude: 1, longitude: 2, timezone: 'Europe/Paris' })) })).length, 10, 'elsewhen reads no more geocoder results than it asked for')
+
+const profileScript = M.profilesCommand(['octocat'])[2]
+assert(profileScript.indexOf('avatar_url') === -1, 'elsewhen never fetches a URL named by the GitHub API')
+assert(profileScript.indexOf('https://avatars.githubusercontent.com/u/$id?s=96') >= 0 && profileScript.indexOf('[[ $id =~ ^[0-9]+$ ]]') >= 0, 'elsewhen fetches the avatar from GitHub\'s own host by numeric id')
+assert(profileScript.indexOf('--proto =https --proto-redir =https --globoff') >= 0, 'elsewhen lets curl speak only HTTPS, redirects included')
+assert(profileScript.indexOf('mktemp "$dir/') >= 0 && profileScript.indexOf('.tmp') === -1, 'elsewhen downloads into fresh temporary files, never predictable ones')
+assert(profileScript.indexOf('chmod 700 "$dir"') >= 0, 'elsewhen keeps the people cache private')
+assert(profileScript.indexOf('flock -w 30 9') >= 0, 'elsewhen refreshes each handle under a lock, as every monitor has a panel')
+assert(profileScript.indexOf('[[ ! -s $img ]]') >= 0, 'elsewhen retries a missing avatar without waiting for the profile to age')
+
+// ---- towns that share a name and a zone
+const springfields = [
+  { value: CHI, label: 'Springfield', lat: 39.8, lon: -89.65, region: 'Illinois, US' },
+  { value: CHI, label: 'Springfield', lat: 37.21, lon: -93.29, region: 'Missouri, US' }
+]
+assertDeepEqual(M.mergePlaces([], springfields, [], 10).map(p => p.region), ['Illinois, US', 'Missouri, US'], 'elsewhen lists two towns of one name and zone separately')
+const offlineSpringfield = [{ value: CHI, label: 'Springfield', description: CHI }]
+assertDeepEqual(M.mergePlaces(offlineSpringfield, springfields, [], 10).map(p => p.region), ['Illinois, US', 'Missouri, US'], 'elsewhen lends an offline city only the first matching place')
+let twoSpringfields = M.addZone([], CHI, 'Springfield', springfields[0])
+twoSpringfields = M.addZone(twoSpringfields, CHI, 'Springfield', springfields[1])
+assertDeepEqual(twoSpringfields.map(r => r.label), ['Springfield', 'Springfield (Missouri)'], 'elsewhen names a second town of one name and zone by its region')
+assertEqual(M.addZone(twoSpringfields, CHI, 'Springfield', springfields[1]), twoSpringfields, 'elsewhen does not add the same town twice')
+assertEqual(M.mergePlaces([], springfields, twoSpringfields, 10).length, 0, 'elsewhen knows a tracked town by where it is')
+assertEqual(M.mergePlaces([], springfields, [{ label: 'Springfield', id: CHI }], 10).length, 0, 'elsewhen takes a row with no coordinates to be the town of its name')
+
+// ---- weather follows the coordinates
+const reading = M.parseForecast('{"current":{"temperature_2m":20,"weather_code":0}}', ['a'], 0, [{ lat: 40.71, lon: -74.01 }]).a
+assertDeepEqual(reading, { c: 20, w: 0, at: 0, lat: 40.71, lon: -74.01 }, 'elsewhen remembers where a reading was taken')
+assert(!M.weatherStale(reading, 60 * 1000, { lat: 40.71, lon: -74.01 }), 'elsewhen keeps a fresh reading for the same place')
+assert(M.weatherStale(reading, 60 * 1000, { lat: 26.12, lon: -80.14 }), 'elsewhen refetches weather when a city\'s coordinates move')
+assert(!M.weatherStale({ c: 1, at: 0 }, 60 * 1000, { lat: 26.12, lon: -80.14 }), 'elsewhen keeps an older reading that never said where it was')
 JS
