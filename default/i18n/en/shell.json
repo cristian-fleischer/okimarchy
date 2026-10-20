@@ -282,6 +282,8 @@
   "elsewhen.searchingPlaces": "Searching places…",
   "elsewhen.sunriseAt": "Sunrise %1",
   "elsewhen.sunsetAt": "Sunset %1",
+  "elsewhen.timezoneChanged": "Now in %1, and the clock is on %2",
+  "elsewhen.timezoneFailed": "Couldn't move the clock to %1",
   "elsewhen.tomorrow": "Tomorrow",
   "elsewhen.whereAreYou": "Where are you?",
   "elsewhen.world": "World",

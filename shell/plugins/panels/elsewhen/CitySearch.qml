@@ -21,8 +21,6 @@ Column {
   // binding, so its dependencies track.
   property var placesFor: function(text) { return [] }
   property var placesPending: function(text) { return false }
-  // Only cities on this zone, when set.
-  property string zoneFilter: ""
   // Rows already on the list, which the places leave out.
   property var existing: []
   // False when the search is opened by something other than its own button.
@@ -48,10 +46,8 @@ Column {
   readonly property string query: field.text
   readonly property var matches: {
     if (!active) return []
-    var filter = zoneFilter
-    var keep = function(o) { return filter === "" || o.value === filter }
-    var offline = Model.searchZones(filter === "" ? options : options.filter(keep), query, limit)
-    return Model.mergePlaces(offline, placesFor(query).filter(keep), existing, limit + placeLimit)
+    var offline = Model.searchZones(options, query, limit)
+    return Model.mergePlaces(offline, placesFor(query), existing, limit + placeLimit)
   }
   readonly property bool searching: active && placesPending(query)
   // An index, not the match itself: the list is rebuilt on every keystroke.

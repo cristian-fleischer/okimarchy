@@ -165,15 +165,30 @@ Panel {
     setHere(stored === "" ? { label: Model.labelForZoneId(localZone), id: localZone } : { label: stored, id: zone })
   }
 
-  // Here moves, and the row that stood for it follows, keeping its people.
+  // Here moves, and the row that stood for it follows, keeping its people. A
+  // place on another zone moves the machine's clock first, and here only moves
+  // once it has: a refused change leaves everything as it was.
   function setHere(pick) {
     var next = Model.hereAfterPick(zones, hereZone, pick, localZone)
     if (!next) return
+    if (next.zoneChange !== "") {
+      if (timezoneProc.running) return
+      timezoneProc.pending = next
+      timezoneProc.command = Model.timezoneCommand(next.zoneChange)
+      timezoneProc.running = true
+      return
+    }
+    applyHere(next)
+  }
+
+  function applyHere(next) {
     var values = { here: next.here === null ? undefined : next.here, homeCity: undefined }
     if (next.zones !== zones) { values.cities = Model.serializeCities(next.zones); values.zones = undefined }
     persistSettings(values)
     refreshFacts()
   }
+
+  function notify(title) { Util.execArgv(["omarchy-notification-send", title]) }
 
   function startChoosingHere() { if (hereSearch && localZone !== "" && !globeMode) hereSearch.start() }
 
@@ -775,6 +790,27 @@ Panel {
     }
   }
 
+  // Moving the clock for a new here. The zone is the machine's as soon as the
+  // command succeeds; the probe confirms it, and its offset, a moment later.
+  Process {
+    id: timezoneProc
+    property var pending: null
+    onExited: function(exitCode) {
+      var next = pending
+      pending = null
+      if (!next) return
+      if (exitCode !== 0) {
+        root.notify(Commons.I18n.t("elsewhen.timezoneFailed").arg(next.zoneChange))
+        return
+      }
+      root.localZone = next.zoneChange
+      root.applyHere(next)
+      root.tick()
+      root.refresh()
+      root.notify(Commons.I18n.t("elsewhen.timezoneChanged").arg(root.homeCity).arg(next.zoneChange))
+    }
+  }
+
   Timer {
     id: placeDebounce
     interval: 300
@@ -1091,15 +1127,14 @@ Panel {
             onGlobeClicked: function(slow) { root.setGlobeMode(!root.globeMode, slow) }
           }
 
-          // "Where are you?": the places on this machine's own zone. Opened by
-          // the header rather than a button of its own.
+          // "Where are you?": any place; one on another zone moves the clock
+          // there too. Opened by the header rather than a button of its own.
           CitySearch {
             id: hereSearch
             visible: active && root.zoom < 1
             width: parent.width
             showButton: false
             options: root.allZoneOptions
-            zoneFilter: root.localZone
             placesFor: function(text) { return root.placesFor(text) }
             placesPending: function(text) { return root.placesPending(text) }
             loading: root.zoneCatalogText === ""

@@ -390,18 +390,23 @@ function resolveHere(here, legacyCity, localZone) {
   return { label: labelForZoneId(zone), id: zone, chosen: false }
 }
 
-// Picking `pick` as here: { here, zones }, where `here` is the new setting (null
-// to go back to the zone's own city) and the row that stood for the old here
-// is renamed to the new one, keeping its place in the list and its people.
-// Null for a city on another zone: the time beside "here" is this machine's.
+// Picking `pick` as here: { here, zones, zoneChange }. `here` is the new
+// setting, null to go back to the zone's own city.
+//
+// On this machine's zone, the row that stood for the old here is renamed to the
+// new one, keeping its place in the list and its people. A city on another zone
+// moves the machine's clock there - `zoneChange` is that zone - and leaves the
+// list alone: home stays on it while you are away from it.
 function hereAfterPick(zones, current, pick, localZone) {
-  var zone = String(localZone || "")
-  if (zone === "" || !pick || String(pick.id || "") !== zone) return null
+  var local = String(localZone || "")
+  var zone = pick ? String(pick.id || "") : ""
+  if (local === "" || zone === "" || !ZONE_ID.test(zone)) return null
   var name = cleanLabel(pick.label)
   if (name === "") return null
   var place = withPlace({}, pick)
   var bare = name === labelForZoneId(zone) && place.lat === undefined
   var here = bare ? null : withPlace({ name: name, zone: zone }, pick)
+  if (zone !== local) return { here: here, zones: zones, zoneChange: zone }
 
   var out = zones
   var at = current ? indexOfZone(zones, current.label, zone) : -1
@@ -411,7 +416,15 @@ function hereAfterPick(zones, current, pick, localZone) {
     out = zones.slice()
     out[at] = withPlace(row, pick)
   }
-  return { here: here, zones: out }
+  return { here: here, zones: out, zoneChange: "" }
+}
+
+// argv that moves this machine's clock to `zone` through the passwordless
+// `timedatectl set-timezone` rule the timezone menu uses (etc/sudoers.d/omarchy-tzupdate),
+// then tells the bar clock. `-n`: a missing rule fails rather than waiting on a
+// password nobody can type. The zone is an argument, never script text.
+function timezoneCommand(zone) {
+  return ["bash", "-c", 'sudo -n timedatectl set-timezone "$1" && omarchy-shell -q omarchy.clock refresh', "bash", String(zone)]
 }
 
 // ---- people
@@ -1231,6 +1244,7 @@ if (typeof module !== "undefined") {
     serializeCities: serializeCities,
     resolveHere: resolveHere,
     hereAfterPick: hereAfterPick,
+    timezoneCommand: timezoneCommand,
     parsePeople: parsePeople,
     peopleText: peopleText,
     personHandle: personHandle,
