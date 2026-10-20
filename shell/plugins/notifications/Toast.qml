@@ -215,9 +215,12 @@ Item {
 
   // One ticker drives both the countdown and the expiry, so they cannot drift;
   // pausing holds the remaining time rather than restarting it.
+  // An update (replaces_id) rewrites the row in place with a new arrival
+  // time, and gets a fresh display period of its own duration.
   property real remaining: Number(row.duration || 0)
   readonly property bool ticking: Number(row.duration || 0) > 0 && !paused && !replying
-  onRowChanged: remaining = Number(row.duration || 0)
+  readonly property string arrival: String(row.ts) + ":" + String(row.duration)
+  onArrivalChanged: remaining = Number(row.duration || 0)
 
   Timer {
     interval: 100
