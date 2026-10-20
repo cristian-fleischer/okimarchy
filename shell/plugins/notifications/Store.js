@@ -89,7 +89,7 @@ var SHAPE = {
   key: "", originalId: 0, senderPid: 0, execArgv: "", glyph: "", transient: false, app: "", appIcon: "", summary: "", body: "",
   bodyRich: "", bodyLine: "", rawBody: "", source: "", groupKey: "", image: "",
   code: "", codes: "", link: "", meeting: false, phone: "", replyPath: "", replyTo: "",
-  stored_image: "", urgency: 1, expireTimeout: 0, duration: 0, ts: 0,
+  urgency: 1, expireTimeout: 0, duration: 0, ts: 0,
   restored: false
 }
 
@@ -115,7 +115,6 @@ function normalise(row) {
   // helper input; keeping it does not authorise Qt to open it.
   var okIconPath = out.image.indexOf("image://icon//") === 0 && out.image.indexOf("..") === -1
   out.image = (QSIMAGE.test(out.image) || okIconPath) ? out.image : ""
-  out.stored_image = ""
   // Derived fields are recomputed, never trusted: a stored row from an older
   // build picks up today's rendering and grouping rules.
   out.bodyRich = Markup.render(out.body)

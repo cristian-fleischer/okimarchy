@@ -4,7 +4,7 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), vm = requ
 const { URL } = require('node:url')
 const load = require('./loader.cjs')
 const S = load('Security'), M = load('Markup'), D = load('Detect'), Store = load('Store')
-const Layout = load('Layout'), Delivery = load('Delivery'), Settings = load('Settings')
+const Layout = load('Layout'), Delivery = load('Delivery'), Settings = load('Settings'), Icons = load('Icons')
 const snap = (n, key = 'k') => Store.snapshot(n, key, { Normal: 1 })
 
 // ---------------------------------------------------------------- URL policy
@@ -108,7 +108,7 @@ for (let i = 0; i < 1000; i++) {
     assert.equal(row.appIcon, appIcon, image)
     assert.equal(row.image, kept, image)
   }
-  for (const image of ['file:///etc/passwd', 'image://icon//tmp/../etc/x.png']) assert.equal(Store.normalise({ image, stored_image: '/etc/passwd' }).image, '', image)
+  for (const image of ['file:///etc/passwd', 'image://icon//tmp/../etc/x.png']) assert.equal(Store.normalise({ image }).image, '', image)
   assert.equal(Store.normalise({ body: 'hello', bodyRich: '<img src="x">' }).bodyRich, 'hello')
   assert.equal(snap({ body: 'x'.repeat(100000), summary: 'y'.repeat(3000) }).body.length, 32768)
 }
@@ -167,6 +167,42 @@ for (const body of ['Your verification code is 938271', 'Your code is 938 271', 
   const secret = Store.sanitiseForPersistence(snap({ appName: 'x', summary: 'Sign in', body: 'Your verification code is 482913',
     hints: { 'omarchy-exec-argv': shot, 'omarchy-glyph': '\u{f0306}' } }))
   assert.deepEqual([secret.execArgv, secret.glyph], ['', ''])
+}
+
+{ // Icon names: a site by its own names first and its browser last, never fetched.
+  const same = (actual, expected, message = '') => assert.equal(JSON.stringify(actual), JSON.stringify(expected), message)
+  same(Icons.siteNames('app.slack.com'), ['app.slack.com', 'slack'])
+  same(Icons.siteNames('mail.google.com'), ['mail.google.com', 'google', 'mail'])
+  same(Icons.siteNames('www.x.com'), ['www.x.com', 'x'])
+  for (const bad of ['', 'localhost', '127.0.0.1', '0x7f.0x1', 'a..b', 'slack', '-x.com', 'x'.repeat(300) + '.com'])
+    same(Icons.siteNames(bad), [], bad)
+  // Only the browser is looked up among desktop entries: a fuzzy match on a
+  // domain label is how mail.google.com would wear Google Contacts.
+  same(Icons.candidates(Store.restored({ key: 'w', app: 'Google Chrome', appIcon: 'google-chrome', source: 'app.slack.com' })), {
+    overrides: ['app.slack.com', 'slack', 'google-chrome', 'web-app.slack.com'],
+    themed: ['app.slack.com', 'slack', 'google-chrome'],
+    entries: ['google-chrome', 'Google Chrome'] })
+  // An app: its hint, then its source and name, as given and slugged; a name
+  // with a space is no theme name.
+  same(Icons.candidates(Store.restored({ key: 'a', app: 'Spotify', appIcon: 'spotify-client' })), {
+    overrides: ['spotify-client', 'spotify', 'app-spotify'],
+    themed: ['spotify-client', 'Spotify', 'spotify'],
+    entries: ['spotify-client', 'Spotify'] })
+  same(Icons.candidates(Store.restored({ key: 'p', app: 'KDE Connect', source: 'WhatsApp' })).themed, ['WhatsApp', 'whatsapp', 'kde-connect'])
+  // A hostname-looking app is not a site unless a browser lifted it.
+  same(Icons.candidates({ app: 'example.com', source: 'example.com', groupKey: 'app:example-com' }).themed, ['example.com'])
+  same(Icons.candidates({}), { overrides: [], themed: [], entries: [] })
+  // Overrides: by slug, PNG first, any case, image formats only.
+  same(Icons.overrideMap(['slack.svg', 'slack.png', 'Spotify.PNG', 'notes.txt', '.png', 'x.jpg', 'x.ico', 'readme']),
+       { slack: 'slack.png', spotify: 'Spotify.PNG', x: 'x.jpg' })
+  assert.equal(Icons.slug('  Google Chrome!! '), 'google-chrome')
+  assert.equal(Icons.slug('../../etc/passwd'), 'etc-passwd')
+  // One-colour icons go by their freedesktop name, as a theme name or a file.
+  for (const mono of ['image://icon/audio-volume-high-symbolic', 'file:///usr/share/icons/Adwaita/symbolic/apps/x.svg',
+                      'file:///icons/kdeconnect-symbolic.svg', 'image://icon/x-symbolic?fallback=y'])
+    assert.ok(Icons.isSymbolic(mono), mono)
+  for (const colour of ['image://icon/kdeconnect', 'image://icon/symbolic-thing', 'file:///icons/slack.png', '', 'image://qsimage/1/2'])
+    assert.ok(!Icons.isSymbolic(colour), colour)
 }
 
 { // The glyph hint: a short mark for the icon slot, persisted with the row.
@@ -268,18 +304,6 @@ function runIn(scope, ...names) {
   assert.deepEqual(calls, ['hl.dsp.focus({window = hl.get_window("address:0x123abc")})'])
 }
 
-{ // The shell trusts helper output only in the exact shapes the helper writes.
-  const dir = '/home/u/.cache/omarchy/notification-icons/', digest = 'a'.repeat(64), ok = dir + digest + '.png'
-  const s = runIn({ iconCacheDir: dir, String, Number }, 'trustedIconPath')
-  assert.equal(s.trustedIconPath(ok + '\n', 0), ok)
-  assert.equal(s.trustedIconPath(dir + digest + '-mono.png', 0), dir + digest + '-mono.png')
-  assert.equal(s.trustedIconPath(ok, 1), '', 'a failed helper answers nothing')
-  for (const bad of ['/home/u/.ssh/id_ed25519', dir + '../x.png', dir + digest + '.svg', dir + 'norm-slack.png',
-                     dir + 'A'.repeat(64) + '.png', dir + digest.slice(1) + '.png', dir + 'sub/' + digest + '.png',
-                     '/home/u/.local/state/omarchy/notifications/icons/' + digest + '.png', 'file://' + ok, ok + 'x'.repeat(600)])
-    assert.equal(s.trustedIconPath(bad, 0), '', bad)
-}
-
 { // Sender data URLs: the exact PNG shape the launcher writes, nothing else.
   const s = runIn({ liveKeys: { k: { senderImage: null } }, senderImageRevision: 0 }, 'finishSenderImage')
   const b64 = text => Buffer.from(text, 'latin1').toString('base64')
@@ -311,7 +335,7 @@ function runIn(scope, ...names) {
 const capacityFunctions = ['pinDeckDisplay', 'showsOn', 'fullscreenOn', 'awayFrom', 'routeAround', 'rememberRecent', 'recentForPanel',
   'durationFor', 'liveCount', 'reserveLive', 'releaseLive', 'wantSenderImage', 'senderImageFor', 'finishSenderImage', 'pumpSenderImages',
   'nextKey', 'rowIndexFor', 'keyForOriginal', 'handleNotification', 'watchNotification', 'showRow', 'release', 'closeToast',
-  'finishClose', 'clearAll', 'clearDeck', 'dismissNewest', 'releaseHeld', 'restoreRows', 'actionsOf', 'dismissOne', 'iconKeyFor', 'forgetIcon']
+  'finishClose', 'clearAll', 'clearDeck', 'dismissNewest', 'releaseHeld', 'restoreRows', 'actionsOf', 'dismissOne']
 
 function newCapacityScope() {
   const toasts = { rows: [],
@@ -336,7 +360,7 @@ function newCapacityScope() {
     lowDuration: 5000, normalDuration: 8000, maxDuration: 30000,
     snoozedUntil: key => s.snoozes[key] || 0,
     liveSnoozes: () => Object.keys(s.snoozes).map(key => ({ key })),
-    storeProc: {}, storeBin: '', wantIcon: () => {}, iconCache: {}, iconRetried: {},
+    storeProc: {}, storeBin: '',
     lookForReply: () => {}, Security: S, Delivery,
     Store: { ...Store, write: () => {} },
     NotificationUrgency: { Critical: 2, Normal: 1, Low: 0 },
@@ -571,39 +595,14 @@ for (const held of [true, false]) { // Capacity: at most 100 live senders, held 
     assert.equal(s.liveCount(), 100)
     if (held) assert.equal(s.held.length, 100, 'replacement does not queue a second card')
   }
-  // An icon resolved while the rows waited reaches them when they are shown.
-  if (held) for (const key of s.held) s.iconCache[s.iconKeyFor(s.liveKeys[key].row)] = '/icons/held.png'
   s.pointerHolding = false
   s.releaseHeld()
   s.drainCallLater()
   assert.equal(s.toasts.count, 100)
-  if (held) assert.ok(s.toasts.rows.every(row => row.stored_image === '/icons/held.png'))
   const replacements = s.toasts.rows.filter(row => row.originalId === 1)
   assert.equal(replacements.length, 1)
   assert.equal(replacements[0].summary, 'Latest replacement')
   assert.equal(replacements[0].body, 'Synthetic body: Latest replacement')
-}
-
-{ // A pruned icon file is resolved again on every card from its source, at most once a minute.
-  const s = newCapacityScope()
-  let wanted = 0
-  s.wantIcon = () => { wanted++ }
-  s.toasts.rows.push({ key: 'a', groupKey: 'app:x', stored_image: '/gone.png' },
-                     { key: 'b', groupKey: 'app:x', stored_image: '/gone.png' })
-  s.iconCache['app:x'] = '/gone.png'
-  s.forgetIcon('a')
-  s.forgetIcon('b')
-  assert.equal(wanted, 1)
-  assert.equal(s.iconCache['app:x'], undefined)
-  assert.ok(s.toasts.rows.every(row => row.stored_image === ''))
-  // Pruned again later in the session: resolved again.
-  s.iconCache['app:x'] = '/gone.png'
-  for (const row of s.toasts.rows) row.stored_image = '/gone.png'
-  s.forgetIcon('a')
-  assert.equal(wanted, 1)
-  s.iconRetried['app:x'] -= 61000
-  s.forgetIcon('a')
-  assert.equal(wanted, 2)
 }
 
 { // Visible replacements keep their position and expose only the latest sender's actions.

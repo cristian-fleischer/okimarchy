@@ -12,6 +12,7 @@ import "Markup.js" as Markup
 import "Security.js" as Security
 import "Delivery.js" as Delivery
 import "Store.js" as Store
+import "Icons.js" as Icons
 
 Item {
   id: card
@@ -20,6 +21,7 @@ Item {
   property bool showCountdown: false
   property var row: ({})
   property string senderImage: "" // helper-validated PNG data URL, never the sender's path
+  property var iconOverrides: ({})          // slug -> file URL, from the service
   property var place: ({ y: 0, scale: 1, opacity: 1, z: 1, front: true, hidden: false })
   property var scene: null                   // owns the clock; without it the card stands still
   property bool expanded: false
@@ -79,7 +81,6 @@ Item {
   signal replyRequested()
   signal replySent(string text)
   signal replyCancelled()
-  signal iconMissing()
 
   readonly property bool critical: row.urgency === 2
   readonly property color dimColor: Qt.darker(Commons.Color.notifications.text, 1.4)
@@ -325,26 +326,45 @@ Item {
         opacity: card.showsContent ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: card.fade } }
 
-        readonly property bool mono: String(picture.source).indexOf("-mono.png") >= 0
-
-        function asUrl(src) {
-          var value = String(src || "")
-          if (!value) return ""
-          return value.indexOf("file://") === 0 || value.indexOf("image://") === 0
-                 ? value : "file://" + value
+        function entryIcon(icon) {
+          var value = String(icon || "")
+          return value.charAt(0) === "/" ? Util.fileUrl(value) : value ? Quickshell.iconPath(value, true) : ""
         }
 
-        // Only what the sender handed over and what the icon helper resolved:
-        // Quickshell.iconPath returns a URL for missing icons (a checkerboard).
+        // Only what the sender handed over and what is installed for its source:
+        // Quickshell.iconPath answers "" for a missing icon when asked to check,
+        // where a bare image://icon/ URL would draw a checkerboard.
         readonly property string sent: /^image:\/\/qsimage\/[0-9]+\/[0-9]+$/.test(String(card.row.image || ""))
                                        ? String(card.row.image) : card.senderImage
-        readonly property string resolved: asUrl(card.row.stored_image)
 
-        // The sender's picture wins while it draws; then the resolved icon.
-        property bool sentFailed: false
-        onSentChanged: sentFailed = false
-        readonly property string best: (sent && !sentFailed) ? sent : resolved
+        // Best first: the sender's picture, then your override for the source,
+        // then the icon theme, then a desktop entry's icon (Icons.candidates
+        // has the names). A file that will not load gives way to the next.
+        function firstOf(names, look) {
+          for (var i = 0; i < names.length; i++) {
+            var found = look(names[i])
+            if (found) return found
+          }
+          return ""
+        }
+        readonly property var sources: {
+          var appsRevision = DesktopEntries.applications.values.length
+          var want = Icons.candidates(card.row)
+          var found = [sent,
+            firstOf(want.overrides, function(name) { return card.iconOverrides[name] || "" }),
+            firstOf(want.themed, function(name) { return Quickshell.iconPath(name, true) }),
+            firstOf(want.entries, function(name) {
+              var entry = DesktopEntries.heuristicLookup(name)
+              return entry ? thumb.entryIcon(entry.icon) : ""
+            })]
+          return found.filter(function(url, i) { return url && found.indexOf(url) === i })
+        }
+        readonly property string sourcesKey: sources.join("\n")
+        property int failed: 0
+        onSourcesKeyChanged: failed = 0
+        readonly property string best: sources[failed] || ""
         readonly property bool photo: best !== "" && best === sent
+        readonly property bool mono: !photo && Icons.isSymbolic(best)
 
         Rectangle {
           anchors.fill: parent
@@ -379,11 +399,7 @@ Item {
           anchors.fill: parent
           visible: thumb.pictured
           source: thumb.best
-          onStatusChanged: {
-            if (status !== Image.Error) return
-            if (source == thumb.sent) thumb.sentFailed = true
-            else if (source == thumb.resolved) card.iconMissing()
-          }
+          onStatusChanged: if (status === Image.Error && thumb.failed < thumb.sources.length) thumb.failed += 1
           // A photo fills its square; an app icon keeps its own shape.
           fillMode: thumb.photo ? Image.PreserveAspectCrop : Image.PreserveAspectFit
           // Constant, so the slot resizing never reloads the image.

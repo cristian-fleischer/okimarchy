@@ -5,6 +5,7 @@
 // the MIT License (https://github.com/omacom/omapager).
 
 import QtQuick
+import Qt.labs.folderlistmodel
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -20,6 +21,7 @@ import "Layout.js" as Layout
 import "Markup.js" as Markup
 import "Delivery.js" as Delivery
 import "Settings.js" as Settings
+import "Icons.js" as Icons
 
 Item {
   id: service
@@ -655,123 +657,35 @@ Item {
 
   // ------------------------------------------------------------- icons
   //
-  // Resolved once per source, written onto its rows and persisted.
-  property var iconCache: ({})
-  property var iconQueue: []
-  property string iconWanted: ""
-  property var iconRetried: ({})
-
-  function iconKeyFor(row) { return String(row.groupKey || row.source || row.app || "") }
-
-  // The launcher prunes old icons, so a cached path can go missing: resolve
-  // it again, at most once a minute per source, so a file that will not load
-  // cannot loop.
-  function forgetIcon(rowKey) {
-    var at = rowIndexFor(rowKey)
-    if (at < 0) return
-    var row = toasts.get(at), key = iconKeyFor(row)
-    if (!key || Date.now() - (iconRetried[key] || 0) < 60000 || iconCache[key] !== row.stored_image) return
-    iconRetried[key] = Date.now()
-    delete iconCache[key]
-    for (var i = 0; i < toasts.count; i++)
-      if (iconKeyFor(toasts.get(i)) === key) toasts.setProperty(i, "stored_image", "")
-    wantIcon(toasts.get(at))
+  // Each card looks its icon up itself (Icons.js, Toast.qml); this only lists
+  // your own, ~/.config/omarchy/notifications/icons/<name>.png, kept current
+  // by the folder's watch. A folder made after the shell started is seen from
+  // the next restart.
+  property var iconOverrides: ({})
+  FolderListModel {
+    id: iconOverrideFolder
+    folder: Util.fileUrl(Quickshell.env("HOME") + "/.config/omarchy/notifications/icons")
+    showDirs: false
+    caseSensitive: false
+    nameFilters: Icons.OVERRIDE_EXTENSIONS.map(function(ext) { return "*." + ext })
+    // A swapped file keeps the count, so every finished reload is read too.
+    onCountChanged: service.readIconOverrides()
+    onStatusChanged: if (status === FolderListModel.Ready) service.readIconOverrides()
   }
-
-  function wantIcon(row) {
-    // A sender's file is kept; a live image:// handle dies with this shell, so
-    // a durable icon is resolved for those too.
-    if (String(row.image || "").indexOf("image://") !== 0 && String(row.image || "")) return
-    var key = iconKeyFor(row)
-    if (!key) return
-    if (iconWanted === key) return
-    if (iconCache[key] !== undefined) {
-      // Also onto the row in hand: it is not in the model yet.
-      if (iconCache[key]) {
-        row.stored_image = iconCache[key]
-        applyIcon(key, iconCache[key])
-      }
-      return
+  function readIconOverrides() {
+    var names = [], urls = {}
+    for (var i = 0; i < iconOverrideFolder.count; i++) {
+      var name = String(iconOverrideFolder.get(i, "fileName"))
+      names.push(name)
+      urls[name] = String(iconOverrideFolder.get(i, "fileUrl"))
     }
-    for (var i = 0; i < iconQueue.length; i++) if (iconQueue[i].key === key) return
-    if (iconQueue.length >= 100) return
-    iconQueue.push({ key: key, app: String(row.app || ""),
-                     appIcon: String(row.appIcon || ""),
-                     source: String(row.source || "") })
-    pumpIcons()
-  }
-
-  function pumpIcons() {
-    if (!helperSettingsReady || iconProc.running || iconWanted !== "" || iconQueue.length === 0) return
-    var job = iconQueue.shift()
-    iconWanted = job.key
-    var args = iconBin.concat(["--key=" + job.key, "--app=" + job.app,
-                               "--app-icon=" + job.appIcon, "--source=" + job.source])
-    iconProc.command = args
-    iconProc.output = ""
-    iconProc.overflow = false
-    iconProc.running = true
-  }
-
-  function applyIcon(key, path) {
-    for (var i = 0; i < toasts.count; i++) {
-      var row = toasts.get(i)
-      if (iconKeyFor(row) !== key) continue
-      if (row.stored_image === path) continue
-      toasts.setProperty(i, "stored_image", path)
-      var copy = {}
-      for (var k in row) copy[k] = row[k]
-      copy.stored_image = path
-      Store.write(storeProc, storeBin, "put", copy)
-    }
-  }
-
-  // The helper's output decides what an Image loads, so only a digest-named PNG
-  // in the launcher's cache dir (unwritable by sandboxed helpers) is accepted.
-  readonly property string iconCacheDir: Quickshell.env("HOME") + "/.cache/omarchy/notification-icons/"
-  readonly property int iconOutputLimit: 1024
-  function trustedIconPath(text, exitCode) {
-    var path = String(text || "").trim()
-    if (exitCode !== 0 || path.length > 512 || path.indexOf(iconCacheDir) !== 0) return ""
-    return /^[0-9a-f]{64}(-mono)?\.png$/.test(path.slice(iconCacheDir.length)) ? path : ""
-  }
-
-  Process {
-    id: iconProc
-    environment: service.helperEnvironment
-    // Capped: a helper flooding its pipe is cut off rather than buffered.
-    property string output: ""
-    property bool overflow: false
-    running: false
-    stdout: SplitParser {
-      splitMarker: ""
-      onRead: function(chunk) {
-        if (iconProc.overflow) return
-        if (iconProc.output.length + chunk.length > service.iconOutputLimit) {
-          iconProc.overflow = true
-          iconProc.output = ""
-          iconProc.running = false
-        } else iconProc.output += chunk
-      }
-    }
-    onExited: function(code, status) {
-      var path = iconProc.overflow ? "" : service.trustedIconPath(iconProc.output, code)
-      service.iconCache[service.iconWanted] = path
-      if (path) service.applyIcon(service.iconWanted, path)
-      service.iconWanted = ""
-      iconProc.output = ""
-      iconProc.overflow = false
-      Qt.callLater(service.pumpIcons)
-    }
+    var files = Icons.overrideMap(names), out = {}
+    for (var key in files) out[key] = urls[files[key]]
+    iconOverrides = out
   }
 
   // The launcher already bounds each helper; this only stops anything
   // unforeseen from holding an image queue for good.
-  Timer {
-    interval: 60000
-    running: iconProc.running
-    onTriggered: iconProc.running = false
-  }
   Timer {
     interval: 60000
     running: senderImageProc.running
@@ -1105,7 +1019,6 @@ Item {
 
     Store.write(storeProc, storeBin, "put", row)
     wantSenderImage(row)
-    wantIcon(row)
     lookForReply(row)
 
     // Only a new card waits while the deck is held; an update changes a card in place.
@@ -1180,9 +1093,6 @@ Item {
       if (service.liveKeys[key] !== pending || pending.held || !pending.row) return
       var row = pending.row
       pending.row = null
-      // An icon resolved while this row waited only reached rows already shown.
-      var icon = service.iconCache[service.iconKeyFor(row)]
-      if (icon) row.stored_image = icon
       var at = service.rowIndexFor(key)
       var snap = service.snapshot(), deckNow = service.deckHeight
       if (at >= 0) {
@@ -1683,8 +1593,6 @@ Item {
         row.key = nextKey()
       }
       if (!reserveLive(row.key)) break
-      // Live image handles died with the old shell; restore a durable icon.
-      if (!replay) wantIcon(row)
       showRow(row)
     }
   }
@@ -1743,7 +1651,6 @@ Item {
     quietRestoreProc.running = true
     tidyProc.running = true
     Store._pump(storeProc)
-    service.pumpIcons()
     service.pumpSenderImages()
     service.pumpReplies()
   })
@@ -2168,7 +2075,7 @@ Item {
               hoverY: service.hoverY
               onActionInvoked: function(identifier) { service.invokeAction(model.key, identifier) }
               onOfferTaken: function(kind, value) { service.takeOffer(kind, value, model.key) }
-              onIconMissing: service.forgetIcon(model.key)
+              iconOverrides: service.iconOverrides
               now: service.nowTick
               expanded: service.expanded
                         && (service.stacking !== "source" || service.openDeck === Layout.deckKeyFor(model, service.stacking))
