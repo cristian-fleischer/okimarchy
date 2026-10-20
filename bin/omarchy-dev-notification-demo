@@ -11,24 +11,17 @@ import json
 import os
 import random
 import secrets
-import selectors
 import subprocess
 import sys
+import tempfile
 import time
 
 from gi.repository import Gio, GLib
-
-HELPERS = os.path.join(os.environ["OMARCHY_PATH"], "shell/plugins/notifications/helpers")
-STORE = ["/usr/bin/python3", "-B", "-E", "-s", os.path.join(HELPERS, "store")]
-sys.dont_write_bytecode = True
-sys.path.insert(0, HELPERS)
-from notification_files import write_json  # noqa: E402
 
 BUS_NAME = "org.freedesktop.Notifications"
 BUS_PATH = "/org/freedesktop/Notifications"
 URGENCY = {"low": 0, "normal": 1, "critical": 2}
 FALLBACK_APP = "omarchy-dev-notification-demo"
-HELPER_ERRORS = (OSError, ValueError, AttributeError, TimeoutError, subprocess.TimeoutExpired)
 
 SCENES = {
   # Chrome sends every web app as "Google Chrome"; the leading origin anchor is
@@ -121,6 +114,8 @@ CLOSED_CANDIDATES = ("linear.app", "notion.com", "app.slack.com", "github.com", 
 DEMO_APP = "Omarchy reply demo"
 DEMO_STATE = os.path.expanduser("~/.local/state/omarchy/notifications/reply-demo")
 DEMO_REPLY = os.path.join(DEMO_STATE, "reply.json")
+# Written by the shell, newest first.
+HISTORY = os.path.expanduser("~/.local/state/omarchy/notifications/history.json")
 
 
 def identity(n):
@@ -130,35 +125,18 @@ def identity(n):
   return dict(app=n.get("app") or FALLBACK_APP, icon=n.get("icon") or "")
 
 
-def bounded_output(command, limit=65536, timeout=5):
-  """stdout of a helper, capped in size and time."""
-  with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as proc:
-    data = bytearray()
-    deadline = time.monotonic() + timeout
-    try:
-      with selectors.DefaultSelector() as selector:
-        selector.register(proc.stdout, selectors.EVENT_READ)
-        while True:
-          remaining = deadline - time.monotonic()
-          if remaining <= 0 or not selector.select(remaining):
-            raise TimeoutError("demo helper deadline")
-          block = os.read(proc.stdout.fileno(), min(4096, limit + 1 - len(data)))
-          if not block:
-            break
-          data.extend(block)
-          if len(data) > limit:
-            raise ValueError("demo helper output limit")
-      if proc.wait(timeout=max(.01, deadline - time.monotonic())) != 0:
-        raise ValueError("demo helper failed")
-      return data.decode("utf-8")
-    finally:
-      if proc.poll() is None:
-        proc.terminate()
-        try:
-          proc.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-          proc.kill()
-          proc.wait()
+def write_private_json(path, value):
+  """Replace `path` whole, readable only by you."""
+  directory = os.path.dirname(path)
+  os.makedirs(directory, mode=0o700, exist_ok=True)
+  fd, temp = tempfile.mkstemp(prefix=".reply-", dir=directory)
+  try:
+    with os.fdopen(fd, "w") as f:
+      json.dump(value, f, separators=(",", ":"))
+    os.replace(temp, path)
+  finally:
+    if os.path.exists(temp):
+      os.unlink(temp)
 
 
 class Bus:
@@ -219,10 +197,13 @@ class Bus:
 def replay(limit, match):
   """The last `limit` notifications from history, oldest first."""
   try:
-    rows = json.loads(bounded_output(STORE + ["history", str(limit)],
-                                     limit=2 * 1024 * 1024, timeout=55) or "[]")
-  except HELPER_ERRORS:
+    with open(HISTORY, encoding="utf-8") as f:
+      rows = json.loads(f.read(2 * 1024 * 1024) or "[]")
+  except (OSError, ValueError, RecursionError):
     rows = []
+  if not isinstance(rows, list):
+    rows = []
+  rows = rows[:max(0, limit)]
   needle = (match or "").lower()
   out = []
   for r in reversed(rows):
@@ -268,7 +249,7 @@ def routing_scene():
 def reply_scene():
   """A short-lived stand-in phone message with no real phone behind it."""
   who, message = "Seif Lotfy", "did you get the build working in the end?"
-  write_json(os.path.join(DEMO_STATE, "notification.json"),
+  write_private_json(os.path.join(DEMO_STATE, "notification.json"),
              dict(token=secrets.token_hex(16), created=time.time(), title=who, text=message))
   return [dict(app="KDE Connect", icon="whatsapp", summary=DEMO_APP, body="%s: %s" % (who, message))]
 

@@ -125,7 +125,7 @@ function normalise(row) {
 function restored(entry) {
   if (!entry || !entry.key) return null
   var row = normalise(entry)
-  // The store drops link/meeting/phone on write so a stored entry cannot
+  // persistable() drops link/meeting/phone so a stored entry cannot
   // assert capabilities. Recompute them from the text and re-validate. Codes
   // are not recomputed: a redacted entry has nothing left to find.
   var found = Detect.scan(row.summary, row.body)
@@ -138,93 +138,190 @@ function restored(entry) {
   return row
 }
 
-function parseList(text) {
-  try {
-    if (String(text || "").length > 100 * Security.MAX_HISTORY_ENTRY_BYTES) return []
-    var value = JSON.parse(String(text || "[]"))
-    if (!Array.isArray(value)) return []
-    value = value.slice(0, 100)
-    for (var i = 0; i < value.length; i++) {
-      // Image handles lived in the previous shell; read back they are broken
-      // boxes that also stop a real icon from being looked up.
-      value[i] = normalise(value[i])
-      value[i].image = ""
-    }
-    return value
-  } catch (e) {
-    return []
-  }
-}
+// ------------------------------------------------------------ persistence
+//
+// Service.qml keeps three files in ~/.local/state/omarchy/notifications/:
+// live.json (the rows on screen, oldest first, restored after a restart),
+// history.json (closed rows, newest first) and quiet.json. A row goes through
+// persistable() on the way out and again on the way back in, so one an older
+// build or another program wrote is held to today's rules.
 
-// One writer, one queue: two Processes racing on a key could let a close
-// overtake its put.
-var _queue = []
-var _busy = false
+var KEY = /^[A-Za-z0-9_-]{1,120}$/
+var LIVE_LIMIT = 100
+var HISTORY_LIMIT = 100
+var RETENTION_HOURS = [0, 1, 24, 168]
+// A live row is what a restored card draws; a history row is a one-line
+// preview in the panel, so its text is cut much shorter.
+var LIVE_ROW_CHARS = 16384
+var HISTORY_ROW_CHARS = 4096
+// The closing reasons that mean "this never reached the screen".
+var HELD_REASONS = ["snoozed", "silenced"]
 
-// A pending put for the same row, or a pending settings save, is replaced by
-// the newer one, so a burst of replacements cannot crowd out a close. Only
-// puts are ever dropped.
-function write(proc, bin, verb, payload, args) {
-  var job = { bin: bin, verb: verb, payload: verb === "put" ? persistable(payload) : payload, args: args || [] }
-  var merges = verb === "put" || verb === "quiet-save" || verb === "policy"
-  for (var i = _queue.length - 1; merges && i >= 0; i--) {
-    var queued = _queue[i]
-    if (verb === "put" && queued.verb === "close" && queued.args[0] === job.payload.key) break
-    if (queued.verb === verb && (verb !== "put" || queued.payload.key === job.payload.key)) {
-      _queue[i] = job
-      return _pump(proc)
-    }
-  }
-  if (verb !== "put" || _queue.length < 256) _queue.push(job)
-  _pump(proc)
-}
+// What a stored row keeps. Derived text is recomputed on restore; codes,
+// links, phones, images and reply handles never persist, so a stored row
+// cannot assert a capability.
+var STORED = ["key", "originalId", "senderPid", "execArgv", "glyph", "app", "appIcon", "summary", "body",
+              "rawBody", "source", "groupKey", "urgency", "expireTimeout", "duration", "ts"]
 
-function _pump(proc) {
-  if (proc.policyReady === false || _busy || _queue.length === 0) return
-  var job = _queue.shift()
-  _busy = true
-  proc.command = [].concat(job.bin, [job.verb], job.args)
-  proc.exited.connect(function done() {
-    proc.exited.disconnect(done)
-    _busy = false
-    _pump(proc)
-  })
-  // stdin must be open before start and closed after the payload, or the
-  // store waits forever for EOF.
-  proc.stdinEnabled = !!job.payload
-  proc.running = true
-  if (job.payload) {
-    proc.write(JSON.stringify(job.payload))
-    proc.stdinEnabled = false
-  }
-}
+function storedSize(row) { return JSON.stringify(row).length }
 
-// The store takes at most 64 KiB of JSON and writes it back ASCII-escaped, so
-// a row is measured that way and its body shortened until it fits. Derived
-// text is recomputed on restore and not sent at all.
-var PERSIST_BYTES = 60000
-
-function escapedLength(value) {
-  var text = JSON.stringify(value), n = 0
-  for (var i = 0; i < text.length; i++) n += text.charCodeAt(i) < 0x80 ? 1 : 6
-  return n
-}
-
-function persistable(row) {
-  var out = sanitiseForPersistence(row)
-  delete out.bodyRich
-  delete out.bodyLine
+// Long text is cut until the row fits: the body first, then the click
+// command, then the summary.
+function persistable(row, limit) {
+  var clean = sanitiseForPersistence(row), out = {}
+  for (var i = 0; i < STORED.length; i++) out[STORED[i]] = clean[STORED[i]]
   if (out.rawBody === out.body) out.rawBody = ""
-  while (escapedLength(out) > PERSIST_BYTES && (out.body || out.rawBody)) {
+  limit = limit || LIVE_ROW_CHARS
+  while (storedSize(out) > limit && (out.body || out.rawBody)) {
     out.body = out.body.slice(0, Math.floor(out.body.length * 3 / 4))
     out.rawBody = out.rawBody.slice(0, Math.floor(out.rawBody.length * 3 / 4))
   }
-  if (escapedLength(out) > PERSIST_BYTES) out.execArgv = ""
+  if (storedSize(out) > limit) out.execArgv = ""
+  while (storedSize(out) > limit && out.summary)
+    out.summary = out.summary.slice(0, Math.floor(out.summary.length * 3 / 4))
   return out
 }
 
-// What a redacted row says, stored in English like any stored value (the
-// store writes the same) and translated where it is shown.
+// A closed row for history, stamped with when and why it closed.
+function closedEntry(row, reason, now) {
+  var out = persistable(row, HISTORY_ROW_CHARS)
+  out.closed_ts = now
+  out.closed_reason = /^[a-z]{1,32}$/.test(String(reason)) ? String(reason) : ""
+  return out
+}
+
+function retentionHours(hours) {
+  return RETENTION_HOURS.indexOf(hours) >= 0 ? hours : 24
+}
+
+// Every entry is somebody's message, so history keeps only the recent past:
+// whichever of the count and the retention hours bites first.
+function retain(entries, hours, now) {
+  var keep = retentionHours(hours), cutoff = now - keep * 3600, out = []
+  for (var i = 0; keep && i < entries.length && out.length < HISTORY_LIMIT; i++)
+    if (entries[i].closed_ts > cutoff) out.push(entries[i])
+  return out
+}
+
+function addHistory(entries, entry, hours, now) {
+  return retain([entry].concat(entries), hours, now)
+}
+
+function held(entries, limit) {
+  var out = []
+  for (var i = 0; i < entries.length && out.length < limit; i++)
+    if (HELD_REASONS.indexOf(entries[i].closed_reason) >= 0) out.push(entries[i])
+  return out
+}
+
+// A newer row for the same key replaces the old one in place; the oldest go
+// once there are more than the deck can hold.
+function putLive(entries, row) {
+  var out = [], replaced = false
+  for (var i = 0; i < entries.length; i++) {
+    if (entries[i].key === row.key) { out.push(row); replaced = true }
+    else out.push(entries[i])
+  }
+  if (!replaced) out.push(row)
+  return out.slice(-LIVE_LIMIT)
+}
+
+function liveEntry(entries, key) {
+  for (var i = 0; i < entries.length; i++) if (entries[i].key === key) return entries[i]
+  return null
+}
+
+function dropLive(entries, key) {
+  return entries.filter(function(entry) { return entry.key !== key })
+}
+
+// Rows read back at startup sit under any that arrived while the file was
+// being read: those are newer.
+function mergeLive(stored, current) {
+  var out = stored.slice()
+  for (var i = 0; i < current.length; i++) out = putLive(out, current[i])
+  return out
+}
+
+// A stored file, read defensively: anything but an array of keyed objects is
+// nothing, an oversized file is not parsed at all, and every row is
+// re-sanitised. History rows must also carry when they closed.
+function parseStored(text, limit, rowChars, history) {
+  var raw = String(text || "")
+  if (!raw.trim() || raw.length > limit * rowChars * 2) return []
+  var value
+  try { value = JSON.parse(raw) } catch (e) { return [] }
+  if (!Array.isArray(value)) return []
+  var out = [], seen = Object.create(null)
+  for (var i = 0; i < value.length && out.length < limit; i++) {
+    var entry = value[i]
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue
+    if (typeof entry.key !== "string" || !KEY.test(entry.key)) continue
+    if (history) {
+      if (typeof entry.closed_ts !== "number" || !isFinite(entry.closed_ts)) continue
+      out.push(closedEntry(entry, entry.closed_reason, entry.closed_ts))
+    } else if (!seen[entry.key]) {
+      seen[entry.key] = true
+      out.push(persistable(entry, rowChars))
+    }
+  }
+  return out
+}
+
+function parseLive(text) { return parseStored(text, LIVE_LIMIT, LIVE_ROW_CHARS, false) }
+function parseHistory(text) { return parseStored(text, HISTORY_LIMIT, HISTORY_ROW_CHARS, true) }
+
+function serialise(entries) { return JSON.stringify(entries) + "\n" }
+
+// Rows for the panel and for replay: every field a ListModel row has.
+function displayRows(entries) {
+  return entries.map(normalise)
+}
+
+// quiet.json: snoozed sources, Do Not Disturb, when silencing began, and
+// whether codes get through. null when there is nothing usable in it.
+function parseQuiet(text) {
+  var raw = String(text || "")
+  if (!raw.trim() || raw.length > 262144) return null
+  var read
+  try { read = JSON.parse(raw) } catch (e) { return null }
+  if (!read || typeof read !== "object" || Array.isArray(read)) return null
+  var snoozes = {}, given = read.snoozes
+  if (given && typeof given === "object" && !Array.isArray(given)) {
+    for (var k in given) {
+      if (k === "__proto__") continue
+      var entry = given[k], until = entry ? Number(entry.until) : NaN
+      if (!entry || typeof entry !== "object" || !isFinite(until)) continue
+      var since = Number(entry.since || 0)
+      snoozes[k] = { until: until, label: Security.bounded(String(entry.label || k), 256),
+                     since: isFinite(since) ? since : 0 }
+    }
+  }
+  var silencedSince = Number(read.silencedSince || 0)
+  return { snoozes: snoozes, dnd: read.dnd === true, silencedSince: isFinite(silencedSince) ? silencedSince : 0,
+           codesBypassQuiet: typeof read.codesBypassQuiet === "boolean" ? read.codesBypassQuiet : null }
+}
+
+function serialiseQuiet(state) {
+  return JSON.stringify({ snoozes: state.snoozes, dnd: !!state.dnd, silencedSince: Number(state.silencedSince || 0),
+                          codesBypassQuiet: !!state.codesBypassQuiet }) + "\n"
+}
+
+// The previous engine kept Do Not Disturb in ~/.local/state/omarchy/notifications.json;
+// it holds until quiet.json is first written.
+function legacyDnd(text) {
+  var raw = String(text || "")
+  if (raw.length > 1048576) return false
+  try {
+    var read = JSON.parse(raw)
+    return !!read && typeof read === "object" && read.dnd === true
+  } catch (e) {
+    return false
+  }
+}
+
+// What a redacted row says, stored in English like any stored value and
+// translated where it is shown.
 var REDACTED_SUMMARY = "Verification notification"
 var REDACTED_BODY = "[redacted]"
 
@@ -237,8 +334,9 @@ function redacted(row) {
 function sanitiseForPersistence(row) {
   var out = normalise(row)
   // Strip literal markup before detection so long attributes cannot push a
-  // code outside the keyword window in a legacy/raw-only entry.
-  var secret = out.codes || out.code || Detect.codes(
+  // code outside the keyword window in a legacy/raw-only entry. A row already
+  // redacted stays exactly as it was written.
+  var secret = out.codes || out.code || redacted(out) || Detect.codes(
       Markup.decodeEntities(out.summary + " " + out.rawBody + " " + out.body)
         .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()).length
   if (secret) {

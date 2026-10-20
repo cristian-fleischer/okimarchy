@@ -9,7 +9,7 @@ The shell is the notification daemon: `shell/plugins/notifications/Service.qml` 
 | `Service.qml` | The daemon: admission, quiet rules, snoozes, the scene clock, click routing, replies, offers, IPC, one layer surface per output |
 | `Toast.qml`, `DeedButton.qml` | One card and its buttons; a card is positioned by the service and animates nothing itself |
 | `NotificationPanel.qml`, `Picker.qml` | The panel and its preferences page, opened from the bar's Dnd indicator (`shell/plugins/bar/indicators/Dnd.qml`) |
-| `Store.js` | Notification snapshots, normalisation, persistence redaction, restore |
+| `Store.js` | Notification snapshots, normalisation, what a stored row keeps, the stored file formats, restore |
 | `Markup.js` | Safe body markup, source lifting (`web:app.slack.com`), KDE Connect forwarding, one-line previews |
 | `Detect.js` | Verification codes, links, meeting links and phone numbers |
 | `Security.js` | URL policy, bounds, the sender image path policy, the `omarchy-exec-argv` and glyph checks |
@@ -17,9 +17,9 @@ The shell is the notification daemon: `shell/plugins/notifications/Service.qml` 
 | `Layout.js` | Pure deck layout: rows in, placements out |
 | `Delivery.js` | Quiet rules, ephemeral rules, bar clearance |
 | `Settings.js` | Defaults and validation for `notifications` in `shell.json` |
-| `helpers/` | Python helpers: `store`, `kdeconnect` |
+| `helpers/kdeconnect` | The KDE Connect reply bridge (Python) |
 
-The JS modules also load in Node: `test/shell.d/notifications-test.sh` covers them without a compositor, and `test/shell.d/notification-helpers-test.sh` covers the helpers.
+The JS modules also load in Node: `test/shell.d/notifications-test.sh` covers them without a compositor, along with the KDE Connect bridge and the startup cleanup.
 
 ## Decks and the scene clock
 
@@ -39,11 +39,21 @@ A click tries, in order: the card's `omarchy-exec-argv` command; the sender's `d
 
 ## Persistence
 
-`helpers/store` keeps one file per notification under `~/.local/state/omarchy/notifications/`: `live/KEY.json` while on screen, moved to `history/<ms>-KEY.json` on close. History is capped at 100 entries and `historyHours` (default 24; `0` keeps none). Text with a verification code is redacted before writing. Rows keep `execArgv` and `glyph`, so a card restored after a shell restart clicks through like the live one; restored cards get a 20s grace. `quiet.json` holds Do Not Disturb, snoozes and the code exception.
+The shell keeps its state in `~/.local/state/omarchy/notifications/` (0700), three JSON files it reads with `FileView` once at startup and rewrites whole:
+
+- `live.json`: the rows on screen, oldest first, put back after a shell restart with a 20s grace (critical ones still wait). At most 100.
+- `history.json`: closed rows, newest first, each with `closed_ts` and `closed_reason`. Capped at 100 entries and `historyHours` (default 24; `0` keeps none). Rows whose reason is `snoozed` or `silenced` were held back by quiet and are what the panel lists under each source.
+- `quiet.json`: `{ snoozes, dnd, silencedSince, codesBypassQuiet }`. While it is still empty, Do Not Disturb is read from the previous engine's `~/.local/state/omarchy/notifications.json`.
+
+`Store.persistable` decides what a row keeps: its scalar fields, never images, reply handles, detected links or phone numbers, or derived text. Text with a verification code is stored only as the redacted placeholder, the click command and glyph included. A live row is cut to 16K characters and a history row, shown as a one-line preview, to 4K. Rows keep `execArgv` and `glyph`, so a card restored after a shell restart clicks through like the live one. Rows are re-checked the same way when read back; a file that is not an array of keyed objects, or is oversized, reads as empty, and a file that does not read back exactly as it would be written is rewritten.
+
+Writes go through one short timer, started (not restarted) by a change, so a burst of arrivals writes each file once and a flood writes at most four times a second; no file is written before it has been read. `FileView` writes atomically, which keeps the mode of the file it replaces, so the files are created at 0600 before anything writes them.
+
+At startup one process makes the directory and those files, and removes older layouts' leftovers, which hold old message content: the per-file `live/` and `history/` directories and `policy.json` of the Python store, the previous engine's `<ms>-<id>.json` popups and `images/`, fetched site icons in `icons/`, and `~/.cache/omarchy/notification-icons/`. A symlink in place of a state file is replaced, and nothing is followed through a symlink. Persistence starts no other process.
 
 ## Replies
 
-A phone notification forwarded by KDE Connect can be answered from its card. KDE Connect keeps an object per phone notification on the session bus with a `sendReply` method, but the desktop notification carries no handle to it, so `helpers/kdeconnect` finds it with `busctl` by exact app name and body text and refuses ambiguous matches; a reply re-matches before it is sent. The demo app `Omarchy reply demo` (`omarchy-dev-notification-demo --scene reply`) is answered from a short-lived private fixture in `reply-demo/` instead, and its reply is saved there rather than sent.
+A phone notification forwarded by KDE Connect can be answered from its card. KDE Connect keeps an object per phone notification on the session bus with a `sendReply` method, but the desktop notification carries no handle to it, so `helpers/kdeconnect` (run as `python3 -I`, only when such a card arrives or is answered) finds it with `busctl` by exact app name and body text and refuses ambiguous matches; a reply re-matches before it is sent. The demo app `Omarchy reply demo` (`omarchy-dev-notification-demo --scene reply`) is answered from a short-lived private fixture in `reply-demo/` instead, and its reply is saved there rather than sent.
 
 ## Icons
 

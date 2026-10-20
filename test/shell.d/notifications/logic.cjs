@@ -116,8 +116,8 @@ for (let i = 0; i < 1000; i++) {
                                ['image://icon//tmp/../etc/x.png', ''], ['/dev/zero', ''], ['image://qsimage/1/2/../3', ''], ['data:image/png;base64,AAAA', '']])
     assert.equal(Store.normalise({ image }).image, kept, image)
   // Images belong to the live sender: never persisted, never read back.
-  assert.equal(Store.persistable({ key: 'p', image: '/tmp/a.png' }).image, '')
-  assert.equal(Store.parseList(JSON.stringify([{ key: 'p', image: '/tmp/a.png' }]))[0].image, '')
+  assert.ok(!('image' in Store.persistable({ key: 'p', image: '/tmp/a.png' })))
+  assert.equal(Store.restored(Store.parseLive(JSON.stringify([{ key: 'p', image: '/tmp/a.png' }]))[0]).image, '')
   assert.equal(Store.normalise({ body: 'hello', bodyRich: '<img src="x">' }).bodyRich, 'hello')
   assert.equal(snap({ body: 'x'.repeat(100000), summary: 'y'.repeat(3000) }).body.length, 32768)
 }
@@ -358,7 +358,8 @@ function runIn(scope, ...names) {
 const capacityFunctions = ['pinDeckDisplay', 'showsOn', 'fullscreenOn', 'awayFrom', 'routeAround', 'rememberRecent', 'recentForPanel',
   'durationFor', 'liveCount', 'reserveLive', 'releaseLive',
   'nextKey', 'rowIndexFor', 'keyForOriginal', 'handleNotification', 'watchNotification', 'showRow', 'release', 'closeToast',
-  'finishClose', 'clearAll', 'clearDeck', 'dismissNewest', 'releaseHeld', 'restoreRows', 'actionsOf', 'dismissOne']
+  'finishClose', 'clearAll', 'clearDeck', 'dismissNewest', 'releaseHeld', 'restoreRows', 'actionsOf', 'dismissOne',
+  'storePut', 'storeClose', 'storeDrop', 'storeRecord', 'saveSoon', 'loadLive']
 
 function newCapacityScope() {
   const toasts = { rows: [],
@@ -373,7 +374,8 @@ function newCapacityScope() {
     maxLiveNotifications: 100, heights: {}, leaving: {}, layoutRevision: 0,
     replyingKey: '', held: [], doNotDisturb: false, globalSnoozeUntil: 0,
     recentRows: [], recentLimit: 20,
-    helperSettingsReady: false,
+    liveEntries: [], historyEntries: [], historyHours: 24, unsaved: {}, liveLoaded: false,
+    saveTimer: { running: false, start() {} },
     configuredDisplayName: 'fixture-display', deckDisplayName: '',
     fullscreenAway: false, fullscreenScope: '', hyprRevision: 0,
     displayNames: ['fixture-display'], focusedDisplayName: 'fixture-display',
@@ -383,9 +385,7 @@ function newCapacityScope() {
     lowDuration: 5000, normalDuration: 8000, maxDuration: 30000,
     snoozedUntil: key => s.snoozes[key] || 0,
     liveSnoozes: () => Object.keys(s.snoozes).map(key => ({ key })),
-    storeProc: {}, storeBin: '',
-    lookForReply: () => {}, Security: S, Delivery,
-    Store: { ...Store, write: () => {} },
+    lookForReply: () => {}, Security: S, Delivery, Store,
     NotificationUrgency: { Critical: 2, Normal: 1, Low: 0 },
     Qt: { callLater: f => later.push(f),
       md5: value => require('node:crypto').createHash('md5').update(value).digest('hex') },
@@ -840,29 +840,201 @@ for (const replay of [false, true]) { // Replay and startup restore share held r
   assert.equal(s.liveCount(), 3)
 }
 
-console.log('notification logic: passed')
 
-{ // A burst of replacements cannot crowd a close or a settings save out of the store queue.
-  const blocked = { policyReady: false }
-  for (let i = 0; i < 400; i++) Store.write(blocked, 'store', 'put', { key: 'k' + (i % 3), summary: 'n' + i })
-  Store.write(blocked, 'store', 'close', null, ['k0', 'dismissed'])
-  Store.write(blocked, 'store', 'put', { key: 'k0', summary: 'after close' })
-  Store.write(blocked, 'store', 'quiet-save', { dnd: true })
-  Store.write(blocked, 'store', 'quiet-save', { dnd: false })
-  assert.deepEqual(Array.from(Store._queue, job => job.verb + ':' + (job.payload ? job.payload.key || job.payload.dnd : job.args[0])),
-                   ['put:k0', 'put:k1', 'put:k2', 'close:k0', 'put:k0', 'quiet-save:false'])
-  assert.equal(Store._queue[1].payload.summary, 'n397')
-  Store._queue.length = 0
+// ---------------------------------------------------------------- persistence
+const plain = value => JSON.parse(JSON.stringify(value))
+// Arrays from the module's own realm compare by value.
+const eq = (actual, expected, message) => assert.deepEqual(plain(actual), plain(expected), message)
+
+{ // A stored row keeps only its scalar fields: no codes, links, phones,
+  // images, reply handles or derived text.
+  const saved = Store.persistable({ key: 'n1', app: 'Chat', summary: 'Hi', body: 'Call +44 7911 123456 or https://example.com',
+    code: '1234', codes: '1234', link: 'https://example.com', meeting: true, phone: '+44 7911 123456', image: '/tmp/a.png',
+    replyPath: '/modules/kdeconnect/devices/d/notifications/1', replyTo: 'Seif', bodyRich: '<b>x</b>', transient: true })
+  eq(Object.keys(saved).sort(), [...Store.STORED].sort())
+  assert.equal(saved.rawBody, '', 'a raw body the same as the body is not stored twice')
 }
 
-{ // A row is saved within the store's 64 KiB, measured as the store writes it back (ASCII-escaped).
-  const blocked = { policyReady: false }
-  for (const body of ['x'.repeat(30000), '中'.repeat(30000), '\u{1F600}'.repeat(16000)]) {
-    Store.write(blocked, 'store', 'put', { key: 'big', summary: 'Long', body, rawBody: body })
-    const saved = Store._queue[Store._queue.length - 1].payload
-    const escaped = JSON.stringify(saved).replace(/[^\x00-\x7f]/g, '\\uXXXX')
-    assert.ok(escaped.length <= 60000, escaped.length)
-    assert.ok(saved.body.length > 1000 && !('bodyRich' in saved) && !('bodyLine' in saved))
-    Store._queue.length = 0
+{ // Codes persist only as the redacted placeholder, on write and on read back,
+  // while numbered ordinary messages survive whole.
+  const secrets = [{ code: '938271', body: '938271' }, { codes: '938271', rawBody: '&#57;38271' }, { body: 'Your code is 938271' },
+    { body: 'Your code is G-938271' }, { body: 'Your OTP is 938 271' }, { body: 'Your OTP is 938\t271' }, { body: 'Your OTP is 938\n271' },
+    { body: 'Your code is 72-9182' }, { body: 'Your code is A9F3K2' }, { body: 'Your code is &#57;38271' },
+    { body: 'Your code is &amp;#57;38271' }, { body: 'Your OTP is 938<br/>271' },
+    { body: 'Your code to finish signing in to your account in this browser is 938271' },
+    { body: '938271 is your verification code' }, { body: 'Please confirm 938271' }, { body: 'Your security key is 938271' },
+    { body: 'Your Verification Code is 938271' }, { summary: 'Your code is', body: '938271' }, { summary: 'Your OTP is 938271' },
+    { rawBody: 'Your OTP is 938\n271', body: 'Open the app' }]
+  for (const text of secrets) {
+    const entry = { key: 'k', urgency: 1, app: 'alternate-secret', source: 'alternate-secret', appIcon: 'alternate-secret',
+                    replyTo: 'alternate-secret', image: '/etc/passwd', glyph: '\u{f0306}',
+                    execArgv: JSON.stringify(['xdg-open', 'https://example.com/938271']), ...text }
+    for (const saved of [Store.persistable(entry), Store.parseLive(JSON.stringify([entry]))[0],
+                         Store.parseHistory(JSON.stringify([{ ...entry, closed_ts: 1 }]))[0]]) {
+      assert.ok(Store.redacted(Store.restored(saved)), JSON.stringify(text))
+      eq([saved.app, saved.source, saved.appIcon, saved.glyph, saved.execArgv], ['', '', '', '', ''])
+      assert.ok(!/938|9182|A9F3K2|alternate|passwd/.test(JSON.stringify(saved)), JSON.stringify(saved))
+    }
+  }
+  for (const [app, summary, body] of [['Visual Studio Code', 'Build finished', 'Build 4123 completed successfully'],
+      ['Assistant', 'Task finished', 'Claude Code finished build 4123'], ['Chat', 'New message', 'Please review the code from 2025'],
+      ['VS Code', 'Build finished', 'VS Code finished build 4123'], ['Xcode', 'Build finished', 'Xcode build 4123 completed'],
+      ['Chat', 'Review requested', 'Please review code abc123'], ['OTP Monitor', 'Build finished', 'Build 4123 completed successfully'],
+      ['Auth', 'Verification completed successfully', 'Account ready'], ['Settings', 'PIN configuration updated', 'Settings saved']]) {
+    const [saved] = Store.parseLive(JSON.stringify([Store.persistable({ key: 'notification-4123', app, summary, body, urgency: 1 })]))
+    eq([saved.app, saved.summary, saved.body], [app, summary, body], body)
   }
 }
+
+{ // Rows are bounded: a live row stays restorable, a history row stays small,
+  // and text is cut from the end before the click command goes.
+  const argv = JSON.stringify(['notify-send', 'x'.repeat(3000)])
+  for (const body of ['x'.repeat(30000), '中'.repeat(30000), '\u{1F600}'.repeat(16000), '\u0001'.repeat(30000)]) {
+    const live = Store.persistable({ key: 'big', summary: 'Long', body, rawBody: 'raw ' + body, execArgv: argv })
+    assert.ok(JSON.stringify(live).length <= Store.LIVE_ROW_CHARS)
+    assert.ok(live.body.length > 500 && body.startsWith(live.body) && live.execArgv === argv)
+    const closed = Store.closedEntry(live, 'dismissed', 1)
+    assert.ok(JSON.stringify(closed).length <= Store.HISTORY_ROW_CHARS + 64)
+    assert.ok(body.startsWith(closed.body) && closed.rawBody.startsWith('raw '))
+  }
+  const huge = Store.closedEntry({ key: 'h', summary: '\u0001'.repeat(2048), body: 'b', execArgv: JSON.stringify(['run', 'y'.repeat(4000)]) }, 'x', 1)
+  assert.ok(JSON.stringify(huge).length <= Store.HISTORY_ROW_CHARS + 64)
+  assert.equal(huge.execArgv, '')
+}
+
+{ // History is newest first, capped, and only as old as historyHours allows.
+  const now = 1e6, entry = (key, age, reason = 'dismissed') => ({ key, closed_ts: now - age, closed_reason: reason })
+  let history = []
+  for (let i = 0; i < 150; i++) history = Store.addHistory(history, entry('n' + i, 150 - i), 24, now)
+  assert.equal(history.length, 100)
+  assert.equal(history[0].key, 'n149')
+  eq(Store.retain([entry('a', 60), entry('b', 3599), entry('c', 3601)], 1, now).map(e => e.key), ['a', 'b'])
+  eq(Store.retain([entry('a', 60)], 0, now), [])
+  eq(Store.addHistory([], entry('a', 0), 0, now), [], 'historyHours 0 keeps none')
+  assert.equal(Store.retain([entry('a', 25 * 3600)], 168, now).length, 1)
+  assert.equal(Store.retain([entry('a', 25 * 3600)], 5, now).length, 0, 'an unknown retention is the default day')
+  // Held back means quiet kept it off the screen.
+  const rows = [entry('a', 1, 'snoozed'), entry('b', 2, 'dismissed'), entry('c', 3, 'silenced'), entry('d', 4, 'snoozed')]
+  eq(Store.held(rows, 2).map(e => e.key), ['a', 'c'])
+  assert.equal(Store.closedEntry({ key: 'x' }, 'Bad reason!', 1).closed_reason, '')
+}
+
+{ // Live rows: one per key, replaced in place, the oldest dropped past capacity.
+  let live = []
+  for (let i = 0; i < 120; i++) live = Store.putLive(live, { key: 'n' + i })
+  assert.equal(live.length, 100)
+  assert.equal(live[0].key, 'n20')
+  live = Store.putLive(live, { key: 'n50', summary: 'updated' })
+  assert.equal(live.length, 100)
+  assert.equal(live[30].summary, 'updated')
+  assert.equal(Store.liveEntry(live, 'n50').summary, 'updated')
+  assert.equal(Store.liveEntry(Store.dropLive(live, 'n50'), 'n50'), null)
+  const merged = Store.mergeLive([{ key: 'a', summary: 'stored' }, { key: 'b' }], [{ key: 'a', summary: 'arrived' }, { key: 'c' }])
+  eq(merged.map(e => e.key + (e.summary ? ':' + e.summary : '')), ['a:arrived', 'b', 'c'])
+}
+
+{ // Hostile or broken files read as nothing, never as a crash or a capability.
+  for (const text of ['', '   ', 'not json', '{"key":"a"}', '"text"', '42', 'null', '[1, "a", null, [], true]',
+                      '[{"summary":"no key"}]', '[{"key":"../escape"}]', '[{"key":""}]', '[{"key":7}]',
+                      '[{"key":"' + 'k'.repeat(121) + '"}]', '[' + '['.repeat(5000) + ']'.repeat(5000) + ']'])
+    for (const parse of [Store.parseLive, Store.parseHistory]) eq(parse(text), [], text.slice(0, 40))
+  const big = JSON.stringify(Array.from({ length: 150 }, (_, i) => ({ key: 'n' + i, summary: 's', closed_ts: 1 })))
+  assert.equal(Store.parseLive(big).length, 100)
+  assert.equal(Store.parseHistory(big).length, 100)
+  eq(Store.parseLive(' '.repeat(Store.LIVE_LIMIT * Store.LIVE_ROW_CHARS * 2 + 1) + '[{"key":"a"}]'), [],
+                   'an oversized file is not parsed at all')
+  const [row] = Store.parseLive(JSON.stringify([{ key: '__proto__', summary: 's', image: '/tmp/a.png', bodyRich: '<img src=x>',
+    link: 'https://evil.example/', meeting: true, phone: '+1 555 0100', replyPath: '/x', urgency: 'high', ts: 'soon', glyph: '\n' }]))
+  eq([row.key, row.image, row.link, row.phone, row.replyPath, row.urgency, row.ts, row.glyph, 'bodyRich' in row],
+                   ['__proto__', undefined, undefined, undefined, undefined, 1, 0, '', false])
+  assert.equal(Store.parseLive('[{"key":"a","summary":"first"},{"key":"a","summary":"second"}]').length, 1)
+  // The previous engine's rows had no key; rows without a close time are not history.
+  eq(Store.parseHistory('[{"id":7,"summary":"Legacy","timestamp":1},{"key":"n1","summary":"open"}]'), [])
+  eq(Store.parseHistory('[{"key":"n1","closed_ts":"1"},{"key":"n2","closed_ts":1e999}]'), [])
+}
+
+{ // What is written reads back as itself, so a clean file is never rewritten.
+  const rows = [Store.persistable(snap({ appName: 'Google Chrome', summary: '#design',
+                  body: '<a href="https://app.slack.com/">app.slack.com</a>\n\nGurbinder: <b>look</b>',
+                  hints: { 'omarchy-exec-argv': JSON.stringify(['omarchy-update']), 'omarchy-glyph': '\u{f0954}' } }, 'n1')),
+                Store.persistable({ key: 'n2', summary: 'Your code is 938271' }),
+                Store.persistable({ key: 'n3', body: '中'.repeat(30000) })]
+  const text = Store.serialise(rows)
+  assert.equal(Store.serialise(Store.parseLive(text)), text)
+  const history = rows.map((row, i) => Store.closedEntry(row, 'expired', 1000 + i))
+  assert.equal(Store.serialise(Store.parseHistory(Store.serialise(history))), Store.serialise(history))
+  // Restored, a card clicks through and draws its glyph like the live one.
+  const restored = Store.restored(Store.parseLive(text)[0])
+  eq([restored.restored, restored.duration, restored.execArgv, restored.glyph, restored.source],
+                   [true, Store.RESTORE_GRACE, '["omarchy-update"]', '\u{f0954}', 'app.slack.com'])
+  assert.equal(Store.displayRows(history)[0].bodyLine, restored.bodyLine)
+}
+
+{ // quiet.json keeps today's shape, and anything else in it is ignored.
+  const state = { snoozes: { 'web:app.slack.com': { until: 2e9, label: 'Slack', since: 1e9 } }, dnd: true, silencedSince: 5,
+                  codesBypassQuiet: false }
+  eq(Store.parseQuiet(Store.serialiseQuiet(state)), state)
+  eq(JSON.parse(Store.serialiseQuiet(state)), state)
+  for (const text of ['', 'nope', '[]', '"dnd"', 'null'])
+    assert.equal(Store.parseQuiet(text), null, text)
+  const odd = Store.parseQuiet('{"snoozes":{"__proto__":{"until":1},"a":{"until":"x"},"b":null,"c":{"until":5,"label":7}},' +
+                               '"dnd":"yes","silencedSince":"later","codesBypassQuiet":"no"}')
+  eq(odd, { snoozes: { c: { until: 5, label: '7', since: 0 } }, dnd: false, silencedSince: 0, codesBypassQuiet: null })
+  assert.ok(!('until' in odd.snoozes), 'a __proto__ key cannot replace the prototype')
+  assert.equal(Store.legacyDnd('{"version":3,"dnd":true}'), true)
+  for (const text of ['', '{"dnd":"true"}', '[true]', 'garbage']) assert.equal(Store.legacyDnd(text), false, text)
+}
+
+{ // The service: shown rows are saved live, closed ones move to history, quiet
+  // ones go straight there, and ephemeral ones are never written.
+  const s = newCapacityScope()
+  s.admit(s.fakeNotification(1, 'Shown'))
+  const key = s.keyForOriginal(1)
+  eq(s.liveEntries.map(e => e.summary), ['Shown'])
+  s.finishClose(key, 'expired')
+  eq([s.liveEntries.length, s.historyEntries[0].summary, s.historyEntries[0].closed_reason], [0, 'Shown', 'expired'])
+  s.doNotDisturb = true
+  s.handleNotification(s.fakeNotification(2, 'Silenced'))
+  const quiet = s.fakeNotification(3, 'Ephemeral')
+  quiet.appName = 'notify-send'
+  s.handleNotification(quiet)
+  eq(s.historyEntries.map(e => e.summary + ':' + e.closed_reason), ['Silenced:silenced', 'Shown:expired'])
+  eq(Store.held(s.historyEntries, 10).map(e => e.summary), ['Silenced'])
+  assert.equal(s.liveEntries.length, 0)
+  assert.ok(s.unsaved.live && s.unsaved.history)
+  s.historyHours = 0
+  s.doNotDisturb = false
+  s.admit(s.fakeNotification(4, 'Unrecorded'))
+  s.finishClose(s.keyForOriginal(4), 'dismissed')
+  eq(s.historyEntries, [])
+}
+
+{ // A pending card silenced before it showed leaves nothing to restore.
+  const s = newCapacityScope()
+  s.pointerHolding = true
+  const pending = s.fakeNotification(1, 'Pending')
+  s.handleNotification(pending)
+  assert.equal(s.liveEntries.length, 1)
+  s.doNotDisturb = true
+  pending.replace({ summary: 'Silenced update' })
+  s.drainCallLater()
+  eq([s.liveEntries.length, s.historyEntries[0].summary], [0, 'Silenced update'])
+}
+
+{ // Startup restore: stored rows come back under any newer arrival, and a row
+  // with no room is not kept to haunt the next restart.
+  const s = newCapacityScope()
+  s.admit(s.fakeNotification(1, 'Arrived first'))
+  const text = Store.serialise([...Array.from({ length: 100 }, (_, i) => Store.persistable({ key: 'old' + i, summary: 'Old ' + i }))])
+  s.loadLive(text)
+  s.drainCallLater()
+  assert.equal(s.toasts.count, 100)
+  assert.equal(s.liveEntries.length, 100)
+  assert.ok(s.liveEntries.every(e => s.liveKeys[e.key]))
+  assert.equal(s.liveEntries[99].summary, 'Arrived first')
+  assert.ok(s.toasts.rows.filter(r => r.restored).every(r => r.duration === Store.RESTORE_GRACE))
+  s.loadLive('[]')
+  assert.equal(s.liveEntries.length, 100, 'a second load event is ignored')
+}
+
+console.log('notification logic: passed')

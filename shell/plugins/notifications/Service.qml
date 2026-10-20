@@ -30,8 +30,6 @@ Item {
   property var shell: null
 
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
-  // -E -s: no PYTHON* variables or user site; the store imports its sibling module.
-  readonly property var storeBin: ["/usr/bin/python3", "-B", "-E", "-s", Qt.resolvedUrl("helpers/store").toString().replace(/^file:\/\//, "")]
   // -I: no PYTHON* variables, user site or script directory on its path.
   readonly property var kdeBin: ["/usr/bin/python3", "-I", Qt.resolvedUrl("helpers/kdeconnect").toString().replace(/^file:\/\//, "")]
 
@@ -82,17 +80,9 @@ Item {
     if (configuredCodesBypassQuiet !== null) setCodesBypassQuiet(configuredCodesBypassQuiet)
   }
 
+  // A shorter retention applies at once to what is already kept.
   readonly property int historyHours: preferences.historyHours
-  onHistoryHoursChanged: if (helperSettingsReady) setHistoryHours(historyHours)
-  function setHistoryHours(hours) {
-    Store.write(storeProc, storeBin, "policy", { historyHours: hours })
-  }
-
-  // ------------------------------------------------------------- store
-  //
-  // Nothing is written until the shell config has been read, so history is
-  // trimmed to the saved historyHours rather than the default.
-  property bool helperSettingsReady: false
+  onHistoryHoursChanged: currentHistory()
 
   // ------------------------------------------------------------- displays
   //
@@ -426,11 +416,7 @@ Item {
   }
 
   // Persisted: nothing on screen says the desktop is quiet, so a reload must not lift it.
-  function saveQuiet() {
-    Store.write(storeProc, storeBin, "quiet-save",
-                { snoozes: snoozes, dnd: doNotDisturb, silencedSince: silencedSince,
-                  codesBypassQuiet: codesBypassQuiet })
-  }
+  function saveQuiet() { saveSoon("quiet") }
 
   // Wakes the bindings so a snooze that has run out stops being counted, and
   // drops it from the map. Only runs while something is actually snoozed.
@@ -491,46 +477,25 @@ Item {
 
   // ------------------------------------------------------- what was held
   //
-  // Read on demand when the panel opens.
+  // Drawn from history when the panel opens: what quiet kept off the screen.
   property var heldRows: []
   property int heldRevision: 0
   readonly property int heldLimit: 80
 
-  function refreshHeld() { if (helperSettingsReady && !heldProc.running) heldProc.running = true }
-
-  Process {
-    id: heldProc
-    running: false
-    command: service.storeBin.concat(["held", String(service.heldLimit)])
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        service.heldRows = Store.parseList(text)
-        service.heldRevision += 1
-      }
-    }
+  function refreshHeld() {
+    heldRows = Store.displayRows(Store.held(currentHistory(), heldLimit))
+    heldRevision += 1
   }
 
   // ---------------------------------------------------- notification history
   //
-  // The redacted log on disk, newest first, capped and aged out by the store.
+  // The redacted log (see store below), newest first, read when the panel opens.
   property var historyRows: []
   property int historyRevision: 0
-  readonly property int historyLimit: 100
 
-  function refreshHistory() { if (helperSettingsReady && !historyProc.running) historyProc.running = true }
-
-  Process {
-    id: historyProc
-    running: false
-    command: service.storeBin.concat(["history", String(service.historyLimit)])
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        service.historyRows = Store.parseList(text)
-        service.historyRevision += 1
-      }
-    }
+  function refreshHistory() {
+    historyRows = Store.displayRows(currentHistory())
+    historyRevision += 1
   }
 
   // When the quiet holding this source began: the earliest of the reasons
@@ -884,18 +849,20 @@ Item {
       codesBypassQuiet: codesBypassQuiet
     })
     if (muted) {
-      if (!Delivery.isEphemeral(row)) {
-        Store.write(storeProc, storeBin, "put", row)
-        Store.write(storeProc, storeBin, "close", null, [key, muted])
-      }
+      if (!Delivery.isEphemeral(row)) storeRecord(row, muted)
       release(key)
-      // A replacement for a card already on screen leaves that card as it was.
-      if (rowIndexFor(key) < 0) releaseLive(key)
-      else liveKeys[key].row = null
+      // A replacement for a card already on screen leaves that card as it was;
+      // one still waiting to be shown is gone, and so is its saved row.
+      if (rowIndexFor(key) < 0) {
+        releaseLive(key)
+        storeDrop(key)
+      } else {
+        liveKeys[key].row = null
+      }
       return
     }
 
-    Store.write(storeProc, storeBin, "put", row)
+    storePut(row)
     lookForReply(row)
 
     // Only a new card waits while the deck is held; an update changes a card in place.
@@ -1037,7 +1004,7 @@ Item {
     if (at >= 0) toasts.remove(at)
     delete heights[key]
     // A placeholder (the empty-history notice) was never recorded.
-    if (key.indexOf("placeholder") !== 0) Store.write(storeProc, storeBin, "close", null, [key, reason])
+    if (key.indexOf("placeholder") !== 0) storeClose(key, reason)
     layoutRevision += 1
   }
 
@@ -1448,11 +1415,189 @@ Item {
   }
 
   // ------------------------------------------------------------- store
-  Process {
-    id: storeProc
-    running: false
-    property bool policyReady: service.helperSettingsReady
+  //
+  // State, not cache, in ~/.local/state/omarchy/notifications/: live.json (on
+  // screen), history.json and quiet.json, formats in Store.js. Each file is
+  // read once at startup and rewritten whole a moment after it changes, so a
+  // burst of arrivals writes it once.
+  readonly property string stateDir: Quickshell.env("HOME") + "/.local/state/omarchy/notifications"
+  property bool storeReady: false
+  property bool liveLoaded: false
+  property bool historyLoaded: false
+  property bool quietLoaded: false
+  property bool legacyQuietWanted: false
+  // Persisted rows: on screen oldest first, history newest first.
+  property var liveEntries: []
+  property var historyEntries: []
+  property var unsaved: ({})
+
+  function storePut(row) {
+    liveEntries = Store.putLive(liveEntries, Store.persistable(row))
+    saveSoon("live")
   }
+
+  // A row that closes moves from live to history.
+  function storeClose(key, reason) {
+    var entry = Store.liveEntry(liveEntries, key)
+    if (!entry) return
+    storeDrop(key)
+    storeRecord(entry, reason)
+  }
+
+  function storeDrop(key) {
+    if (!Store.liveEntry(liveEntries, key)) return
+    liveEntries = Store.dropLive(liveEntries, key)
+    saveSoon("live")
+  }
+
+  // Straight to history: a row that closed, or one quiet kept off the screen.
+  function storeRecord(row, reason) {
+    var now = Date.now() / 1000
+    historyEntries = Store.addHistory(historyEntries, Store.closedEntry(row, reason, now), historyHours, now)
+    saveSoon("history")
+  }
+
+  // History as of now: rows past their retention go, from disk too.
+  function currentHistory() {
+    var kept = Store.retain(historyEntries, historyHours, Date.now() / 1000)
+    if (kept.length !== historyEntries.length) {
+      historyEntries = kept
+      saveSoon("history")
+    }
+    return kept
+  }
+
+  function saveSoon(file) {
+    unsaved[file] = true
+    if (!saveTimer.running) saveTimer.start()
+  }
+
+  // Started, never restarted, so a flood still writes every quarter second.
+  Timer {
+    id: saveTimer
+    interval: 250
+    onTriggered: service.flushStore()
+  }
+
+  // A file is written only once it has been read, so startup never
+  // overwrites what the last session left; its loader saves again.
+  function flushStore() {
+    if (unsaved.live && liveLoaded) {
+      delete unsaved.live
+      liveFile.setText(Store.serialise(liveEntries))
+    }
+    if (unsaved.history && historyLoaded) {
+      delete unsaved.history
+      historyFile.setText(Store.serialise(historyEntries))
+    }
+    if (unsaved.quiet && quietLoaded) {
+      delete unsaved.quiet
+      quietFile.setText(Store.serialiseQuiet({ snoozes: snoozes, dnd: doNotDisturb, silencedSince: silencedSince,
+                                               codesBypassQuiet: codesBypassQuiet }))
+    }
+  }
+
+  function loadLive(text) {
+    if (liveLoaded) return
+    var stored = Store.parseLive(text)
+    liveLoaded = true
+    restoreRows(stored, false)
+    // A row with no room to come back is not on screen to close later, and
+    // anything that arrived while the file was being read is newer.
+    liveEntries = Store.mergeLive(stored.filter(function(entry) { return !!service.liveKeys[entry.key] }), liveEntries)
+    if (unsaved.live || Store.serialise(liveEntries) !== String(text)) saveSoon("live")
+  }
+
+  function loadHistory(text) {
+    if (historyLoaded) return
+    historyEntries = Store.retain(historyEntries.concat(Store.parseHistory(text)), historyHours, Date.now() / 1000)
+    historyLoaded = true
+    if (unsaved.history || Store.serialise(historyEntries) !== String(text)) saveSoon("history")
+  }
+
+  // An empty quiet.json has never been written: the previous engine's Do Not
+  // Disturb holds until it is.
+  function loadQuiet(text) {
+    if (quietLoaded || legacyQuietWanted) return
+    if (String(text || "").trim()) applyQuiet(Store.parseQuiet(text))
+    else legacyQuietWanted = true
+  }
+
+  function applyQuiet(read) {
+    if (quietLoaded) return
+    if (read) {
+      snoozes = read.snoozes
+      doNotDisturb = read.dnd
+      silencedSince = read.silencedSince
+      if (read.codesBypassQuiet !== null) codesBypassQuiet = read.codesBypassQuiet
+    }
+    if (configuredCodesBypassQuiet !== null) codesBypassQuiet = configuredCodesBypassQuiet
+    quietLoaded = true
+    snoozeRevision += 1
+    if (unsaved.quiet) saveSoon("quiet")
+  }
+
+  // The files exist before anything writes them, at 0600; an atomic write
+  // keeps the mode of the file it replaces.
+  FileView {
+    id: liveFile
+    path: service.storeReady ? service.stateDir + "/live.json" : ""
+    atomicWrites: true
+    printErrors: false
+    onLoaded: service.loadLive(text())
+    onLoadFailed: service.loadLive("")
+  }
+
+  FileView {
+    id: historyFile
+    path: service.storeReady ? service.stateDir + "/history.json" : ""
+    atomicWrites: true
+    printErrors: false
+    onLoaded: service.loadHistory(text())
+    onLoadFailed: service.loadHistory("")
+  }
+
+  FileView {
+    id: quietFile
+    path: service.storeReady ? service.stateDir + "/quiet.json" : ""
+    atomicWrites: true
+    printErrors: false
+    onLoaded: service.loadQuiet(text())
+    onLoadFailed: service.loadQuiet("")
+  }
+
+  FileView {
+    id: legacyQuietFile
+    path: service.legacyQuietWanted ? Quickshell.env("HOME") + "/.local/state/omarchy/notifications.json" : ""
+    printErrors: false
+    onLoaded: service.applyQuiet({ snoozes: {}, dnd: Store.legacyDnd(text()), silencedSince: 0, codesBypassQuiet: null })
+    onLoadFailed: service.applyQuiet(null)
+  }
+
+  // Once at startup: the private directory and its files, and the leftovers
+  // of older layouts, which hold old message content (per-file rows, the
+  // previous engine's popups and images, fetched site icons and their
+  // published copies). rm and find never follow a symlink they are given.
+  Process {
+    id: storePrepare
+    command: ["bash", "-c",
+      "umask 077\n" +
+      "dir=$1\n" +
+      "mkdir -p -- \"$dir\" && chmod 700 -- \"$dir\" || exit 1\n" +
+      "rm -rf -- \"$dir/live\" \"$dir/history\" \"$dir/images\" \"$dir/icons\" \"$dir/policy.json\" \"$2\"\n" +
+      "find \"$dir/\" -maxdepth 1 -type f \\( -regex '.*/[0-9]+-[^/]+\\.json' -o -name '.omarchy-notification-*' \\) -delete\n" +
+      "for name in live.json history.json quiet.json; do\n" +
+      "  file=$dir/$name\n" +
+      "  if [[ -L $file ]]; then rm -f -- \"$file\"; fi\n" +
+      "  if [[ -f $file ]]; then chmod 600 -- \"$file\"; elif [[ ! -e $file ]]; then : >\"$file\"; fi\n" +
+      "done\n",
+      "omarchy-notifications-state", service.stateDir, Quickshell.env("HOME") + "/.cache/omarchy/notification-icons"]
+    onExited: function(code) { service.storeReady = code === 0 }
+  }
+
+  Component.onCompleted: storePrepare.running = true
+  // A reload or a clean exit inside the save delay still writes.
+  Component.onDestruction: flushStore()
 
   function restoreRows(rows, replay) {
     // Restore is oldest first; history is newest first. Both insert at zero.
@@ -1470,58 +1615,6 @@ Item {
       showRow(row)
     }
   }
-
-  Process {
-    id: restoreProc
-    running: false
-    command: service.storeBin.concat(["restore"])
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: service.restoreRows(Store.parseList(text), false)
-    }
-  }
-
-  Process {
-    id: quietRestoreProc
-    running: false
-    command: service.storeBin.concat(["quiet"])
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        try {
-          var read = JSON.parse(String(text) || "{}")
-          if (read && typeof read === "object") {
-            if (read.snoozes && typeof read.snoozes === "object") service.snoozes = read.snoozes
-            service.doNotDisturb = read.dnd === true
-            service.silencedSince = Number(read.silencedSince || 0)
-            if (read.codesBypassQuiet !== undefined)
-              service.codesBypassQuiet = read.codesBypassQuiet === true
-          }
-        } catch (e) {}
-        if (service.configuredCodesBypassQuiet !== null)
-          service.codesBypassQuiet = service.configuredCodesBypassQuiet
-        service.snoozeRevision += 1
-      }
-    }
-  }
-
-  // Startup housekeeping: aged history and leftovers.
-  Process {
-    id: tidyProc
-    running: false
-    command: service.storeBin.concat(["tidy"])
-  }
-
-  // The shell config is read before the service is created, so the store
-  // starts on the next tick with the saved historyHours already in force.
-  Component.onCompleted: Qt.callLater(function() {
-    service.helperSettingsReady = true
-    service.setHistoryHours(service.historyHours)
-    restoreProc.running = true
-    quietRestoreProc.running = true
-    tidyProc.running = true
-    Store._pump(storeProc)
-  })
 
   // ------------------------------------------------------------- server
   NotificationServer {
@@ -1541,22 +1634,12 @@ Item {
   // The last few come back as restored rows: no live sender, a short grace.
   readonly property int replayCount: 6
 
-  Process {
-    id: replayProc
-    running: false
-    command: service.storeBin.concat(["history", String(service.replayCount)])
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        var rows = Store.parseList(text)
-        // Replaying nothing at all looks like a dead keybinding, so say so.
-        if (rows.length === 0) service.showPlaceholder(I18n.t("notifications.noneRecent"))
-        else service.restoreRows(rows, true)
-      }
-    }
+  function replayHistory() {
+    var rows = currentHistory().slice(0, replayCount)
+    // Replaying nothing at all looks like a dead keybinding, so say so.
+    if (rows.length === 0) showPlaceholder(I18n.t("notifications.noneRecent"))
+    else restoreRows(rows, true)
   }
-
-  function replayHistory() { if (helperSettingsReady && !replayProc.running) replayProc.running = true }
 
   function showPlaceholder(summary) {
     var key = "placeholder" + nextKey()
@@ -1648,11 +1731,10 @@ Item {
 
     // Forget what was recorded. What is on screen stays.
     function clear(): string {
-      Store.write(storeProc, service.storeBin, "forget-all", null)
-      service.heldRows = []
-      service.heldRevision += 1
-      service.historyRows = []
-      service.historyRevision += 1
+      service.historyEntries = []
+      service.saveSoon("history")
+      service.refreshHeld()
+      service.refreshHistory()
       return "ok"
     }
 
