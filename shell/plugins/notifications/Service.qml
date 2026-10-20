@@ -1524,11 +1524,17 @@ Item {
           path = String(found.path || "")
           who = String(found.title || "")
         } catch (e) {}
-        var at = service.rowIndexFor(String(job.key || ""))
+        var key = String(job.key || ""), at = service.rowIndexFor(key)
+        // A card still waiting to be shown carries the answer in with it.
+        var pending = service.liveKeys[key]
+        var waiting = at < 0 && pending && pending.row ? pending.row : null
         if (path && at >= 0) {
           toasts.setProperty(at, "replyPath", path)
           if (who) toasts.setProperty(at, "replyTo", who)
-        } else if (!path && at >= 0 && (job.tries || 0) < 1) {
+        } else if (path && waiting) {
+          waiting.replyPath = path
+          if (who) waiting.replyTo = who
+        } else if (!path && (at >= 0 || waiting) && (job.tries || 0) < 1) {
           // The phone's side may not have appeared yet. Once more, shortly.
           job.tries = (job.tries || 0) + 1
           var queue = service.replyQueue.slice(0, 99)
