@@ -10,7 +10,7 @@ From the terminal, the same switches are `omarchy toggle <thing>`. Run `omarchy 
 
 | Toggle | Hotkey | Command |
 | ------ | ------ | ------- |
-| Night light | `Super + Ctrl + N` | `omarchy toggle nightlight` |
+| Night light | — | `omarchy toggle nightlight` |
 | Silence notifications | `Super + Ctrl + ,` | `omarchy toggle notification silencing` |
 | Stay awake (no idle lock) | `Super + Ctrl + I` | `omarchy toggle idle` |
 | Crash capture | — | `omarchy toggle crash-capture` |
@@ -42,7 +42,7 @@ Inactive indicators are hidden. Hover anywhere on the bar and they fade in dimme
 
 ### Night light
 
-`Super + Ctrl + N` warms the screen to 4000K, and hitting it again puts it back to 6500K. It's driven by hyprsunset, which the toggle starts for you if it isn't already running.
+Night light warms the screen to 4000K, and toggling it again puts it back to 6500K. Flip it from the toggle menu (`Super + Ctrl + O`) or with `omarchy toggle nightlight`. It's driven by hyprsunset, which the toggle starts for you if it isn't already running.
 
 By default hyprsunset does nothing to your screen at all. `~/.config/hypr/hyprsunset.conf` ships with an identity profile precisely so the display stays untouched until you ask for warmth. If you'd rather have it switch by the clock, replace that with a time profile:
 

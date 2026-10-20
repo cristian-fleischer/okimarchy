@@ -40,7 +40,7 @@ Clicking a bar icon opens a panel, which is a proper popup with sliders, lists, 
 | Hotkey | Panel |
 | --- | --- |
 | `Super + Ctrl + A` | Audio |
-| `Super + Ctrl + W` | Network |
+| `Super + Ctrl + N` | Network |
 | `Super + Ctrl + B` | Bluetooth |
 | `Super + Ctrl + D` | Display |
 | `Super + Ctrl + P` | Power |
