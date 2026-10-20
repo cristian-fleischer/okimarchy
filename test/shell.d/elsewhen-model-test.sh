@@ -345,4 +345,110 @@ assertDeepEqual(
   { a: { lat: 1, lon: 2, c: 3, w: 0 }, b: { c: 4 }, c: {} },
   'elsewhen merges coordinates and weather, leaving out unknown fields'
 )
+
+// ---- the stored list
+const NY = 'America/New_York'
+const legacyList = M.parseCities(undefined, 'Paris|Europe/Paris, Asia/Tokyo')
+assertDeepEqual(legacyList, [{ label: 'Paris', id: 'Europe/Paris' }, { label: 'Tokyo', id: 'Asia/Tokyo' }], 'elsewhen reads the older zones string until cities is written')
+assertEqual(M.parseCities([], '').length, 0, 'elsewhen treats an empty cities list as a fresh install')
+const stored = [
+  { name: 'Fort Lauderdale', zone: NY, lat: 26.12, lon: -80.14, region: 'Florida, US' },
+  { name: 'Cincinnati', zone: NY, people: ['Ann', '@octocat', 'ann'] },
+  { name: 'Nowhere', zone: 'not a zone' },
+  { name: 'Half', zone: 'Europe/Paris', lat: 48.8 },
+  'junk'
+]
+const cities = M.parseCities(stored, 'Ignored|Asia/Tokyo')
+assertDeepEqual(cities.map(c => c.label), ['Fort Lauderdale', 'Cincinnati', 'Half'], 'elsewhen keeps only cities on a real zone, and ignores the older string once cities is set')
+assertDeepEqual(cities[0], { label: 'Fort Lauderdale', id: NY, lat: 26.12, lon: -80.14, region: 'Florida, US' }, 'elsewhen reads a city\'s coordinates and region')
+assertEqual(cities[2].lat, undefined, 'elsewhen drops half a coordinate pair')
+assertDeepEqual(cities[1].people, ['Ann', '@octocat'], 'elsewhen reads a city\'s people without repeats')
+assertDeepEqual(M.parseCities(M.serializeCities(cities)), cities, 'elsewhen round-trips the cities list')
+assertDeepEqual(M.serializeCities(legacyList), [{ name: 'Paris', zone: 'Europe/Paris' }, { name: 'Tokyo', zone: 'Asia/Tokyo' }], 'elsewhen writes a legacy list as cities')
+assertDeepEqual(M.addZone([], NY, 'Fort Lauderdale', { lat: 26.12, lon: -80.14, region: 'Florida, US' }), [cities[0]], 'elsewhen adds a searched place with its coordinates')
+
+// ---- place search
+assertEqual(M.placeQuery('Fo'), '', 'elsewhen waits for three letters before asking the geocoder')
+assertEqual(M.placeQuery('  Fort   Laud '), 'fort laud', 'elsewhen tidies a place query')
+const portland = JSON.stringify({ results: [
+  { name: 'Portland', latitude: 45.52, longitude: -122.68, timezone: 'America/Los_Angeles', admin1: 'Oregon', country_code: 'US' },
+  { name: 'Portland', latitude: 43.66, longitude: -70.25, timezone: NY, admin1: 'Maine', country_code: 'US' },
+  { name: 'Portland', latitude: 43.66, longitude: -70.25, timezone: NY, admin1: 'Maine', country_code: 'US' },
+  { name: 'Singapore', latitude: 1.29, longitude: 103.85, timezone: 'Asia/Singapore', admin1: 'Singapore', country_code: 'SG' },
+  { name: 'Nowhere', latitude: 1, longitude: 2 },
+  { name: 'Floating', timezone: 'Europe/Paris' }
+] })
+const places = M.placeOptions(portland)
+assertDeepEqual(places.map(p => p.label + ' / ' + p.region), ['Portland / Oregon, US', 'Portland / Maine, US', 'Singapore / SG'], 'elsewhen lists geocoded places once, with a region that does not repeat the name')
+assertDeepEqual(places[1], { value: NY, label: 'Portland', lat: 43.66, lon: -70.25, region: 'Maine, US' }, 'elsewhen carries a place\'s zone and coordinates')
+assertDeepEqual(M.placeOptions('not json'), [], 'elsewhen offers no places from a failed lookup')
+
+const offlinePortland = [{ value: 'America/Los_Angeles', label: 'Portland', description: 'America/Los_Angeles' }]
+const mergedPlaces = M.mergePlaces(offlinePortland, places, [], 10)
+assertEqual(mergedPlaces.length, 3, 'elsewhen does not list an offline city twice when the geocoder finds it too')
+assertEqual(mergedPlaces[0].region, 'Oregon, US', 'elsewhen gives an offline city the geocoder\'s region')
+assertEqual(mergedPlaces[0].description, 'America/Los_Angeles', 'elsewhen keeps the offline match first')
+assertEqual(M.mergePlaces([], places, [{ label: 'Portland', id: NY }], 10).length, 2, 'elsewhen leaves out places already on the list')
+assertEqual(M.mergePlaces(offlinePortland, places, [], 2).length, 2, 'elsewhen caps the merged results')
+
+// ---- here
+assertEqual(M.resolveHere(null, '', ''), null, 'elsewhen has no here before the machine zone is known')
+assertDeepEqual(M.resolveHere(null, '', NY), { label: 'New York', id: NY, chosen: false }, 'elsewhen guesses here from the zone')
+assertDeepEqual(M.resolveHere(null, 'Boca Raton', NY), { label: 'Boca Raton', id: NY, chosen: true }, 'elsewhen still reads the older homeCity')
+const fll = { name: 'Fort Lauderdale', zone: NY, lat: 26.12, lon: -80.14 }
+assertDeepEqual(M.resolveHere(fll, 'Boca Raton', NY), { label: 'Fort Lauderdale', id: NY, chosen: true, lat: 26.12, lon: -80.14 }, 'elsewhen prefers a chosen place to the older homeCity')
+assertDeepEqual(M.resolveHere(fll, '', CHI), { label: 'Chicago', id: CHI, chosen: false }, 'elsewhen sets a chosen place aside while the machine is on another zone')
+
+const seeded = [{ label: 'New York', id: NY }, { label: 'Amsterdam', id: 'Europe/Amsterdam', people: ['Emir'] }]
+const guess = M.resolveHere(null, '', NY)
+const hereMoved = M.hereAfterPick(seeded, guess, { label: 'Fort Lauderdale', id: NY, lat: 26.12, lon: -80.14, region: 'Florida, US' }, NY)
+assertDeepEqual(hereMoved.here, { name: 'Fort Lauderdale', zone: NY, lat: 26.12, lon: -80.14, region: 'Florida, US' }, 'elsewhen stores the picked place as here')
+assertDeepEqual(hereMoved.zones[0], { label: 'Fort Lauderdale', id: NY, lat: 26.12, lon: -80.14, region: 'Florida, US' }, 'elsewhen renames the row that stood for here')
+assertEqual(hereMoved.zones[1], seeded[1], 'elsewhen leaves the other rows alone')
+assertEqual(M.hereAfterPick(seeded, guess, { label: 'London', id: 'Europe/London' }, NY), null, 'elsewhen never makes a city on another zone here')
+const withPeople = [{ label: 'New York', id: NY, people: ['Ann'] }]
+assertDeepEqual(M.hereAfterPick(withPeople, guess, { label: 'Miami', id: NY }, NY).zones[0].people, ['Ann'], 'elsewhen keeps the people on a renamed here row')
+const back = M.hereAfterPick(hereMoved.zones, M.resolveHere(hereMoved.here, '', NY), { label: 'New York', id: NY }, NY)
+assertEqual(back.here, null, 'elsewhen goes back to the zone\'s own city rather than storing it')
+assertDeepEqual(back.zones[0], { label: 'New York', id: NY }, 'elsewhen drops the old coordinates with the old name')
+const both = [{ label: 'New York', id: NY }, { label: 'Miami', id: NY }]
+assertEqual(M.hereAfterPick(both, guess, { label: 'Miami', id: NY }, NY).zones, both, 'elsewhen does not rename a row into a city already on the list')
+assertEqual(M.hereAfterPick([{ label: 'Tokyo', id: 'Asia/Tokyo' }], guess, { label: 'Miami', id: NY }, NY).zones.length, 1, 'elsewhen adds no row when none stood for here')
+
+// ---- people
+assertDeepEqual(M.parsePeople(' Emir , @sarah-dev, emir,, @, @not_a_handle!, Ann  Lee '), ['Emir', '@sarah-dev', 'not_a_handle!', 'Ann Lee'], 'elsewhen reads names and handles from a typed list')
+assertEqual(M.parsePeople(Array.from({ length: 20 }, (_, i) => 'P' + i).join(',')).length, 12, 'elsewhen caps the people in one city')
+assertEqual(M.peopleText(['Emir', '@octocat']), 'Emir, @octocat', 'elsewhen writes people back as one line')
+assertEqual(M.personHandle('@OctoCat'), 'octocat', 'elsewhen reads a handle case-insensitively')
+assertEqual(M.personHandle('Emir'), '', 'elsewhen treats a plain name as no handle')
+assertEqual(M.personHandle('@../etc'), '', 'elsewhen never takes a path for a handle')
+assertEqual(M.personName('@octocat', {}), 'octocat', 'elsewhen shows a handle bare before its profile lands')
+assertEqual(M.personName('@octocat', { octocat: { login: 'octocat', name: 'The Octocat' } }), 'The Octocat', 'elsewhen shows a profile\'s name')
+assertEqual(M.personName('@octocat', { octocat: { login: 'OctoCat', name: '' } }), 'OctoCat', 'elsewhen falls back to the profile\'s login')
+assertEqual(M.initialOf('  émile'), 'É', 'elsewhen takes the first letter for a monogram')
+assertEqual(M.initialOf('😀 smile'), '😀', 'elsewhen keeps a surrogate pair whole')
+assertDeepEqual(M.handlesIn([{ people: ['@A', 'b'] }, { people: ['@a', '@c'] }, {}]), ['a', 'c'], 'elsewhen fetches each handle once')
+
+const peopleRows = [{ label: 'Cincinnati', id: NY }, { label: 'Paris', id: 'Europe/Paris', people: ['Ann'] }]
+assertDeepEqual(M.setPeopleAt(peopleRows, 0, ['Ann', '@octocat'])[0], { label: 'Cincinnati', id: NY, people: ['Ann', '@octocat'] }, 'elsewhen adds people to a city')
+assertEqual(M.setPeopleAt(peopleRows, 1, ['Ann']), peopleRows, 'elsewhen skips a write when the people are unchanged')
+assertDeepEqual(M.setPeopleAt(peopleRows, 1, [])[1], { label: 'Paris', id: 'Europe/Paris' }, 'elsewhen clears a city\'s people')
+assertEqual(M.setPeopleAt(peopleRows, 5, ['Ann']), peopleRows, 'elsewhen ignores a row that is not there')
+
+const profileArgs = M.profilesCommand(['octocat', '../etc', 'a b'])
+assertDeepEqual(profileArgs.slice(3), ['bash', 'octocat'], 'elsewhen passes only valid handles, as arguments')
+assert(profileArgs[2].indexOf('octocat') === -1, 'elsewhen profile script never contains a handle')
+assertDeepEqual(
+  M.parseProfiles('{"handle":"octocat","login":"octocat","name":"The Octocat","avatar":"/c/octocat.avatar"}\nnoise\n{"handle":"../x","login":"x"}\n'),
+  { octocat: { login: 'octocat', name: 'The Octocat', avatar: '/c/octocat.avatar' } },
+  'elsewhen reads cached profiles and drops anything that is not one'
+)
+
+// ---- reordering rows of different heights
+assertEqual(M.dragTargetFor(0, 70, 40, -1, 4, [40, 60, 40, 40]), 1, 'elsewhen measures a taller row by its own height')
+assertEqual(M.dragTargetFor(0, 100, 40, -1, 4, [40, 60, 40, 40]), 2, 'elsewhen passes a taller row and the next')
+assertEqual(M.dragTargetFor(3, -50, 40, -1, 4, [40, 60, 40, 40]), 2, 'elsewhen measures an upward drag the same way')
+assertEqual(M.dropOffset(0, 2, 40, [40, 60, 40, 40]), 100, 'elsewhen drops a row past the heights it passed')
+assertEqual(M.dropOffset(3, 1, 40, [40, 60, 50, 40]), -110, 'elsewhen drops a row upward past the heights it passed')
+assertEqual(M.dropOffset(1, 1, 40, [40, 60]), 0, 'elsewhen drops a row in place')
 JS

@@ -56,6 +56,7 @@ The panels aren't read-outs. They're where you actually do the thing:
 - **Power** shows battery stats, switches power profiles (it remembers a separate choice for battery and AC), and prints some system info.
 - **Display** carries a brightness slider, text size, monitor scaling presets, and — when you have more than one screen — per-monitor controls. See [monitors](33-monitors.md) for the deeper story.
 - **Clock** opens a month grid with ISO week numbers and month stepping.
+- **World clock** keeps a row per city, with its weather and how its day is going. Search finds towns as well as time zones, so Fort Lauderdale is Fort Lauderdale and not New York. If the line at the top names the wrong city, click it and say where you are. Hover a city and click the person button to say who lives there — plain names, or `@` GitHub handles to bring their faces along.
 
 Every panel takes the keyboard as well as the mouse: arrows move, Return activates, Tab steps to the neighbouring panel, and Escape closes.
 
