@@ -36,6 +36,8 @@ ROOT = os.path.expanduser("~/.local/state/omarchy/notifications")
 LIVE = os.path.join(ROOT, "live")
 HISTORY = os.path.join(ROOT, "history")
 ICONS = os.path.join(ROOT, "icons")
+# The previous engine kept Do Not Disturb here; read until quiet.json exists.
+LEGACY_SETTINGS = os.path.join(os.path.dirname(ROOT), "notifications.json")
 QUIET = os.path.join(ROOT, "quiet.json")
 LEGACY_POPUP = re.compile(r"[0-9]+-.+\.json")
 # Every entry is somebody's message, so history keeps only the recent past:
@@ -340,6 +342,9 @@ def main():
       return 2
     write_json(os.path.join(ROOT, "policy.json"), {"historyHours": hours})
     trim_history()
+    if not isinstance(state, dict):
+      legacy = read_json(LEGACY_SETTINGS) if not os.path.exists(QUIET) else None
+      state = {"snoozes": {}, "dnd": isinstance(legacy, dict) and legacy.get("dnd") is True}
     return 0
   if verb == "put":
     return cmd_put()
@@ -357,7 +362,7 @@ def main():
   if verb == "quiet":
     state = read_json(QUIET)
     # Which sources are snoozed until when, and whether the desktop is silenced.
-    return dump(state if isinstance(state, dict) else {"snoozes": {}})
+    return dump(state)
   if verb == "quiet-save":
     write_json(QUIET, input_json(sys.stdin))
     return 0

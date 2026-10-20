@@ -126,6 +126,15 @@ class LegacyLayout(unittest.TestCase):
 
   def test_old_layout_directories_are_tightened(self):
     self.write_legacy_state()
+  def test_the_old_do_not_disturb_holds_until_quiet_is_saved(self):
+    legacy = self.root.parent / "notifications.json"
+    legacy.parent.mkdir(parents=True)
+    self.assertFalse(json.loads(self.store("quiet"))["dnd"])
+    legacy.write_text(json.dumps({"dnd": True}))
+    self.assertTrue(json.loads(self.store("quiet"))["dnd"])
+    self.store("quiet-save", payload={"snoozes": {}, "dnd": False})
+    self.assertFalse(json.loads(self.store("quiet"))["dnd"])
+
     for directory in (self.root, self.root / "history"):
       directory.chmod(0o755)
     self.store("restore")

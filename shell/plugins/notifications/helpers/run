@@ -272,7 +272,8 @@ def sandbox_command(kind, args, bwrap, environ):
   if kind != "icon":
     private_dir(STATE)
   if kind == "store":
-    cmd += ["--bind", str(STATE), str(STATE)]
+    legacy = str(STATE.parent / "notifications.json")
+    cmd += ["--bind", str(STATE), str(STATE), "--ro-bind-try", legacy, legacy]
   elif kind == "icon" and not sender_image:
     # A lookup reads icons and writes nowhere.
     for part in (".local/share/icons", ".local/share/applications",
