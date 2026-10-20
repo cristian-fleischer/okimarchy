@@ -13,6 +13,15 @@ Panel {
   ipcTarget: "omarchy.tailscale"
   manageIpc: false
 
+  // Items inside the panel's lazily built content, null until it first
+  // opens. Code inside the content reaches its own ids directly.
+  readonly property Item panelFlick: panel.loadedContent ? panel.loadedContent.panelFlick : null
+  readonly property Item hero: panel.loadedContent ? panel.loadedContent.hero : null
+  readonly property Item exitNodeColumn: panel.loadedContent ? panel.loadedContent.exitNodeColumn : null
+  readonly property Item mullvadSearch: panel.loadedContent ? panel.loadedContent.mullvadSearch : null
+  readonly property Item mullvadRegionColumn: panel.loadedContent ? panel.loadedContent.mullvadRegionColumn : null
+  readonly property Item peerColumn: panel.loadedContent ? panel.loadedContent.peerColumn : null
+
   property string focusSection: "header"
   property int headerIndex: 0
   property int accountIndex: 0
@@ -25,16 +34,16 @@ Panel {
   property string mullvadQuery: ""
   property int phraseIndex: 0
   readonly property var activePhrases: [
-    "Encrypting connections",
-    "Sending secrets",
-    "Guarding wires",
-    "Braiding packets",
-    "Polishing tunnels",
-    "Hiding routes",
-    "Sealing ports",
-    "Sorting tailnets",
-    "Shuffling keys",
-    "Watching machines"
+    Commons.I18n.t("tailscale.phrase1"),
+    Commons.I18n.t("tailscale.phrase2"),
+    Commons.I18n.t("tailscale.phrase3"),
+    Commons.I18n.t("tailscale.phrase4"),
+    Commons.I18n.t("tailscale.phrase5"),
+    Commons.I18n.t("tailscale.phrase6"),
+    Commons.I18n.t("tailscale.phrase7"),
+    Commons.I18n.t("tailscale.phrase8"),
+    Commons.I18n.t("tailscale.phrase9"),
+    Commons.I18n.t("tailscale.phrase10")
   ]
   readonly property string heroPhraseText: activePhrases[phraseIndex % activePhrases.length]
 
@@ -53,7 +62,7 @@ Panel {
   // "header" stays navigable, but an absent CLI leaves nothing to highlight.
   readonly property bool headerHasCursor: cursorActive && focusSection === "header" && tailscale.installed
   readonly property color iconColor: tailscale.active ? foreground : dim
-  readonly property string toggleHint: tailscale.active ? "Turn Tailscale off" : (tailscale.needsLogin ? "Authorize this device" : "Turn Tailscale on")
+  readonly property string toggleHint: tailscale.active ? Commons.I18n.t("tailscale.turnOff") : (tailscale.needsLogin ? Commons.I18n.t("tailscale.authorizeDevice") : Commons.I18n.t("tailscale.turnOn"))
   readonly property color barIconColor: tailscale.active ? barForeground : Qt.darker(barForeground, 1.55)
   readonly property color hoverFill: bar ? Style.hoverFillFor(bar.foreground, Commons.Color.accent) : "transparent"
   readonly property color selectedFill: bar ? Style.selectedFillFor(bar.foreground, Commons.Color.accent) : "transparent"
@@ -77,7 +86,7 @@ Panel {
     var nodes = []
     for (var i = 0; i < tailscale.tailnetExitNodes.length; i++) nodes.push(tailscale.tailnetExitNodes[i])
     for (var j = 0; j < recentMullvadExitNodes.length; j++) nodes.push(recentMullvadExitNodes[j])
-    if (tailscale.mullvadRegions.length > 0) nodes.push({ id: "mullvad:add", AddMullvad: true, DisplayName: "Choose Mullvad region" })
+    if (tailscale.mullvadRegions.length > 0) nodes.push({ id: "mullvad:add", AddMullvad: true, DisplayName: Commons.I18n.t("tailscale.chooseMullvadRegion") })
     return nodes
   }
 
@@ -133,10 +142,10 @@ Panel {
   }
 
   function mullvadRegionTitle(peer) {
-    if (!peer) return "Unknown"
+    if (!peer) return Commons.I18n.t("tailscale.unknown")
     var city = String(peer.City || "").trim()
     var country = String(peer.Country || "").trim()
-    if (city === "" || city === "Any") return country || String(peer.DisplayName || "Unknown")
+    if (city === "" || city === "Any") return country || String(peer.DisplayName || Commons.I18n.t("tailscale.unknown"))
     return city
   }
 
@@ -342,7 +351,7 @@ Panel {
     cursorActive = false
     if (panelFlick) panelFlick.contentY = 0
     tailscale.refresh()
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    Qt.callLater(function() { if (panel.loadedContent) panel.loadedContent.forceActiveFocus() })
   }
   onPeerIndexChanged: scrollCursorIntoView()
   onExitNodeIndexChanged: scrollCursorIntoView()
@@ -385,8 +394,9 @@ Panel {
     iconComponent: Component {
       Item {
         TailscaleIcon {
-          anchors.centerIn: parent
-          iconSize: Style.space(11)
+          x: (parent.width - width) / 2
+          y: (parent.height - height) / 2
+          iconSize: button.iconSize
           color: root.barIconColor
           badgeColor: root.urgent
           crossed: !tailscale.active && !tailscale.needsLogin
@@ -407,12 +417,19 @@ Panel {
     owner: root
     bar: root.bar
     open: root.opened
-    focusTarget: keyCatcher
+    focusTarget: panel.loadedContent
     contentWidth: panel.fittedContentWidth(Style.space(380))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(560))
+    contentHeight: panel.fittedContentHeight(panel.loadedContentHeight, Style.space(560))
 
-    PanelKeyCatcher {
+    content: PanelKeyCatcher {
       id: keyCatcher
+      property alias panelFlick: panelFlick
+      property alias hero: hero
+      property alias exitNodeColumn: exitNodeColumn
+      property alias mullvadSearch: mullvadSearch
+      property alias mullvadRegionColumn: mullvadRegionColumn
+      property alias peerColumn: peerColumn
+      implicitHeight: column.implicitHeight
       anchors.fill: parent
       blocked: root.copyMenuOpen
       onMoveRequested: function(dx, dy) {
@@ -459,7 +476,7 @@ Panel {
               id: hero
               width: parent.width
               title: tailscale.installed ? (tailscale.selfName || "Tailscale") : "Tailscale"
-              meta: tailscale.active ? root.heroPhraseText : "Tailscale is disconnected"
+              meta: tailscale.active ? root.heroPhraseText : Commons.I18n.t("tailscale.disconnectedMeta")
               foreground: root.foreground
               fontFamily: root.fontFamily
               iconOpacity: tailscale.active ? 1.0 : 0.5
@@ -521,7 +538,8 @@ Panel {
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
               anchors.margins: Style.space(12)
-              text: "Tailscale CLI is not installed or not on PATH."
+              text: Commons.I18n.t("tailscale.notInstalled")
+              textFormat: Text.PlainText
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
@@ -540,7 +558,7 @@ Panel {
             spacing: Style.space(10)
 
             PanelSectionHeader {
-              text: "CONNECTIONS"
+              text: Commons.I18n.t("tailscale.connections")
               foreground: root.foreground
               fontFamily: root.fontFamily
             }
@@ -573,7 +591,7 @@ Panel {
             spacing: Style.space(10)
 
             PanelSectionHeader {
-              text: "EXIT NODES"
+              text: Commons.I18n.t("tailscale.exitNodes")
               foreground: root.foreground
               fontFamily: root.fontFamily
             }
@@ -603,7 +621,7 @@ Panel {
                   id: mullvadSearch
                   width: parent.width
                   foreground: root.foreground
-                  placeholderText: "Search regions"
+                  placeholderText: Commons.I18n.t("tailscale.searchRegions")
                   text: root.mullvadQuery
                   onTextChanged: {
                     root.mullvadQuery = text
@@ -639,7 +657,8 @@ Panel {
                 Text {
                   visible: root.filteredMullvadRegions.length === 0
                   width: parent.width
-                  text: "No Mullvad regions found."
+                  text: Commons.I18n.t("tailscale.noRegions")
+                  textFormat: Text.PlainText
                   color: root.dim
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.bodySmall
@@ -677,7 +696,7 @@ Panel {
             spacing: Style.space(10)
 
             PanelSectionHeader {
-              text: "MACHINES"
+              text: Commons.I18n.t("tailscale.machines")
               foreground: root.foreground
               fontFamily: root.fontFamily
             }
@@ -685,7 +704,8 @@ Panel {
             Text {
               visible: tailscale.installed && tailscale.active && tailscale.peers.length === 0
               width: parent.width
-              text: "No machines found on this tailnet."
+              text: Commons.I18n.t("tailscale.noMachines")
+              textFormat: Text.PlainText
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
@@ -778,7 +798,8 @@ Panel {
 
         Text {
           Layout.fillWidth: true
-          text: "Authorize Tailscale operator"
+          text: Commons.I18n.t("tailscale.authorizeOperator")
+          textFormat: Text.PlainText
           color: root.foreground
           font.family: root.fontFamily
           font.pixelSize: Style.font.body
@@ -787,7 +808,8 @@ Panel {
 
         Text {
           Layout.fillWidth: true
-          text: "Allow this user to operate this Tailscale profile"
+          text: Commons.I18n.t("tailscale.authorizeHelp")
+          textFormat: Text.PlainText
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
@@ -804,7 +826,7 @@ Panel {
     property int rowIndex: 0
     readonly property bool selectedAccount: account && account.selected === true
     readonly property bool switchingAccount: account && tailscale.switchingAccountId === String(account.id || "")
-    readonly property string accountText: account ? tailscale.accountLabel(account) : "Account"
+    readonly property string accountText: account ? tailscale.accountLabel(account) : Commons.I18n.t("tailscale.account")
 
     hasCursor: root.cursorActive && root.focusSection === "accounts" && root.accountIndex === rowIndex
     current: selectedAccount
@@ -868,7 +890,7 @@ Panel {
     id: peerRow
     property var peer: null
     property int rowIndex: 0
-    readonly property string peerName: peer ? String(peer.DisplayName || peer.HostName || "Unknown") : "Unknown"
+    readonly property string peerName: peer ? String(peer.DisplayName || peer.HostName || Commons.I18n.t("tailscale.unknown")) : Commons.I18n.t("tailscale.unknown")
     readonly property string peerIp: peer && peer.TailscaleIPs && peer.TailscaleIPs.length > 0 ? String(peer.TailscaleIPs[0]) : ""
     readonly property string peerIpv6: {
       if (!peer || !peer.TailscaleIPv6 || peer.TailscaleIPv6.length === 0) return ""
@@ -979,7 +1001,7 @@ Panel {
         id: sendButton
         visible: tailscale.canSendFiles(peerRow.peer)
         iconText: "󰒊"
-        tooltipText: "Send files"
+        tooltipText: Commons.I18n.t("tailscale.sendFiles")
         foreground: root.foreground
         fontFamily: root.fontFamily
         Layout.alignment: Qt.AlignVCenter
@@ -998,7 +1020,8 @@ Panel {
 
       Popup {
         id: copyPopup
-        x: copyButton.x + copyButton.width - width
+        // Opens toward the row, from whichever end the button sits at.
+        x: copyButton.LayoutMirroring.enabled ? copyButton.x : copyButton.x + copyButton.width - width
         y: copyButton.y + copyButton.height + Style.space(4)
         width: Style.space(280)
         padding: 0
@@ -1032,7 +1055,7 @@ Panel {
             peerRow.clampCopyIndex()
             Qt.callLater(function() { copyPopupContent.forceActiveFocus() })
           } else if (root.opened) {
-            Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+            Qt.callLater(function() { if (panel.loadedContent) panel.loadedContent.forceActiveFocus() })
           }
         }
         background: BorderSurface {
@@ -1119,8 +1142,8 @@ Panel {
     readonly property bool addMullvad: peer && peer.AddMullvad === true
     readonly property bool activeExitNode: peer && peer.ExitNode === true
     readonly property bool settingExitNode: peer && tailscale.settingExitNodeId === String(peer.id || "")
-    readonly property string peerName: peer ? String(peer.DisplayName || peer.HostName || "Unknown") : "Unknown"
-    readonly property string actionTooltip: addMullvad ? "" : (activeExitNode ? "Disconnect" : "Connect")
+    readonly property string peerName: peer ? String(peer.DisplayName || peer.HostName || Commons.I18n.t("tailscale.unknown")) : Commons.I18n.t("tailscale.unknown")
+    readonly property string actionTooltip: addMullvad ? "" : (activeExitNode ? Commons.I18n.t("tailscale.disconnect") : Commons.I18n.t("tailscale.connect"))
 
     hasCursor: root.cursorActive && root.focusSection === "exitNodes" && root.exitNodeIndex === rowIndex
     current: activeExitNode || settingExitNode || (addMullvad && root.mullvadPickerOpen)
@@ -1200,7 +1223,7 @@ Panel {
     readonly property bool activeExitNode: peer && peer.ExitNode === true
     readonly property bool settingExitNode: peer && tailscale.settingExitNodeId === String(peer.id || "")
     readonly property bool selectedRegion: root.mullvadPickerOpen && root.mullvadRegionIndex === rowIndex
-    readonly property string actionTooltip: activeExitNode ? "Disconnect" : "Connect"
+    readonly property string actionTooltip: activeExitNode ? Commons.I18n.t("tailscale.disconnect") : Commons.I18n.t("tailscale.connect")
 
     foreground: root.foreground
     fill: root.hoverFill

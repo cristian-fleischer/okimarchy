@@ -137,8 +137,7 @@ omarchy-update
   ├─ run system-package updates
   ├─ run migrations
   ├─ automatically remove orphan packages and run log analysis
-  ├─ omarchy-update-status
-  │    └─ refresh or clear the shell update indicator
+  ├─ clear the shell update indicator: the update just installed what it showed
   ├─ restart marked services and the shell
   ├─ run the post-update hook, then update mise tools
   ├─ stop the keepalive and invalidate sudo, then update AUR packages with
@@ -319,7 +318,7 @@ scripts.
 | `omarchy-update` | Public user command. Adds transcript logging, confirmation, snapshot, and restart checks around the locked, sleep-inhibited update pipeline. | **Keep.** This is the blessed entry point and orchestrates the update pipeline. |
 | `omarchy-update-lock` | Hidden command wrapper that holds the per-user update lock while its child runs. | **Keep internal/hidden.** Isolates update concurrency and lock descriptor handling. |
 | `omarchy-update-stay-awake` | Hidden helper that starts or stops update-owned sleep and idle inhibition, restoring only the state it changed. | **Keep internal/hidden.** Keeps inhibitor ownership and cleanup together. |
-| `omarchy-update-status` | Hidden helper that refreshes or clears the shell update indicator after rechecking available updates. | **Keep internal/hidden.** Keeps shell status synchronization out of the main pipeline. |
+| `omarchy-update-status` | Hidden compatibility helper that clears the shell update indicator. `omarchy-update` clears it directly now; an update started by an older `omarchy-update` still calls this after its upgrade. | **Temporary.** Keep only for updates started before the change. |
 | `omarchy-update-confirm` | Gum confirmation copy for `omarchy update`. | **Question.** Could be inlined into `omarchy-update`; separate file only helps keep copy isolated. |
 | `omarchy-update-dev` | Fast-forwards the active dev-linked checkout from its configured upstream; no-ops for package-backed installs. | **Keep.** Runs before package updates so a checkout conflict stops the update before system mutation. |
 | `omarchy-update-keyring` | Ensures Omarchy keyring and Arch keyring (and Arch Linux ARM keyring on aarch64, where installed) are current before the main transaction. | **Keep, but review.** It uses targeted `pacman -Sy` for keyring bootstrapping; acceptable for this special case but should remain tightly scoped. |
@@ -332,7 +331,7 @@ scripts.
 | `omarchy-update-pacman` | Hidden helper that runs a guard-approved pacman transaction as a PID 1 scope (`systemd-run --scope`) so a mid-transaction systemd reexec cannot kill it; runs pacman directly when not booted under systemd. | **Keep internal/hidden.** Single place that owns how Omarchy invokes pacman for system mutation. |
 | `omarchy-migrate-notify` | Internal login-time notification helper. Uses `omarchy-migrate --pending` and shows a notification only when this user has pending migrations. | **Keep internal/hidden.** Clear name now that the public command is `omarchy-migrate`. |
 | `omarchy-update-user-notify` | Hidden compatibility wrapper for `omarchy-migrate-notify`. | **Temporary.** Keep only for old callers. |
-| `omarchy-update-available` | Update checker for shell widget and post-update refresh. | **Keep.** Could eventually be renamed `omarchy-update-check`, but current name matches widget semantics. |
+| `omarchy-update-available` | Update checker for the shell widget. The update itself clears the widget instead of rechecking. | **Keep.** Could eventually be renamed `omarchy-update-check`, but current name matches widget semantics. |
 | `omarchy-update-aur-pkgs` | Updates AUR packages with `yay -Sua` if foreign packages exist and AUR is reachable. | **Question.** Omarchy is package-backed now, but users may still install AUR packages. Keep for now. |
 | `omarchy-update-mise` | Runs `MISE_MINIMUM_RELEASE_AGE=0 mise up` for mise-managed tools — the override of mise's release-age cooldown is the point. | **Keep.** Mise-managed tools are intentionally part of the blessed update path. |
 | `omarchy-update-orphan-pkgs` | Lists orphans and prompts before removal unless passed `-y`, as the update pipeline does; standalone noninteractive mode only reports. | **Keep for now.** Automates cleanup during updates and supports standalone review. |

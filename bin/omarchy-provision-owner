@@ -7,11 +7,11 @@
 # Runs on tty1 via omarchy-provision-owner.service when /var/lib/omarchy/provisioning/pending
 # exists — the state a deferred-provisioning ISO install or omarchy-system-factory-reset leaves
 # behind. Asks for the user (the configurator's Step 2), creates it with the
-# groups system setup recorded, finalizes it offline from the stashed Node
-# tarball, re-keys LUKS from the throwaway install passphrase to the user's
-# password, and hands off to SDDM. A platform whose boot package owns its boot
-# chain prepares it, drops the install key's unlock from it and records the
-# kept key slot through omarchy-lifecycle-dispatch.
+# groups system setup recorded, finalizes it offline, re-keys LUKS from the
+# throwaway install passphrase to the user's password, and hands off to SDDM.
+# A platform whose boot package owns its boot chain prepares it, drops the
+# install key's unlock from it and records the kept key slot through
+# omarchy-lifecycle-dispatch.
 
 set -euo pipefail
 
@@ -187,11 +187,11 @@ tips=(
   "Super + Space opens the Omarchy menu for apps, settings, and more"
   "Super + K shows all the key bindings"
   "Super is the Windows or command key on your keyboard"
-  "Use Xournal++ to sign PDFs"
+  "Sign PDFs and fill them in with Signed"
   "Share files with phones and laptops using LocalSend"
   "Turn any website into an app with Install > Web App in the menu"
   "Super + Return opens a terminal, Super + Shift + Return the browser"
-  "Edit images with Pinta, videos with Kdenlive, docs with LibreOffice"
+  "Edit images with Pinta, trim videos with Omacut, docs with LibreOffice"
   "Super + Ctrl + Print grabs text off the screen with OCR"
   "Print takes a screenshot, Alt + Print records the screen"
   "Set a reminder with Super + Ctrl + R"
@@ -1139,8 +1139,6 @@ reset_limine_config() {
 }
 
 cleanup_oem_state() {
-  # Keep groups + packages: omarchy-system-factory-reset stages the bundled Node
-  # tarball from these live copies when the factory snapshot predates it.
   rm -f "$PROVISIONING_DIR/pending" "$PROVISIONING_DIR/authorized_keys" "$PROVISIONING_DIR/setup-user" "$REKEY_STATE"
 
   rm -f /etc/systemd/system/multi-user.target.wants/omarchy-provision-owner.service
@@ -1189,15 +1187,6 @@ run_provisioning() {
     log_step "refusing to finish setup while the staged LUKS key or its auto-unlock remains"
     return 1
   fi
-
-  if omarchy-pkg-present usbguard; then
-    log_step "enrolling the owner's USB devices"
-    source "$OMARCHY_PATH/install/helpers/usb-authorization.sh"
-    usb_authorization_provision_owner "$username"
-  fi
-
-  log_step "enrolling the owner's Thunderbolt accessories"
-  /usr/bin/omarchy-thunderbolt-authorization-admin owner
 
   log_step "cleaning up provisioning state"
   cleanup_oem_state

@@ -32,7 +32,9 @@ set -euo pipefail
 
 PROVISIONING_DIR=/var/lib/omarchy/provisioning
 PACKAGED_PATH=/usr/bin/omarchy-system-factory-reset
-OMARCHY_PATH="${OMARCHY_PATH:-/usr/share/omarchy}"
+# sudo drops OMARCHY_PATH from the environment, and omarchy-i18n, which
+# supplies every line of the prompts below, needs it there.
+export OMARCHY_PATH="${OMARCHY_PATH:-/usr/share/omarchy}"
 TOP_MNT=/run/omarchy-system-factory-reset/top
 ESP_MNT=/run/omarchy-system-factory-reset/esp
 NEXT_NAME=@omarchy-reset-next
@@ -54,6 +56,14 @@ if (( EUID != 0 )); then
 fi
 
 export PATH="$OMARCHY_PATH/bin:$PATH"
+
+# The questions read in the language of the person who asked for the reset.
+# Elevation left their HOME behind, so their language file is found from the
+# account sudo names, never from a path the caller passed in.
+if [[ -n ${SUDO_USER:-} && -z ${OMARCHY_LANGUAGE_FILE:-} ]]; then
+  caller_home=$(getent passwd "$SUDO_USER" | cut -d: -f6 || true)
+  [[ -n $caller_home ]] && export OMARCHY_LANGUAGE_FILE="$caller_home/.config/omarchy/language"
+fi
 
 log() {
   echo "$1" | tee -a "$LOG_FILE" >/dev/null
@@ -200,19 +210,19 @@ trap cleanup EXIT
 
 confirm_reset() {
   echo
-  gum style --bold --foreground 1 "Reset this computer to factory state?"
+  gum style --bold --foreground 1 "$(omarchy-i18n reset.question)"
   echo
-  gum style "This will permanently erase:"
-  gum style "  • All user accounts and everything in /home"
-  gum style "  • All packages and system changes made since installation"
-  gum style "  • Machine identity (network connections, host keys, machine-id)"
+  gum style "$(omarchy-i18n reset.willErase)"
+  gum style "  • $(omarchy-i18n reset.eraseAccounts)"
+  gum style "  • $(omarchy-i18n reset.erasePackages)"
+  gum style "  • $(omarchy-i18n reset.eraseIdentity)"
   echo
-  gum style "The next boot asks for a new user, exactly like a fresh install."
-  gum style --foreground 8 "Note: on disks without encryption this is deletion, not secure erasure."
+  gum style "$(omarchy-i18n reset.nextBoot)"
+  gum style --foreground 8 "$(omarchy-i18n reset.notSecureErase)"
   echo
 
   local typed
-  typed=$(gum input --placeholder "Type 'reset' to continue" --prompt "> ") || exit 1
+  typed=$(gum input --placeholder "$(omarchy-i18n reset.typeToContinue reset)" --prompt "> ") || exit 1
   [[ $typed == "reset" ]] || fail "Reset not confirmed."
 }
 
@@ -271,14 +281,14 @@ stage_luks_rekey() {
   [[ -e $device ]] || fail "LUKS device $device not found"
 
   echo
-  gum style "Confirm your disk encryption passphrase to authorize the re-key."
+  gum style "$(omarchy-i18n reset.confirmPassphrase)"
   local current
   while true; do
-    current=$(gum input --password --placeholder "Current disk encryption passphrase" --prompt "Passphrase> ") || exit 1
+    current=$(gum input --password --placeholder "$(omarchy-i18n reset.passphrasePlaceholder)" --prompt "$(omarchy-i18n reset.passphrasePrompt)") || exit 1
     if cryptsetup open --test-passphrase --token-type passphrase-only --key-file <(printf '%s' "$current") "$device" 2>/dev/null; then
       break
     fi
-    gum style --foreground 1 "That passphrase does not unlock $device. Try again."
+    gum style --foreground 1 "$(omarchy-i18n reset.passphraseWrong "$device")"
   done
 
   passphrase=$(generate_passphrase)
@@ -436,10 +446,13 @@ commit_esp_staging() {
   fi
 }
 
-# Every UKI entry in limine.conf carries a #blake2b hash of the file it
-# points at; a mismatch makes Limine stop at a scary warning. Never hand over
-# a staged reset in that state. Only this installation's entry is rebuilt,
-# so only its UKIs are checked: other systems' entries are not ours to judge.
+# Every boot entry in limine.conf carries a #blake2b hash of each file it
+# loads: the UKI, or the kernel and initramfs where UKIs are off (the DGX
+# Spark). A mismatch makes Limine stop at a scary warning. Never hand over a
+# staged reset in that state. Only this installation's entry is rebuilt, so
+# only its files are checked: other systems' entries are not ours to judge.
+# Snapshot entries keep their own copies under limine_history, which the
+# rebuild does not touch.
 verify_limine_hashes() {
   local root="$1" esp="$2" line path hash file machine_id checked=0
   machine_id=$(cat "$root/etc/machine-id")
@@ -457,7 +470,7 @@ verify_limine_hashes() {
       /^\/[^\/]/ { mine = 0 }
       $0 ~ ("^comment: machine-id=" id "([[:space:]]|$)") { mine = 1 }
       mine
-    ' "$root$esp/limine.conf" | grep -o 'boot():/EFI/Linux/[^#]*#[0-9a-f]*')
+    ' "$root$esp/limine.conf" | grep -o 'boot():/[^#[:space:]]*#[0-9a-f]*' | grep -v '/limine_history/')
 
   ((checked > 0)) || fail "limine.conf has no rebuilt boot entry for this system"
 }
@@ -600,12 +613,6 @@ scrub_factory_accounts() {
 sanitize_factory_baseline() {
   local factory="$1"
   btrfs property set -ts "$factory" ro false
-  if [[ -d $factory/var/lib/omarchy/thunderbolt-authorization || -f $factory/etc/omarchy/thunderbolt-authorization.enabled || -f $factory/etc/omarchy/thunderbolt-authorization.pending ]]; then
-    if ! /usr/bin/omarchy-thunderbolt-authorization-admin reset-root "$factory"; then
-      btrfs property set -ts "$factory" ro true
-      fail "could not reset Thunderbolt authorization in the factory baseline"
-    fi
-  fi
 
   if ! scrub_factory_accounts "$factory"; then
     btrfs property set -ts "$factory" ro true
@@ -631,14 +638,6 @@ stage_full_reset() {
   [[ -f $unit_src/omarchy-provision-owner.service && -x $next/usr/bin/omarchy-provision-owner ]] ||
     fail "the factory snapshot predates provisioning support; cannot reset from it"
 
-  # A normal install's factory snapshot includes the original owner's USB
-  # policy and enabled daemon. Keep input usable during the new owner's setup;
-  # provisioning enrolls their devices before enabling USBGuard again.
-  if [[ -f $next/usr/lib/systemd/system/usbguard.service ]]; then
-    systemctl --root="$next" disable usbguard.service >>"$LOG_FILE" 2>&1 ||
-      fail "could not disable USBGuard in the factory system (see $LOG_FILE)"
-  fi
-
   log "Scrubbing machine identity from the factory system"
   systemd-id128 new >"$next/etc/machine-id"
   rm -f "$next"/etc/ssh/ssh_host_*
@@ -654,26 +653,11 @@ stage_full_reset() {
   scrub_factory_accounts "$next" ||
     fail "could not remove account credentials from the factory system (see $LOG_FILE)"
 
-  # Leave the new owner's input available before interactive enrollment. Clear
-  # inherited accessory identities in both roots; never change the live daemon.
-  if [[ -d $next/var/lib/omarchy/thunderbolt-authorization || -f $next/etc/omarchy/thunderbolt-authorization.enabled || -f $next/etc/omarchy/thunderbolt-authorization.pending ]]; then
-    /usr/bin/omarchy-thunderbolt-authorization-admin reset-root "$next" ||
-      fail "could not reset Thunderbolt authorization in the staged root"
-  fi
-
   # @factory itself survives the wipe as the baseline for future resets. If it
   # came from a normal install it still holds the seller's account and
   # /etc/shadow, which the new wheel user could mount and read — and a second
   # reset would restore that account. Scrub it once, in place.
   sanitize_factory_baseline "$top/@factory"
-
-  # Keep the Node tarball reachable for offline first-boot finalization.
-  if ! compgen -G "$next$PROVISIONING_DIR/packages/node-v*.tar.gz" >/dev/null; then
-    if compgen -G "$PROVISIONING_DIR/packages/node-v*.tar.gz" >/dev/null; then
-      install -d -m 755 "$next$PROVISIONING_DIR/packages"
-      cp "$PROVISIONING_DIR"/packages/node-v*.tar.gz "$next$PROVISIONING_DIR/packages/"
-    fi
-  fi
 
   install -d -m 755 "$next$PROVISIONING_DIR"
   touch "$next$PROVISIONING_DIR/pending" "$next$PROVISIONING_DIR/wipe-pending"
@@ -720,14 +704,11 @@ require_factory_snapshot() {
   [[ -d $TOP_MNT/@factory ]] && return 0
 
   echo
-  gum style --bold --foreground 3 "This machine has no factory snapshot to reset to."
+  gum style --bold --foreground 3 "$(omarchy-i18n reset.noSnapshot)"
   echo
-  gum style "A reset restores the @factory snapshot the Omarchy Quattro installer takes"
-  gum style "right after installing. Machines upgraded to Quattro from an earlier version,"
-  gum style "or installed some other way, never got one, so there is no baseline here to"
-  gum style "return to."
+  gum style --width 80 "$(omarchy-i18n reset.noSnapshotWhy)"
   echo
-  gum style --foreground 8 "Reinstall from the Omarchy ISO to make this machine resettable."
+  gum style --foreground 8 "$(omarchy-i18n reset.reinstallHint)"
   exit 1
 }
 
@@ -766,11 +747,11 @@ main() {
   umount -R "$TOP_MNT" 2>/dev/null || true
 
   echo
-  gum style --bold "Reset staged. The wipe finishes on the next boot."
-  if gum confirm --affirmative "Reboot now" --negative "Reboot later" "Reboot to complete the reset?"; then
+  gum style --bold "$(omarchy-i18n reset.staged)"
+  if gum confirm --affirmative "$(omarchy-i18n reset.rebootNow)" --negative "$(omarchy-i18n reset.rebootLater)" "$(omarchy-i18n reset.rebootQuestion)"; then
     systemctl reboot
   else
-    gum style --foreground 3 "Do not keep using this machine — changes made now will be lost."
+    gum style --foreground 3 "$(omarchy-i18n reset.stopUsing)"
   fi
 }
 

@@ -47,11 +47,12 @@ ShellRoot {
     },
     bar: {
       position: "top",
-      transparent: false,
-      centerAnchor: "omarchy.clock",
+      background: "opaque",
       layout: {
         left: [{ id: "omarchy.menu" }, { id: "omarchy.workspaces" }],
+        centerBegin: [],
         center: [{ id: "omarchy.clock", format: "dddd HH:mm" }],
+        centerEnd: [],
         right: [{ id: "omarchy.audio" }]
       }
     },
@@ -1099,11 +1100,11 @@ ShellRoot {
   function updateEntryInline(moduleName, settings) {
     var stripped = Util.canonicalWidgetId(moduleName)
     var copy = JSON.parse(JSON.stringify(shellConfig || builtinShellConfig))
-    if (!Util.isPlainObject(copy.bar)) copy.bar = { layout: { left: [], center: [], right: [] } }
-    if (!Util.isPlainObject(copy.bar.layout)) copy.bar.layout = { left: [], center: [], right: [] }
+    if (!Util.isPlainObject(copy.bar)) copy.bar = { layout: {} }
+    if (!Util.isPlainObject(copy.bar.layout)) copy.bar.layout = {}
     if (!Array.isArray(copy.plugins)) copy.plugins = []
 
-    var sections = ["left", "center", "right"]
+    var sections = Util.barSections
     var foundInLayout = false
     var dirty = false
     for (var s = 0; s < sections.length; s++) {
@@ -1794,9 +1795,11 @@ ShellRoot {
       return "ok"
     }
 
+    // Named for the two-state toggle it once was; it now cycles the bar
+    // background from clear to glassy to opaque and around.
     function toggleBarTransparency(): string {
-      if (shell.bar && typeof shell.bar.toggleTransparency === "function") {
-        shell.bar.toggleTransparency()
+      if (shell.bar && typeof shell.bar.cycleBackground === "function") {
+        shell.bar.cycleBackground()
         return "ok"
       }
       return "no-bar"

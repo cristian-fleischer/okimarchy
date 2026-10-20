@@ -114,7 +114,8 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8')
 const audioNodes = read('shell/Commons/AudioNodes.qml')
 assert(/path: "\/usr\/share\/omarchy-platform\/audio\.json"/.test(audioNodes) && !/Quickshell\.env|OMARCHY_/.test(audioNodes),
   'audio reads the platform hints from the fixed platform root')
-assert(/onLoadFailed: missing = true/.test(audioNodes), 'a removed hints file hides nothing')
+assert(/onLoadFailed: \{\s*missing = true\s*root\.hints = Model\.parsePlatformAudio\(""\)/.test(audioNodes), 'a removed hints file hides nothing')
+assert(/property var hints: Model\.parsePlatformAudio\(hintsFile\.text\(\)\)/.test(audioNodes), 'audio reads the platform hints synchronously at startup')
 const sources = ['shell/plugins/panels/audio/Panel.qml', 'shell/plugins/panels/audio/Model.js', 'shell/Commons/AudioNodes.qml',
   'shell/Commons/AudioNodesModel.js', 'shell/Commons/UntypedInput.qml', 'shell/plugins/bar/widgets/Microphone.qml',
   'bin/omarchy-audio-input-set-default', 'bin/omarchy-audio-sink-availability']
@@ -125,4 +126,38 @@ const panel = read('shell/plugins/panels/audio/Panel.qml')
 assert(/inputPeakNode: inputViaWpctl \? null : source/.test(panel) && /inputLevelShown: !!inputPeakNode/.test(panel) &&
   /visible: root\.inputLevelShown[^}]*inputPeakMonitor\.peak/.test(panel),
   'the input level bar is hidden when the input is driven through wpctl')
+assert(!/Timer \{[^}]*repeat: true[^}]*resolveVolumeSink/.test(panel), 'no timer polls the volume sink')
+assert(panel.includes('onNodesChanged: volumeSinkResolveTimer.restart()') && /target: Pipewire\.linkGroups\s*function onValuesChanged\(\) \{ volumeSinkResolveTimer\.restart\(\) \}/.test(panel),
+  'node and link changes resolve the volume sink again')
+{
+  const body = panel.match(/function resolveVolumeSink\(\) \{([\s\S]*?)\n  \}/)[1]
+  const resolve = new Function('sink', 'volumeSinkProc', 'state', body.replace(/\b(volumeSinkName|volumeSinkStale|volumeSinkGeneration|volumeSinkRequest)\b/g, 'state.$1'))
+  const finished = new Function('root', 'text', panel.match(/onStreamFinished: \{\s*(if \(root\.volumeSinkRequest[^\n]*)/)[1])
+  const proc = { running: false }
+  const state = { volumeSinkName: '', volumeSinkStale: false, volumeSinkGeneration: 0, volumeSinkRequest: -1 }
+  resolve({ name: 'alsa_output.pci-0000_00_1f.3.analog-stereo' }, proc, state)
+  assert(!proc.running && state.volumeSinkName === 'alsa_output.pci-0000_00_1f.3.analog-stereo', 'a hardware output resolves to itself without the script')
+  resolve({ name: 'omarchy_speaker_tuning' }, proc, state)
+  assert(proc.running, 'a DSP output resolves through the script')
+  resolve({ name: 'omarchy_speaker_tuning' }, proc, state)
+  assert(state.volumeSinkStale, 'a change during a resolve is marked for a rerun')
+  {
+    // Quickshell still reports the process running while it signals exit.
+    const exited = new Function('root', 'Qt', panel.match(/id: volumeSinkProc[\s\S]*?onExited: \{([\s\S]*?)\n    \}/)[1])
+    const deferred = []
+    const sink = { name: 'omarchy_speaker_tuning' }
+    state.resolveVolumeSink = () => resolve(sink, proc, state)
+    const requestBefore = state.volumeSinkRequest
+    exited(state, { callLater: callback => deferred.push(callback) })
+    proc.running = false
+    assert(deferred.length === 1 && !state.volumeSinkStale, 'the rerun waits until the read has exited')
+    deferred.shift()()
+    assert(proc.running && state.volumeSinkRequest > requestBefore, 'a change during a resolve runs it again afterwards')
+  }
+  resolve({ name: 'alsa_output.usb-headset' }, proc, state)
+  finished(state, 'alsa_output.speakers\n')
+  assertEqual(state.volumeSinkName, 'alsa_output.usb-headset', 'a script read that predates a switch to hardware cannot overwrite it')
+}
+assert(/path: [^\n]*"\/easyeffects\/db\/easyeffectsrc"\s*watchChanges: true\s*printErrors: false\s*onFileChanged: volumeSinkResolveTimer\.restart\(\)/.test(panel),
+  "EasyEffects' configured output is watched, since an idle EasyEffects resolves through it")
 JS

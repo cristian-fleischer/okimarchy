@@ -38,7 +38,6 @@ Belarusian|by
 Belgian|be-latin1
 Bulgarian|bg-cp1251
 Chinese (Simplified, Pinyin)|us|pinyin
-Chinese (Traditional, Zhuyin)|us|chewing
 Croatian|croat
 Czech|cz
 Danish|dk-latin1
@@ -53,6 +52,7 @@ German|de
 German (Switzerland)|de_CH-latin1
 Greek|gr
 Hebrew|il
+Hong Kong (Cangjie)|us|cangjie5
 Hungarian|hu
 Icelandic|is-latin1
 Irish|ie
@@ -60,7 +60,7 @@ Italian|it
 Japanese|jp106|mozc
 Japanese (US keyboard)|us|mozc
 Kazakh|kazakh
-Korean|us|hangul|kr
+Korean|us|hangul|kr:kr104
 Kyrgyz|kyrgyz
 Lao|us||la
 Latvian|lv
@@ -78,6 +78,7 @@ Slovenian|slovene
 Spanish|es
 Spanish (Latin American)|la-latin1
 Swedish|sv-latin1
+Taiwan (Zhuyin)|us|chewing
 Tajik|tj_alt-UTF8
 Turkish|trq
 Ukrainian|ua'
@@ -113,8 +114,8 @@ omarchy_prompt_keyboard() {
 # preference survives separately for every user of the installed system.
 omarchy_persist_input_selection() {
   local target_root=${1:-} method=${keyboard_input_method:-none} layout=${keyboard_xkb_layout:-}
-  case "$method" in none | mozc | hangul | pinyin | chewing) ;; *) return 1 ;; esac
-  case "$layout" in "" | kr | la) ;; *) return 1 ;; esac
+  case "$method" in none | mozc | hangul | pinyin | chewing | cangjie5) ;; *) return 1 ;; esac
+  case "$layout" in "" | kr | kr:kr104 | la) ;; *) return 1 ;; esac
   mkdir -p "$target_root/etc/omarchy"
   printf 'INPUT_METHOD=%s\nXKB_LAYOUT=%s\n' "$method" "$layout" > "$target_root/etc/omarchy/input-method"
 }

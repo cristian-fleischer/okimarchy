@@ -7,7 +7,7 @@ You can see all the main keyboard bindings with `Super + K` (Tmux bindings with 
 | Hotkey                  | Function              |
 | ----------------------- | --------------------- |
 | `Super + Space`           | Omarchy menu (apps and everything else)    |
-| `Super + Alt + Space` | Apps menu |
+| `Super + Alt + Space` | App grid |
 | `Super + Escape` | System menu (suspend, restart, etc)  |
 | `Super + Ctrl + L` | Lock computer |
 | `Super + W` or `Super + Q` | Close window             |
@@ -15,22 +15,24 @@ You can see all the main keyboard bindings with `Super + K` (Tmux bindings with 
 | `Super + T`               | Toggle window between tiling/floating             |
 | `Super + J` | Toggle window position (horizontal/vertical) |
 | `Super + O`               | Toggle popping window into sticky'n'floating |
-| `Super + L`               | Toggle between dwindle and scrolling layout |
+| `Super + L`               | Cycle through the dwindle, scrolling, and floating layouts |
+| `Super + Alt + L`         | Cycle through the layouts in reverse |
 | `Super + P`               | Toggle pseudo window style (natural v stretch) |
 | `Super + F`                 | Go full screen              |
 | `Super + Alt + F`                 | Go full width              |
 | `Super + Ctrl + F`                 | Go full screen inside window              |
-| `Super + 1/2/3/4`         | Jump to specific workspace     |
-| `Super + Tab` | Jump to next workspace |
-| `Super + Shift + Tab` | Jump to previous workspace |
-| `Super + Ctrl + Tab` | Jump to former workspace |
-| `Super + Shift + 1/2/3/4` | Move window to workspace |
-| `Super + Shift + Alt + 1/2/3/4` | Move window to workspace without following |
+| `Super + 1/2/3/4`         | Jump to specific workspace on the focused monitor |
+| `Super + Tab` | Jump to next workspace on the focused monitor |
+| `Super + Shift + Tab` | Jump to previous workspace on the focused monitor |
+| `Super + Ctrl + Tab` | Jump to former workspace on the focused monitor |
+| `Super + Shift + 1/2/3/4` | Move window to workspace on the focused monitor |
+| `Super + Shift + Alt + 1/2/3/4` | Move window to workspace on the focused monitor without following |
 | `Super + S` / `Super + Grave` | Toggle scratchpad |
 | `Super + Alt + S` / `Super + Shift + Grave` | Move window to scratchpad |
-| `Super + Shift + Alt + Arrows` | Move workspaces to directional monitor |
-| `Super + Arrow`  | Move focus to window in direction of arrow              |
-| `Super + Shift + Arrow`  | Swap window with another in direction of arrow     |
+| `Super + Shift + Ctrl + Arrows` | Move window to the monitor in that direction |
+| `Super + Shift + Alt + Arrows` | Move workspace to the monitor in that direction |
+| `Super + Arrow`  | Move focus to window in direction of arrow, crossing to the monitor on that side at the screen's edge |
+| `Super + Shift + Arrow`  | Swap window with another in direction of arrow, including one on the monitor on that side |
 | `Super + Minus` | Expand window left |
 | `Super + Equal` | Shrink window left |
 | `Super + Shift + Minus` | Shrink window up |
@@ -41,13 +43,14 @@ You can see all the main keyboard bindings with `Super + K` (Tmux bindings with 
 | `Super + Home` | Restore saved window width |
 | `Super + Left Mouse` | Drag window around |
 | `Super + Right Mouse` | Resize window |
-| `Super + Scroll Wheel` | Scroll through workspaces |
+| `Super + Scroll Wheel` | Scroll through workspaces on the focused monitor |
 | `Super + G`               | Toggle window grouping      |
 | `Super + Alt + G`               | Move window out of grouping      |
 | `Super + Alt + Tab`               | Cycle between windows in grouping      |
 | `Super + Alt + Shift + Tab`               | Cycle backward between windows in grouping      |
+| `Super + Alt + Scroll Wheel` | Cycle between windows in grouping |
 | `Super + Alt + 1/2/3/4/5`               | Jump to specific window in grouping      |
-| `Super + Alt + Arrow`  | Move window into grouping in direction of arrow  |
+| `Super + Alt + Arrow`  | Move window into grouping in direction of arrow, including one on the monitor on that side |
 | `Super + Ctrl + Left/Right`  | Move between windows inside a tiling group |
 | `Super + Ctrl + Z` | Zoom in on screen (repeat for more zoom) |
 | `Super + Ctrl + Alt + Z` | Zoom fully out from screen |
@@ -115,7 +118,7 @@ You can see all the main keyboard bindings with `Super + K` (Tmux bindings with 
 | `Super + Shift + Alt + A`           | AI (Grok)  |
 | `Super + Shift + G`           | Messenger (Signal)  |
 | `Super + Shift + P`           | Google Photos  |
-| `Super + Shift + S`           | Google Maps  |
+| `Super + Shift + Alt + S`           | Google Maps  |
 | `Super + Shift + Alt + G`           | Messenger (WhatsApp)  |
 | `Super + Shift + Ctrl + G`           | Messenger (Google)  |
 | `Super + Shift + O`           | Obsidian  |
@@ -141,8 +144,9 @@ Usually on Linux, you need `Ctrl + Shift + C/V` to copy'n'paste in the terminal 
 
 | Hotkey              | Function                       |
 | ------------------- | ------------------------------ |
-| `Super + Ctrl + C` | Capture menu (for keyboards w/o PrintScr button) |
 | `Print Screen`            | Screenshot                      |
+| `Super + Shift + S`            | Screenshot (the same shot, for keyboards with no Print Screen key) |
+| `Super + Ctrl + C` | Capture menu |
 | `Alt + Print Screen`            | Screenrecord                     |
 | `Super + Print Screen` | Color picker |
 | `Super + Ctrl + Print Screen` | Text extraction to clipboard |
