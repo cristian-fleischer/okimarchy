@@ -168,11 +168,13 @@ pass "leaving dev preserves no-update sudo through unlink and hands off to the p
 # package is installed. Its updater authenticates without --no-update, so the
 # switch must not launch it: it stops at a consistent point with instructions.
 reset_boundary
+export SUDO_TEST_INSTALLED=$'omarchy 4.0.5-1\nomarchy-settings 4.0.5-1'
 mv "$SUDO_TEST_ROOT/default/omarchy/sudo-no-update/sudo" "$boundary_tmp/saved-package-wrapper"
 mv "$SUDO_TEST_ROOT/bin/omarchy-update" "$boundary_tmp/saved-package-update"
 ln -s test-step "$SUDO_TEST_ROOT/bin/omarchy-update"
 if OMARCHY_PATH="$SUDO_TEST_HOME/omarchy" run_channel stable; then fail "an older packaged destination was updated with ordinary sudo" "$(<"$SUDO_TEST_LOG")"; fi
 grep -q "predates command-scoped sudo" "$boundary_tmp/output" || fail "an older packaged destination was not reported" "$(<"$boundary_tmp/output")"
+grep -Fq "Packages are switched to omarchy 4.0.5-1, omarchy-settings 4.0.5-1." "$boundary_tmp/output" || fail "an older packaged destination does not name what is installed" "$(<"$boundary_tmp/output")"
 grep -q "Run 'omarchy update' from a new terminal to finish" "$boundary_tmp/output" || fail "an older packaged destination lacks recovery guidance" "$(<"$boundary_tmp/output")"
 grep -Fxq 'step:omarchy-dev-unlink --no-reboot' "$SUDO_TEST_LOG" || fail "the package switch was not completed before stopping" "$(<"$SUDO_TEST_LOG")"
 grep -Fxq 'step:omarchy-state set reboot-required' "$SUDO_TEST_LOG" || fail "leaving dev for an older release did not mark the reboot" "$(<"$SUDO_TEST_LOG")"
@@ -199,16 +201,32 @@ cp "$SUDO_TEST_ROOT/default/omarchy/sudo-no-update/sudo" "$boundary_tmp/saved-pa
 for pattern in 'pacman -Syyuu*' 'pacman -S --needed*'; do
   reset_boundary
   export SUDO_TEST_REMOVE_WRAPPER_STEP=$pattern
+  # The refresh can only have left an older tree of either flavour; the swap
+  # leaves the destination's packages.
+  if [[ $pattern == "pacman -Syyuu*" ]]; then
+    export SUDO_TEST_INSTALLED=$'omarchy-dev 4.0.0.r1832.g23dab9e-1\nomarchy-settings-dev 4.0.0.r1832.g23dab9e-1'
+  else
+    export SUDO_TEST_INSTALLED=$'omarchy 4.0.6rc1-1\nomarchy-settings 4.0.6rc1-1'
+  fi
   if run_channel rc; then fail "a downgrade during '$pattern' was not detected" "$(<"$SUDO_TEST_LOG")"; fi
   unset SUDO_TEST_REMOVE_WRAPPER_STEP
   grep -q "predates command-scoped sudo" "$boundary_tmp/output" || fail "downgrade during '$pattern' was not reported" "$(<"$boundary_tmp/output")"
+  if [[ $pattern == "pacman -Syyuu*" ]]; then
+    if grep -q "Packages are switched" "$boundary_tmp/output"; then fail "a refresh that replaced the tree was reported as a finished package switch" "$(<"$boundary_tmp/output")"; fi
+    grep -Fq "stops before installing omarchy omarchy-settings." "$boundary_tmp/output" || fail "a stop before the swap does not say so" "$(<"$boundary_tmp/output")"
+    grep -Fq "Installed now: omarchy-dev 4.0.0.r1832.g23dab9e-1, omarchy-settings-dev 4.0.0.r1832.g23dab9e-1." "$boundary_tmp/output" || fail "a stop before the swap does not name what is installed" "$(<"$boundary_tmp/output")"
+    grep -Fq "Run 'omarchy channel set rc' from a new terminal to finish" "$boundary_tmp/output" || fail "a stop before the swap does not say to rerun the switch" "$(<"$boundary_tmp/output")"
+  else
+    grep -Fq "Packages are switched to omarchy 4.0.6rc1-1, omarchy-settings 4.0.6rc1-1." "$boundary_tmp/output" || fail "a stop after the swap does not name what is installed" "$(<"$boundary_tmp/output")"
+    grep -Fq "Run 'omarchy update' from a new terminal to finish" "$boundary_tmp/output" || fail "a stop after the swap does not say to update" "$(<"$boundary_tmp/output")"
+  fi
   if grep -q '^unwrapped-sudo ' "$SUDO_TEST_LOG"; then fail "downgrade during '$pattern' reached ordinary sudo" "$(<"$SUDO_TEST_LOG")"; fi
   if grep -q '^step:omarchy-dev-unlink' "$SUDO_TEST_LOG"; then fail "downgrade during '$pattern' still unlinked" "$(<"$SUDO_TEST_LOG")"; fi
   if grep -q '^step:omarchy-update ' "$SUDO_TEST_LOG"; then fail "downgrade during '$pattern' still updated" "$(<"$SUDO_TEST_LOG")"; fi
   python3 - "$SUDO_TEST_LOG" "$pattern" <<'PY'
 import sys
 events = open(sys.argv[1]).read().splitlines()
-transactions = [e for e in events if e.startswith('step:pacman ')]
+transactions = [e for e in events if e.startswith('step:pacman ') and not e.startswith('step:pacman -Q ')]
 assert len(transactions) == (1 if sys.argv[2].startswith('pacman -Syyuu') else 2), events
 assert all(e in ('sudo -h', 'sudo -k') or e.startswith('sudo -N ') for e in events if e.startswith('sudo ')), events
 PY
