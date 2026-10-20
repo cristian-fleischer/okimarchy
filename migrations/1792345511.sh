@@ -18,7 +18,8 @@ if [[ -f $HOME/.local/share/t3code/T3-Code.AppImage ]]; then
   omarchy-pkg-drop t3code-bin t3code-nightly-bin
 else
   # Threads, settings, and the theme stay in ~/.t3, which the app keeps using.
-  omarchy-install-t3code-app "$channel"
+  # The package's channel carries over, and the running app stays open.
+  omarchy-install-ai-t3-code "$channel" --no-launch
 fi
 
 echo "T3 Code now updates itself. If it is open, quit and reopen it to run the new app."

@@ -18,7 +18,7 @@ for pkg in "$@"; do
   [[ " $TEST_PACKAGES " == *" $pkg "* ]] || exit 1
 done
 SH
-cat >"$mock_bin/omarchy-install-t3code-app" <<'SH'
+cat >"$mock_bin/omarchy-install-ai-t3-code" <<'SH'
 #!/bin/bash
 echo "install:$*" >>"$TEST_LOG"
 SH
@@ -40,12 +40,12 @@ fresh_home() {
 
 fresh_home
 migrate "t3code-nightly-bin" || fail "migrating a nightly package succeeds" "$(cat "$test_tmp/output")"
-[[ $(cat "$TEST_LOG") == "install:nightly" ]] || fail "the nightly package becomes the nightly app" "$(cat "$TEST_LOG")"
+[[ $(cat "$TEST_LOG") == "install:nightly --no-launch" ]] || fail "the nightly package becomes the nightly app, without a prompt or a launch" "$(cat "$TEST_LOG")"
 pass "the nightly package becomes the nightly app"
 
 fresh_home
 migrate "t3code-bin" || fail "migrating a stable package succeeds" "$(cat "$test_tmp/output")"
-[[ $(cat "$TEST_LOG") == "install:stable" ]] || fail "the stable package becomes the stable app" "$(cat "$TEST_LOG")"
+[[ $(cat "$TEST_LOG") == "install:stable --no-launch" ]] || fail "the stable package becomes the stable app, without a prompt or a launch" "$(cat "$TEST_LOG")"
 pass "the stable package becomes the stable app"
 
 fresh_home
@@ -67,7 +67,7 @@ migrate "" || fail "migrating without a T3 Code package succeeds" "$(cat "$test_
 pass "nothing changes without a T3 Code package"
 
 : >"$TEST_LOG"
-cat >"$mock_bin/omarchy-install-t3code-app" <<'SH'
+cat >"$mock_bin/omarchy-install-ai-t3-code" <<'SH'
 #!/bin/bash
 exit 1
 SH

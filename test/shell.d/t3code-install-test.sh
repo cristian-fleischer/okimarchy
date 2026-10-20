@@ -61,9 +61,10 @@ cat >"$mock_bin/gum" <<'SH'
 echo "${OMARCHY_TEST_GUM_PICK:-Stable}"
 SH
 
+# The launch is backgrounded, so each run names its own record.
 cat >"$mock_bin/setsid" <<'SH'
 #!/bin/bash
-exit 0
+touch "$TEST_TMP/launched-${OMARCHY_TEST_RUN:-default}"
 SH
 chmod +x "$mock_bin"/* "$mount_dir/t3code"
 
@@ -106,6 +107,15 @@ cp "$test_tmp/palette.json" "$state/theme/t3code.json"
 run_installer stable || fail "installing with an existing palette succeeds" "$(cat "$test_tmp/output")"
 cmp -s "$test_tmp/palette.json" "$palette" || fail "an existing palette is published without re-staging"
 pass "an existing palette is used without refreshing the current theme"
+
+rm -f "$test_tmp/channel"
+OMARCHY_TEST_RUN=no-launch run_installer nightly --no-launch || fail "installing without a launch succeeds" "$(cat "$test_tmp/output")"
+[[ $(cat "$test_tmp/channel") == "nightly" ]] || fail "the named channel is installed without a prompt"
+grep -q 'T3 selected Omarchy' "$test_tmp/output" || fail "the palette is selected without a launch"
+if [[ -f $test_tmp/launched-no-launch ]] || grep -q 'Opening T3 Code' "$test_tmp/output"; then
+  fail "--no-launch leaves T3 Code closed" "$(cat "$test_tmp/output")"
+fi
+pass "--no-launch installs and themes the named channel without opening T3 Code"
 
 printf '{"defaultTheme":"dark","keep":"existing settings"}\n' >"$settings"
 cp "$settings" "$test_tmp/settings-before.json"
