@@ -167,7 +167,7 @@ var _busy = false
 // the newer one, so a burst of replacements cannot crowd out a close. Only
 // puts are ever dropped.
 function write(proc, bin, verb, payload, args) {
-  var job = { bin: bin, verb: verb, payload: verb === "put" ? sanitiseForPersistence(payload) : payload, args: args || [] }
+  var job = { bin: bin, verb: verb, payload: verb === "put" ? persistable(payload) : payload, args: args || [] }
   var merges = verb === "put" || verb === "quiet-save" || verb === "policy"
   for (var i = _queue.length - 1; merges && i >= 0; i--) {
     var queued = _queue[i]
@@ -199,6 +199,30 @@ function _pump(proc) {
     proc.write(JSON.stringify(job.payload))
     proc.stdinEnabled = false
   }
+}
+
+// The store takes at most 64 KiB of JSON and writes it back ASCII-escaped, so
+// a row is measured that way and its body shortened until it fits. Derived
+// text is recomputed on restore and not sent at all.
+var PERSIST_BYTES = 60000
+
+function escapedLength(value) {
+  var text = JSON.stringify(value), n = 0
+  for (var i = 0; i < text.length; i++) n += text.charCodeAt(i) < 0x80 ? 1 : 6
+  return n
+}
+
+function persistable(row) {
+  var out = sanitiseForPersistence(row)
+  delete out.bodyRich
+  delete out.bodyLine
+  if (out.rawBody === out.body) out.rawBody = ""
+  while (escapedLength(out) > PERSIST_BYTES && (out.body || out.rawBody)) {
+    out.body = out.body.slice(0, Math.floor(out.body.length * 3 / 4))
+    out.rawBody = out.rawBody.slice(0, Math.floor(out.rawBody.length * 3 / 4))
+  }
+  if (escapedLength(out) > PERSIST_BYTES) out.execArgv = ""
+  return out
 }
 
 // A secret-bearing notification persists only as a placeholder, so encoded

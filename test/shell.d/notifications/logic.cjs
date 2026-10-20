@@ -850,3 +850,15 @@ console.log('notification logic: passed')
   assert.equal(Store._queue[1].payload.summary, 'n397')
   Store._queue.length = 0
 }
+
+{ // A row is saved within the store's 64 KiB, measured as the store writes it back (ASCII-escaped).
+  const blocked = { policyReady: false }
+  for (const body of ['x'.repeat(30000), '中'.repeat(30000), '\u{1F600}'.repeat(16000)]) {
+    Store.write(blocked, 'store', 'put', { key: 'big', summary: 'Long', body, rawBody: body })
+    const saved = Store._queue[Store._queue.length - 1].payload
+    const escaped = JSON.stringify(saved).replace(/[^\x00-\x7f]/g, '\\uXXXX')
+    assert.ok(escaped.length <= 60000, escaped.length)
+    assert.ok(saved.body.length > 1000 && !('bodyRich' in saved) && !('bodyLine' in saved))
+    Store._queue.length = 0
+  }
+}
