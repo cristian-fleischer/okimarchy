@@ -4,6 +4,7 @@ Skipped when Bubblewrap is missing or cannot create namespaces here (a
 container without user namespaces); the helper-mode tests cover the policy
 around it with the sandbox mocked.
 """
+import json
 import os
 from pathlib import Path
 import socket
@@ -46,26 +47,24 @@ class Sandbox(unittest.TestCase):
     cut = command.index("/usr/bin/python3")
     subprocess.run(command[:cut] + ["/usr/bin/python3", "-c", code], check=True, timeout=10)
 
-  def test_only_the_store_writes_state_and_neither_has_a_network(self):
-    for kind in ("store", "icon"):
-      with self.subTest(kind=kind):
-        command = self.r.sandbox_command(kind, [], self.bwrap, os.environ)
-        check = self.r.STATE / ("check-" + kind)
-        writes = kind == "store"
-        self.run_inside(command, f"""import os,socket
+  def test_the_store_writes_only_its_state_and_has_no_network(self):
+    command = self.r.sandbox_command("store", [], self.bwrap, os.environ)
+    check = self.r.STATE / "check-store"
+    outside = self.r.HOME_DIR / "check-outside"
+    self.run_inside(command, f"""import os,socket
 assert not os.path.exists({str(self.secret)!r})
 assert not os.path.exists({str(HELPERS.resolve().parents[3])!r})
-assert os.path.isfile('/opt/omarchy-notifications/{kind}')
+assert os.path.isfile('/opt/omarchy-notifications/store')
 s=socket.socket();s.settimeout(.2)
 assert s.connect_ex(('1.1.1.1',443)) != 0
+open({str(check)!r}, 'w').write('ok')
 try:
-  open({str(check)!r}, 'w').write('ok')
+  open({str(outside)!r}, 'w').write('ok')
 except OSError:
-  assert not {writes!r}
-else:
-  assert {writes!r}
+  pass
 """)
-        self.assertEqual(check.exists(), writes)
+    self.assertTrue(check.exists())
+    self.assertFalse(outside.exists())
 
   def test_kdeconnect_gets_the_bus_and_only_the_demo_directory_it_asked_for(self):
     self.r.STATE.mkdir(parents=True)
@@ -118,6 +117,73 @@ else:
                                         "XDG_RUNTIME_DIR": str(runtime)}), \
                 self.assertRaises((RuntimeError, ValueError)):
           self.r.sandbox_command("kdeconnect", [], self.bwrap, os.environ)
+
+
+class SandboxEscapes(unittest.TestCase):
+  """Run a probe inside each real sandbox, as if its helper were compromised."""
+
+  PROBE = r"""
+import ctypes, json, os, socket
+out = {}
+def attempt(name, call):
+  try:
+    call(); out[name] = "ALLOWED"
+  except (OSError, ValueError):
+    out[name] = "blocked"
+attempt("write-usr", lambda: open("/usr/omarchy-escape", "w"))
+attempt("host-root", lambda: open("/proc/1/root" + SECRET).read())
+attempt("secret", lambda: open(SECRET).read())
+attempt("inherited-fd", lambda: os.read(FD, 10))
+attempt("abstract-socket", lambda: socket.socket(socket.AF_UNIX).connect(ABSTRACT))
+attempt("unix-socket", lambda: socket.socket(socket.AF_UNIX))
+attempt("signal-host", lambda: os.kill(HOSTPID, 0))
+attempt("tty", lambda: os.open("/dev/tty", os.O_RDWR))
+s = socket.socket(); s.settimeout(0.3)
+attempt("loopback", lambda: s.connect(ADDRESS))
+print(json.dumps(out))
+"""
+
+  @classmethod
+  def setUpClass(cls):
+    cls.runner = load_helper("run")
+    cls.bwrap = cls.runner.bubblewrap_path()
+    if not cls.bwrap or not cls.runner.probe_sandbox(cls.bwrap):
+      raise unittest.SkipTest("bubblewrap sandbox is not operational")
+
+  def probe(self, args):
+    with tempfile.TemporaryDirectory() as temp:
+      home = Path(temp)
+      secret = home / "secret"
+      secret.write_text("secret")
+      abstract = socket.socket(socket.AF_UNIX)
+      abstract.bind("\0omarchy-escape-%d" % os.getpid())
+      abstract.listen()
+      listener = socket.socket()
+      listener.bind(("127.0.0.1", 0))
+      listener.listen()
+      # An inheritable descriptor the launcher holds; Popen closes it on the
+      # way into every helper, as run_supervised does.
+      fd = os.open(secret, os.O_RDONLY)
+      os.set_inheritable(fd, True)
+      try:
+        with patch.object(self.runner, "HOME_DIR", home), patch.object(self.runner, "STATE", home / "state"):
+          cmd = self.runner.sandbox_command("store", args, self.bwrap, {})
+        cmd = cmd[:cmd.index("/usr/bin/python3")]
+        code = (self.PROBE.replace("SECRET", repr(str(secret))).replace("FD", str(fd))
+                .replace("ABSTRACT", repr("\0omarchy-escape-%d" % os.getpid()))
+                .replace("HOSTPID", str(os.getpid())).replace("ADDRESS", repr(listener.getsockname())))
+        result = subprocess.run(cmd + ["/usr/bin/python3", "-c", code], stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, timeout=20, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        return json.loads(result.stdout)
+      finally:
+        os.close(fd)
+        abstract.close()
+        listener.close()
+
+  def test_the_store_sandbox_reaches_nothing(self):
+    found = self.probe(["restore"])
+    self.assertEqual({k for k, v in found.items() if v == "ALLOWED"}, {"unix-socket"}, found)
 
 
 if __name__ == "__main__":

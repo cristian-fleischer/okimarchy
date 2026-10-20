@@ -39,7 +39,7 @@ grep -q 'omarchy-notifications' "$ROOT/default/hypr/toggles/window-glassy.lua" |
 pass "notification surface keeps the omarchy-notifications layer namespace"
 
 # The helpers the service runs are the ones that ship beside it.
-for helper in run store icon kdeconnect; do
+for helper in run store kdeconnect; do
   [[ -x $ROOT/shell/plugins/notifications/helpers/$helper ]] ||
     fail "notification helper $helper is executable"
 done

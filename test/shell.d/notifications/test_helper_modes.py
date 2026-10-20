@@ -92,10 +92,12 @@ class HelperModes(unittest.TestCase):
     self.assertEqual(json.loads(stdout.getvalue())["mode"], "direct")
 
   def test_main_refuses_a_malformed_policy_and_unknown_kinds_before_probing(self):
-    # Capabilities and the per-kind wrapper names were plugin-era modes.
+    # Capabilities and the per-kind wrapper names were plugin-era modes; icons
+    # are resolved in the shell now.
     cases = [(["status"], {"OMARCHY_NOTIFICATIONS_REQUIRE_SANDBOX": "yes"})] + [
         (argv, {}) for argv in ([], ["capabilities"], ["action"], ["helper", "store"],
-                                ["check"], ["status", "extra"])]
+                                ["check"], ["status", "extra"], ["icon", "--key=x"],
+                                ["icon", "--sender-image"])]
     for argv, environ in cases:
       with self.subTest(argv=argv, environ=environ), \
               patch.object(self.runner, "mode_status", side_effect=AssertionError("probed")), \
@@ -111,9 +113,9 @@ class HelperModes(unittest.TestCase):
                      Path.home() / ".local/state/omarchy/notifications")
     self.assertEqual(self.runner.python_helper("store", ["restore"], str(self.runner.BASE))[-2:],
                      [str(HELPERS.resolve() / "store"), "restore"])
-    self.assertEqual(self.runner.python_helper("icon", [])[-1],
-                     "/opt/omarchy-notifications/icon")
-    for kind in ("store", "icon", "kdeconnect"):
+    self.assertEqual(self.runner.python_helper("kdeconnect", [])[-1],
+                     "/opt/omarchy-notifications/kdeconnect")
+    for kind in ("store", "kdeconnect"):
       self.assertTrue(os.access(HELPERS / kind, os.X_OK), kind)
 
   def test_symlinked_checkout_runs_the_store(self):
@@ -210,6 +212,12 @@ class HelperModes(unittest.TestCase):
       result = self.runner.main(["store", *args], {"OMARCHY_NOTIFICATIONS_REQUIRE_SANDBOX": "0"})
     self.assertEqual(result, 23)
     self.assertEqual(json.loads(effect.read_text())["count"], 1)
+
+  def test_a_helper_stops_at_its_deadline(self):
+    started = time.monotonic()
+    with self.assertRaises(subprocess.TimeoutExpired):
+      self.runner.run_supervised(["/usr/bin/sleep", "30"], {"PATH": "/usr/bin"}, 1)
+    self.assertLess(time.monotonic() - started, 6)
 
   def test_child_unblocks_wrapper_signals_and_cancellation_kills_descendant(self):
     child_info = self.root / "child-info"

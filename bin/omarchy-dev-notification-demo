@@ -10,7 +10,6 @@ import argparse
 import json
 import os
 import random
-import re
 import secrets
 import selectors
 import subprocess
@@ -126,12 +125,10 @@ DEMO_REPLY = os.path.join(DEMO_STATE, "reply.json")
 
 
 def identity(n):
-  """The group key and icon-resolver fields the shell will derive."""
+  """The app name and icon hint a sender like this one gives."""
   if n.get("web"):
-    return dict(key="web:" + n["web"], source=n["web"], app="Google Chrome", icon="google-chrome")
-  app = n.get("app") or FALLBACK_APP
-  slug = "-".join(re.findall(r"[^\W_]+", app.lower()))
-  return dict(key="app:" + slug, source=app, app=app, icon=n.get("icon") or "")
+    return dict(app="Google Chrome", icon="google-chrome")
+  return dict(app=n.get("app") or FALLBACK_APP, icon=n.get("icon") or "")
 
 
 def bounded_output(command, limit=65536, timeout=5, env=None):
@@ -178,24 +175,6 @@ def helper_environment():
   except HELPER_ERRORS:
     pass
   return dict(os.environ, OMARCHY_NOTIFICATIONS_REQUIRE_SANDBOX="1" if required else "0")
-
-
-def warm(items):
-  """Resolve each source's icon up front, so first cards are not letter tiles."""
-  wanted = {}
-  for who in map(identity, items):
-    wanted.setdefault(who["key"], who)
-  if not wanted:
-    return
-  print("warming %d icons..." % len(wanted), file=sys.stderr)
-  env = helper_environment()
-  for who in wanted.values():
-    command = [HELPER, "icon", "--key=" + who["key"], "--app=" + who["app"],
-               "--app-icon=" + who["icon"], "--source=" + who["source"]]
-    try:
-      bounded_output(command, timeout=55, env=env)
-    except HELPER_ERRORS:
-      pass
 
 
 class Bus:
@@ -358,8 +337,6 @@ def main():
     if not items:
       say("nothing in the notification history matches")
       return 1
-  else:
-    warm([n for name in scenes for n in SCENES[name]])
 
   if not args.keep:
     # dismissAll takes cards off screen; `clear` would forget history.

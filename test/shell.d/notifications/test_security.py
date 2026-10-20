@@ -1,4 +1,4 @@
-"""Store redaction and file safety, KDE Connect replies, icon paths."""
+"""Store redaction and file safety, KDE Connect replies."""
 import contextlib
 import io
 import json
@@ -11,7 +11,7 @@ import time
 import unittest
 from unittest.mock import patch, MagicMock
 
-from support import HELPERS, have_magick, load_helper, png
+from support import HELPERS, load_helper
 import notification_files as files
 
 STATE = '.local/state/omarchy/notifications'
@@ -260,65 +260,6 @@ class Replies(unittest.TestCase):
         self.assertFalse(reply.exists())
         self.demo(temp, created=time.time() - self.k.FIXTURE_MAX_AGE - 1)
         self.assertIsNone(self.k.find('Omarchy reply demo', 'Demo sender: hello'))
-
-
-class Icons(unittest.TestCase):
-  def setUp(self):
-    self.icon = load_helper('icon')
-
-  def test_icon_hint_traversal(self):
-    with patch.object(self.icon.glob, 'glob', return_value=[]) as glob:
-      self.icon.from_icon_theme(['../../../../etc/passwd', '/etc/passwd', '*', '--help'])
-    for call in glob.call_args_list:
-      self.assertNotIn('../', call.args[0])
-
-  def test_local_theme_svgs_are_found(self):
-    with tempfile.TemporaryDirectory() as temp:
-      theme = Path(temp) / 'hicolor/scalable/apps'
-      theme.mkdir(parents=True)
-      (theme / 'kitty.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg"></svg>')
-      with patch.object(self.icon, 'ICON_DIRS', [temp]):
-        self.assertEqual(self.icon.from_icon_theme(['kitty']), str(theme / 'kitty.svg'))
-
-
-@unittest.skipUnless(have_magick(), "imagemagick is not installed")
-class Raster(unittest.TestCase):
-  def setUp(self):
-    self.icon = load_helper('icon')
-
-  def test_sender_raster_and_dimension_limit(self):
-    for size, accepted in (((256, 256), True), ((2049, 1), False)):
-      with self.subTest(size=size):
-        try:
-          width, height, rgba = self.icon.sender_pixels(png(size, (0, 0, 0, 255)))
-        except ValueError:
-          self.assertFalse(accepted)
-        else:
-          self.assertTrue(accepted)
-          self.assertLessEqual(max(width, height), 128)
-          self.assertEqual(len(rgba), width * height * 4)
-
-  def test_local_icons_normalise_to_one_canvas(self):
-    import notification_images
-    # A small opaque square and a padded transparent plus come out the same
-    # canvas size; the opaque one is inset less and has its corners cleared.
-    opaque = png((16, 16), (200, 40, 40, 255))
-    glyph = notification_images.encode_png(64, 64, b''.join(
-        bytes((0, 0, 0, 255) if 16 <= x < 48 and 16 <= y < 48 and (28 <= x < 36 or 28 <= y < 36) else (0, 0, 0, 0))
-        for y in range(64) for x in range(64)))
-    with tempfile.TemporaryDirectory() as temp:
-      for name, data, mono in (('opaque.png', opaque, False), ('glyph.png', glyph, True)):
-        source = Path(temp) / name
-        source.write_bytes(data)
-        rgba, found_mono = self.icon.normalise(str(source))
-        self.assertEqual(found_mono, mono, name)
-        self.assertEqual(len(rgba), 128 * 128 * 4)
-        self.assertEqual(rgba[(64 * 128 + 64) * 4 + 3], 255)
-      corner = self.icon.normalise(str(Path(temp) / 'opaque.png'))[0]
-      self.assertEqual(corner[(4 * 128 + 4) * 4 + 3], 0)
-      # Normalising writes nothing: only the launcher publishes icons.
-      self.assertEqual(sorted(p.name for p in Path(temp).iterdir()), ['glyph.png', 'opaque.png'])
-      self.assertIsNone(self.icon.normalise(str(Path(temp) / 'missing.png')))
 
 
 if __name__ == '__main__':

@@ -12,11 +12,12 @@ The shell is the notification daemon: `shell/plugins/notifications/Service.qml` 
 | `Store.js` | Notification snapshots, normalisation, persistence redaction, restore |
 | `Markup.js` | Safe body markup, source lifting (`web:app.slack.com`), KDE Connect forwarding, one-line previews |
 | `Detect.js` | Verification codes, links, meeting links and phone numbers |
-| `Security.js` | URL policy, bounds, the `omarchy-exec-argv` and glyph checks |
+| `Security.js` | URL policy, bounds, the sender image path policy, the `omarchy-exec-argv` and glyph checks |
+| `Icons.js` | The names a card's icon may go by: site names, overrides, symbolic icons |
 | `Layout.js` | Pure deck layout: rows in, placements out |
 | `Delivery.js` | Quiet rules, ephemeral rules, bar clearance |
 | `Settings.js` | Defaults and validation for `notifications` in `shell.json` |
-| `helpers/` | Python helpers: `run` (Bubblewrap launcher), `store`, `icon`, `kdeconnect` |
+| `helpers/` | Python helpers: `run` (Bubblewrap launcher), `store`, `kdeconnect` |
 
 The JS modules also load in Node: `test/shell.d/notifications-test.sh` covers them without a compositor, and `test/shell.d/notification-helpers-test.sh` covers the helpers.
 
@@ -42,16 +43,23 @@ A click tries, in order: the card's `omarchy-exec-argv` command; the sender's `d
 
 ## Helper sandbox
 
-Helpers run under Bubblewrap when it works. Without a working sandbox, `store` and `kdeconnect` run directly as the user unless `requireSandbox` is set, in which case they are blocked; `icon` never runs unsandboxed, so cards fall back to a letter tile. `omarchy-shell notifications probe` reports the mode, and the preferences page says when icons are off.
+Helpers run under Bubblewrap when it works. Without a working sandbox, `store` and `kdeconnect` run directly as the user unless `requireSandbox` is set, in which case they are blocked. `omarchy-shell notifications probe` reports the mode, and the preferences page says when the sandbox is unavailable. No helper sandbox has a network.
 
-Icons resolve once per source: the sender's image, then a local or themed icon (for a site, one named after it, else the browser's own), then the letter tile. User overrides go in `~/.config/omarchy/notifications/icons/`.
+## Icons
 
-- A site's icon is never fetched: the site name comes from the notification body and a browser is recognised by its self-asserted app name, so fetching would let any sender, a network-denied sandboxed app included, make the host contact a server of its choosing.
-- No helper sandbox has a network, and the icon lookup writes nowhere.
-- Decoders are chosen by content signature, never name or extension. ImageMagick (`helpers/notification_images.py`) runs under `helpers/policy.xml`, which allows only PNG, JPEG, WebP and ICO (at most 64 frames) with memory, size and time limits. Local SVGs go through librsvg from stdin, so external references resolve to nothing; no SVG reaches Qt.
-- A sender's image file is read by a forked child of the launcher under a 5s deadline and refused if empty, oversized, not a regular file, or on `/proc`, `/sys` or `/dev` (by path and filesystem type). The helper decodes a sealed memfd copy.
-- Helpers return raw pixels, never files. The launcher (`helpers/run`, outside the sandbox) reads at most one 128px RGBA image, encodes the PNG itself, and publishes `~/.cache/omarchy/notification-icons/<sha256>[-mono].png` (mounted by no sandbox) or, for a sender's image, a `data:image/png` URL. The shell accepts only a digest-named path in that directory or a data URL with a PNG header, from a launcher that exited cleanly.
-- One icon job gets 20s.
+Icons are resolved in the shell, the way the dock resolves its own, by each card (`Toast.qml`, with the names from `Icons.js`). The first that loads wins:
+
+1. The sender's image: an in-memory `image-data` picture (`image://qsimage/…`), or a local file named by the `image-path` hint.
+2. Your override in `~/.config/omarchy/notifications/icons/<name>.png` (or `.svg`, `.jpg`, `.jpeg`, `.webp`, `.ico`), named after the site (`app.slack.com`, `slack`), the icon hint, the source or the app, lowercased with other characters as `-`. The folder is watched; one created after the shell started is seen from the next restart.
+3. The icon theme (`Quickshell.iconPath`): for a browser notification the site's own names first (`app.slack.com`, then `slack`), then the app's icon hint (or its `desktop-entry` hint), source and name.
+4. The icon of a desktop entry matching the hint, source or app (`DesktopEntries.heuristicLookup`); for a site, only the browser's, since a fuzzy match on a domain label would put Google Contacts on `mail.google.com`.
+5. The glyph an Omarchy sender asked for, else the first letter of the source.
+
+An icon named `*-symbolic`, or a file under a `symbolic/` directory, is a one-colour mark and is tinted with the theme's text colour.
+
+A site's icon is never fetched: the site name comes from the notification body and a browser is recognised by its self-asserted app name, so fetching would let any sender make the host contact a server of its choosing.
+
+Images are decoded in the shell process like every other image it draws. A sender's file path (`Security.localImagePath`) must be absolute, at most 1024 characters, free of control characters and of empty, `.` and `..` segments, and not under `/proc`, `/sys`, `/dev` or `/run` and `/var/run` (other than `/run/user/<uid>/`); `file://` URLs are accepted and decoded first. No extension is required, as Chromium's temp files (`/tmp/.org.chromium.Chromium.*/…`) have none. A native sender already runs as you and could read the file itself; a sandboxed one can only name a file for you to see. Images are never persisted, so restored and replayed cards fall back to the source's icon.
 
 ## Silencing and snoozing
 
