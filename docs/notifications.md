@@ -17,7 +17,7 @@ The shell is the notification daemon: `shell/plugins/notifications/Service.qml` 
 | `Layout.js` | Pure deck layout: rows in, placements out |
 | `Delivery.js` | Quiet rules, ephemeral rules, bar clearance |
 | `Settings.js` | Defaults and validation for `notifications` in `shell.json` |
-| `helpers/` | Python helpers: `run` (Bubblewrap launcher), `store`, `kdeconnect` |
+| `helpers/` | Python helpers: `store`, `kdeconnect` |
 
 The JS modules also load in Node: `test/shell.d/notifications-test.sh` covers them without a compositor, and `test/shell.d/notification-helpers-test.sh` covers the helpers.
 
@@ -40,10 +40,6 @@ A click tries, in order: the card's `omarchy-exec-argv` command; the sender's `d
 ## Persistence
 
 `helpers/store` keeps one file per notification under `~/.local/state/omarchy/notifications/`: `live/KEY.json` while on screen, moved to `history/<ms>-KEY.json` on close. History is capped at 100 entries and `historyHours` (default 24; `0` keeps none). Text with a verification code is redacted before writing. Rows keep `execArgv` and `glyph`, so a card restored after a shell restart clicks through like the live one; restored cards get a 20s grace. `quiet.json` holds Do Not Disturb, snoozes and the code exception.
-
-## Helper sandbox
-
-`store` runs under Bubblewrap when it works. Without a working sandbox it runs directly as the user unless `requireSandbox` is set, in which case it is blocked. `kdeconnect` runs directly as `python3 -I helpers/kdeconnect` (see Replies below). `omarchy-shell notifications probe` reports the mode, and the preferences page says when the sandbox is unavailable. No helper sandbox has a network.
 
 ## Replies
 
@@ -81,7 +77,7 @@ When the Hyprland portal starts a screen-share stream, the bell offers a timed s
 
 ## Preferences
 
-Preferences live in the `notifications` object of `~/.config/omarchy/shell.json`; every key is optional, and `Settings.js` holds defaults and valid values. The preferences page writes `displayMode`/`displayName`, `fullscreenOverlay`, `stacking`, `showCountdown` and `offerSnoozeWhenSharing`. Hand-edited keys: `edgeSpacing` (unset follows the theme's outer gap), `fontScale`, `actionsAlign`, `hideSettingsAction`, `snoozeDurations`, `wakeHour`, `smartRaise`, `codesBypassQuiet`, `timeFormat`, `sourceLimit`, `heldPerSource`, `recentCount`, `requireSandbox`, `allowDefaultActionOnCardClick`, `historyHours`, `clipboardTimeout`. Colours come from the theme: `[notifications]` in `shell.toml` for cards, `[popups]` for the panel, Hyprland's `decoration:rounding` for corners.
+Preferences live in the `notifications` object of `~/.config/omarchy/shell.json`; every key is optional, and `Settings.js` holds defaults and valid values. The preferences page writes `displayMode`/`displayName`, `fullscreenOverlay`, `stacking`, `showCountdown` and `offerSnoozeWhenSharing`. Hand-edited keys: `edgeSpacing` (unset follows the theme's outer gap), `fontScale`, `actionsAlign`, `hideSettingsAction`, `snoozeDurations`, `wakeHour`, `smartRaise`, `codesBypassQuiet`, `timeFormat`, `sourceLimit`, `heldPerSource`, `recentCount`, `allowDefaultActionOnCardClick`, `historyHours`, `clipboardTimeout`. Colours come from the theme: `[notifications]` in `shell.toml` for cards, `[popups]` for the panel, Hyprland's `decoration:rounding` for corners.
 
 ## The sender contract
 

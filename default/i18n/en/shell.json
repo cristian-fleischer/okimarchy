@@ -468,8 +468,6 @@
   "notifications.replyTo": "Reply to %1",
   "notifications.resumeAll": "Resume all notifications",
   "notifications.resumeSource": "Resume notifications from this source",
-  "notifications.sandboxBlocked": "Sandbox unavailable: notification helpers are blocked.",
-  "notifications.sandboxDirect": "Sandbox unavailable: notification helpers run directly as your user.",
   "notifications.send": "Send",
   "notifications.settings": "Notification preferences",
   "notifications.sharingDetected": "Sharing detected",

@@ -30,8 +30,8 @@ Item {
   property var shell: null
 
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
-  readonly property string helperBin: Qt.resolvedUrl("helpers/run").toString().replace(/^file:\/\//, "")
-  readonly property var storeBin: [helperBin, "store"]
+  // -E -s: no PYTHON* variables or user site; the store imports its sibling module.
+  readonly property var storeBin: ["/usr/bin/python3", "-B", "-E", "-s", Qt.resolvedUrl("helpers/store").toString().replace(/^file:\/\//, "")]
   // -I: no PYTHON* variables, user site or script directory on its path.
   readonly property var kdeBin: ["/usr/bin/python3", "-I", Qt.resolvedUrl("helpers/kdeconnect").toString().replace(/^file:\/\//, "")]
 
@@ -66,7 +66,6 @@ Item {
   readonly property int sourceLimit: preferences.sourceLimit
   readonly property int heldPerSource: preferences.heldPerSource
   readonly property int recentCount: preferences.recentCount
-  readonly property bool requireSandbox: preferences.requireSandbox
   readonly property string displayMode: preferences.displayMode
   readonly property string displayName: preferences.displayName
   readonly property string fullscreenOverlay: preferences.fullscreenOverlay
@@ -89,45 +88,11 @@ Item {
     Store.write(storeProc, storeBin, "policy", { historyHours: hours })
   }
 
-  // ------------------------------------------------------------- helpers
+  // ------------------------------------------------------------- store
   //
-  // Helpers run under Bubblewrap when it works, else directly unless
-  // requireSandbox forbids it. Nothing runs until the shell config has been
-  // read, so a saved requireSandbox cannot be bypassed during startup.
+  // Nothing is written until the shell config has been read, so history is
+  // trimmed to the saved historyHours rather than the default.
   property bool helperSettingsReady: false
-  readonly property var helperEnvironment: ({
-    OMARCHY_NOTIFICATIONS_REQUIRE_SANDBOX: !helperSettingsReady || requireSandbox ? "1" : "0"
-  })
-  property var sandboxStatus: ({ required: false, sandboxOperational: false, mode: "pending" })
-  onRequireSandboxChanged: {
-    sandboxStatus = ({ required: requireSandbox, sandboxOperational: false, mode: "pending" })
-    if (helperSettingsReady) {
-      sandboxProbe.running = false
-      sandboxProbeDelay.restart()
-    }
-  }
-
-  Process {
-    id: sandboxProbe
-    running: false
-    environment: service.helperEnvironment
-    command: [service.helperBin, "status"]
-    stdout: StdioCollector {
-      onStreamFinished: {
-        try {
-          var result = JSON.parse(text)
-          if (service.helperSettingsReady && result.required === service.requireSandbox)
-            service.sandboxStatus = result
-        } catch (e) {}
-      }
-    }
-  }
-
-  Timer {
-    id: sandboxProbeDelay
-    interval: 1
-    onTriggered: sandboxProbe.running = true
-  }
 
   // ------------------------------------------------------------- displays
   //
@@ -535,7 +500,6 @@ Item {
 
   Process {
     id: heldProc
-    environment: service.helperEnvironment
     running: false
     command: service.storeBin.concat(["held", String(service.heldLimit)])
     stdout: StdioCollector {
@@ -558,7 +522,6 @@ Item {
 
   Process {
     id: historyProc
-    environment: service.helperEnvironment
     running: false
     command: service.storeBin.concat(["history", String(service.historyLimit)])
     stdout: StdioCollector {
@@ -1488,7 +1451,6 @@ Item {
   Process {
     id: storeProc
     running: false
-    environment: service.helperEnvironment
     property bool policyReady: service.helperSettingsReady
   }
 
@@ -1511,7 +1473,6 @@ Item {
 
   Process {
     id: restoreProc
-    environment: service.helperEnvironment
     running: false
     command: service.storeBin.concat(["restore"])
     stdout: StdioCollector {
@@ -1522,7 +1483,6 @@ Item {
 
   Process {
     id: quietRestoreProc
-    environment: service.helperEnvironment
     running: false
     command: service.storeBin.concat(["quiet"])
     stdout: StdioCollector {
@@ -1548,17 +1508,15 @@ Item {
   // Startup housekeeping: aged history and leftovers.
   Process {
     id: tidyProc
-    environment: service.helperEnvironment
     running: false
     command: service.storeBin.concat(["tidy"])
   }
 
-  // The shell config is read before the service is created, so the helpers
-  // start on the next tick with the saved sandbox policy already in force.
+  // The shell config is read before the service is created, so the store
+  // starts on the next tick with the saved historyHours already in force.
   Component.onCompleted: Qt.callLater(function() {
     service.helperSettingsReady = true
     service.setHistoryHours(service.historyHours)
-    sandboxProbe.running = true
     restoreProc.running = true
     quietRestoreProc.running = true
     tidyProc.running = true
@@ -1585,7 +1543,6 @@ Item {
 
   Process {
     id: replayProc
-    environment: service.helperEnvironment
     running: false
     command: service.storeBin.concat(["history", String(service.replayCount)])
     stdout: StdioCollector {
@@ -1816,7 +1773,6 @@ Item {
     function probe(): string {
       return JSON.stringify({ toasts: toasts.count, fontScale: service.fontScale,
         doNotDisturb: service.doNotDisturb, expanded: service.expanded,
-        security: service.sandboxStatus,
         allowDefaultActionOnCardClick: service.allowDefaultActionOnCardClick,
         stacking: service.stacking,
         sharingActive: service.sharingActive, sharingStreams: service.sharingStreams,

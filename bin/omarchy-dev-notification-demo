@@ -19,7 +19,7 @@ import time
 from gi.repository import Gio, GLib
 
 HELPERS = os.path.join(os.environ["OMARCHY_PATH"], "shell/plugins/notifications/helpers")
-HELPER = os.path.join(HELPERS, "run")
+STORE = ["/usr/bin/python3", "-B", "-E", "-s", os.path.join(HELPERS, "store")]
 sys.dont_write_bytecode = True
 sys.path.insert(0, HELPERS)
 from notification_files import write_json  # noqa: E402
@@ -117,8 +117,7 @@ DEFAULT = ["chat", "work", "personal", "system"]
 # Candidates for the "no window open" routing case, in preference order.
 CLOSED_CANDIDATES = ("linear.app", "notion.com", "app.slack.com", "github.com", "figma.com")
 
-# The KDE Connect helper answers only this app name from the stand-in phone,
-# and the sandbox launcher mounts only this directory for it.
+# The KDE Connect helper answers only this app name from the stand-in phone.
 DEMO_APP = "Omarchy reply demo"
 DEMO_STATE = os.path.expanduser("~/.local/state/omarchy/notifications/reply-demo")
 DEMO_REPLY = os.path.join(DEMO_STATE, "reply.json")
@@ -131,9 +130,9 @@ def identity(n):
   return dict(app=n.get("app") or FALLBACK_APP, icon=n.get("icon") or "")
 
 
-def bounded_output(command, limit=65536, timeout=5, env=None):
+def bounded_output(command, limit=65536, timeout=5):
   """stdout of a helper, capped in size and time."""
-  with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env) as proc:
+  with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as proc:
     data = bytearray()
     deadline = time.monotonic() + timeout
     try:
@@ -160,21 +159,6 @@ def bounded_output(command, limit=65536, timeout=5, env=None):
         except subprocess.TimeoutExpired:
           proc.kill()
           proc.wait()
-
-
-def helper_environment():
-  """The sandbox policy, as the shell reports it. An unavailable or malformed
-  answer keeps the sandbox required."""
-  required = True
-  try:
-    probe = json.loads(bounded_output(["omarchy-shell", "notifications", "probe"]))
-    security = probe.get("security", {})
-    if (security.get("mode") in ("sandboxed", "direct", "blocked")
-        and isinstance(security.get("required"), bool)):
-      required = security["required"]
-  except HELPER_ERRORS:
-    pass
-  return dict(os.environ, OMARCHY_NOTIFICATIONS_REQUIRE_SANDBOX="1" if required else "0")
 
 
 class Bus:
@@ -235,9 +219,8 @@ class Bus:
 def replay(limit, match):
   """The last `limit` notifications from history, oldest first."""
   try:
-    env = helper_environment()
-    rows = json.loads(bounded_output([HELPER, "store", "history", str(limit)],
-                                     limit=2 * 1024 * 1024, timeout=55, env=env) or "[]")
+    rows = json.loads(bounded_output(STORE + ["history", str(limit)],
+                                     limit=2 * 1024 * 1024, timeout=55) or "[]")
   except HELPER_ERRORS:
     rows = []
   needle = (match or "").lower()

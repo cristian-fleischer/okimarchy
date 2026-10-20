@@ -4,11 +4,9 @@ set -euo pipefail
 
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/base-test.sh"
 
-# The notification service's Python helpers (shell/plugins/notifications/helpers):
-# the sandbox launcher, the store and the KDE Connect bridge. The unit tests
-# live in notifications/ as Python unittest modules; tap.py runs them and prints
-# one ok/SKIP/not ok line per test. Checks that need Bubblewrap skip themselves
-# when it is missing.
+# The notification store (shell/plugins/notifications/helpers/store). The unit
+# tests live in notifications/ as Python unittest modules; tap.py runs them and
+# prints one ok/SKIP/not ok line per test.
 
 require_command python3
 
@@ -16,11 +14,11 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/home" "$tmp/work"
 
-# Every helper and test resolves state from HOME; none may reach the real
-# ~/.local/state or ~/.config, and none inherits a sandbox policy.
+# The store and its tests resolve state from HOME; none may reach the real
+# ~/.local/state or ~/.config.
 if ! (
   cd "$tmp/work"
-  env -u OMARCHY_NOTIFICATIONS_REQUIRE_SANDBOX -u PYTHONPATH \
+  env -u PYTHONPATH \
     HOME="$tmp/home" PYTHONDONTWRITEBYTECODE=1 \
     XDG_STATE_HOME="$tmp/home/.local/state" \
     XDG_CONFIG_HOME="$tmp/home/.config" \

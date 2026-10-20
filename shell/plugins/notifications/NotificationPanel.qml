@@ -346,14 +346,6 @@ Item {
               checked: root.preferences.offerSnoozeWhenSharing !== false
               onToggled: if (root.service) root.service.setSetting("offerSnoozeWhenSharing", root.preferences.offerSnoozeWhenSharing === false)
             }
-
-            Hint {
-              visible: root.service && (root.service.sandboxStatus.mode === "direct"
-                                        || root.service.sandboxStatus.mode === "blocked")
-              text: root.service && root.service.sandboxStatus.mode === "blocked"
-                ? I18n.t("notifications.sandboxBlocked")
-                : I18n.t("notifications.sandboxDirect")
-            }
           }
 
           // --------------------------------------------------- notifications

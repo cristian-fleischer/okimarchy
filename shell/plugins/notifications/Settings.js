@@ -21,7 +21,6 @@ var DEFAULTS = {
   sourceLimit: 8,
   heldPerSource: 10,
   recentCount: 5,
-  requireSandbox: false,
   allowDefaultActionOnCardClick: true,
   historyHours: 24,
   clipboardTimeout: 60
@@ -77,7 +76,6 @@ function resolve(raw) {
     sourceLimit: integer(given.sourceLimit, 2, 20, d.sourceLimit),
     heldPerSource: integer(given.heldPerSource, 3, 25, d.heldPerSource),
     recentCount: integer(given.recentCount, 1, 20, d.recentCount),
-    requireSandbox: flag(given.requireSandbox, d.requireSandbox),
     allowDefaultActionOnCardClick: flag(given.allowDefaultActionOnCardClick, d.allowDefaultActionOnCardClick),
     historyHours: oneOf(Number(given.historyHours), [0, 1, 24, 168], d.historyHours),
     clipboardTimeout: oneOf(Number(given.clipboardTimeout), [30, 60, 90], d.clipboardTimeout)
