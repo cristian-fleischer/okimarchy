@@ -218,11 +218,18 @@ Item {
   // One ticker drives both the countdown and the expiry, so they cannot drift;
   // pausing holds the remaining time rather than restarting it.
   // An update (replaces_id) rewrites the row in place with a new arrival
-  // time, and gets a fresh display period of its own duration.
+  // time, and gets a fresh display period of its own duration. Its picture
+  // may be new at the same path, so the image is read again too.
   property real remaining: Number(row.duration || 0)
   readonly property bool ticking: Number(row.duration || 0) > 0 && !paused && !replying
   readonly property string arrival: String(row.ts) + ":" + String(row.duration)
-  onArrivalChanged: remaining = Number(row.duration || 0)
+  property bool reloading: false
+  onArrivalChanged: {
+    remaining = Number(row.duration || 0)
+    thumb.failed = 0
+    reloading = true
+    Qt.callLater(function() { card.reloading = false })
+  }
 
   Timer {
     interval: 100
@@ -397,7 +404,7 @@ Item {
           id: picture
           anchors.fill: parent
           visible: thumb.pictured
-          source: thumb.best
+          source: card.reloading ? "" : thumb.best
           onStatusChanged: if (status === Image.Error && thumb.failed < thumb.sources.length) thumb.failed += 1
           // A photo fills its square; an app icon keeps its own shape.
           fillMode: thumb.photo ? Image.PreserveAspectCrop : Image.PreserveAspectFit
