@@ -1,11 +1,12 @@
 #!/usr/bin/python3
 # omarchy:summary=Play a realistic run of notifications to look at the notification UI
 # omarchy:args=[--scene <name>]... [--fast] [--gap <seconds>] [--timeout <ms>] [--loop] [--shuffle] [--keep] [--list] [--replay <count> [--match <text>]]
-# omarchy:examples=omarchy dev notification demo --list | omarchy dev notification demo --scene interactive | omarchy dev notification demo --replay 10 --match slack
+# omarchy:examples=omarchy dev notification demo --list | omarchy dev notification demo --scene interactive | omarchy dev notification demo --replay 10 --match basecamp
 # omarchy:hidden=true
 """A realistic run of notifications, sent straight onto the session bus as an
 app would. The senders mimic what really notifies this desktop (Chrome web
-apps, chat apps, a terminal); the words are invented."""
+apps, chat apps, a terminal); the words are invented, the only people named
+are Omarchy's own, and phone numbers are 555 ones."""
 import argparse
 import json
 import os
@@ -23,40 +24,43 @@ FALLBACK_APP = "omarchy-dev-notification-demo"
 
 SCENES = {
   # Chrome sends every web app as "Google Chrome"; the leading origin anchor is
-  # what tells the sites apart. The #design burst arrives faster than the pace
+  # what tells the sites apart. The Campfire burst arrives faster than the pace
   # so a stack builds.
   "chat": [
-    dict(web="app.slack.com", summary="#design",
-         body="Gurbinder: new spacing is in Figma, worth a look before standup"),
-    dict(web="web.whatsapp.com", summary="Seif Lotfy",
-         body="I have to show you this thing I built, are you around later?"),
-    dict(web="app.slack.com", summary="Dominic",
-         body="can you sanity check the quota panel numbers?"),
-    dict(web="x.com", summary="Elon Musk",
+    dict(web="3.basecamp.com", summary="Omarchy",
+         body="DHH: notification decks just landed on edge, worth a look before the call"),
+    dict(app="Signal", icon="signal-desktop", summary="Ryan Hughes",
+         body="I have to show you the new notifications, are you around later?"),
+    dict(web="app.hey.com", summary="New Email in Imbox",
+         body="Re: Omarchy 4.5 release notes"),
+    dict(web="x.com", summary="DHH",
          body="replied to your post: this is the part everyone gets wrong"),
-    dict(web="app.slack.com", summary="#design", gap=0.7,
-         body="Gurbinder: pushed the spacing pass, take a look"),
-    dict(web="app.slack.com", summary="#design", gap=0.7,
-         body="Dominic: the two-line ones finally breathe"),
-    dict(web="app.slack.com", summary="#design", gap=0.7,
-         body="Gurbinder: one more go at the icon size and I think that is it"),
-    dict(web="app.slack.com", summary="#design",
-         body="Dominic: shipping it before standup then"),
+    dict(web="3.basecamp.com", summary="Omarchy", gap=0.7,
+         body="Ryan Hughes: pushed the spacing pass, take a look"),
+    dict(web="3.basecamp.com", summary="Omarchy", gap=0.7,
+         body="DHH: the two-line ones finally breathe"),
+    dict(web="3.basecamp.com", summary="Omarchy", gap=0.7,
+         body="Ryan Hughes: one more go at the icon size and I think that is it"),
+    dict(web="3.basecamp.com", summary="Omarchy",
+         body="DHH: ship it"),
   ],
   "work": [
-    dict(web="linear.app", summary="AXM-412 assigned to you",
-         body="Deck stutters when a notification lands during hover"),
-    dict(web="github.com", summary="Review requested",
-         body="axiomhq/axiom-web #1841 - <b>tighten the toast layout</b>"),
-    dict(app="kitty", icon="kitty", summary="Tests passed",
+    dict(app="Grok Bot", icon="grok-bot", summary="Grok Bot", actions=["default=View"],
+         body="2 things need you since lunch: DHH asked about the 4.5 release notes, "
+              "and the Omapager PR has a new review waiting on you."),
+    dict(web="3.basecamp.com", summary="DHH assigned you a to-do",
+         body="Record the notifications demo for the 4.5 release notes"),
+    dict(web="app.hey.com", summary="New Email in Imbox",
+         body="[omacom/omarchy] <b>Replace the notification engine with Omapager</b> (PR #15932)"),
+    dict(app="foot", icon="foot", summary="Tests passed",
          body="412 passed, 0 failed in <b>2m 14s</b>"),
-    dict(web="app.slack.com", summary="#releases",
-         body="0.43 tagged and pushed"),
+    dict(app="Omarchy", icon="omarchy", summary="Omarchy 4.5 is out",
+         body="Notification decks, one-click codes, and a lot more"),
   ],
   # Apps this desktop has icons for, so a letter tile here means a bug.
   "system": [
     dict(app="Omarchy", icon="system-software-update", summary="Updates available",
-         body="14 packages, including linux 6.17.4 and hyprland 0.52"),
+         body="14 packages, including linux 7.2.8 and hyprland 0.56.2"),
     dict(app="Snapshots", icon="LimineSnapperSync", summary="Snapshot complete",
          body="pre-update root snapshot written in 4s"),
     dict(app="ApexShot", icon="apexshot", summary="Screenshot saved",
@@ -67,27 +71,27 @@ SCENES = {
          body="Money for Nothing - Dire Straits"),
     dict(web="x.com", summary="3 people liked your post",
          body="“the notification daemon is the whole desktop in miniature”"),
-    dict(web="web.whatsapp.com", summary="Seif Lotfy",
+    dict(app="Signal", icon="signal-desktop", summary="DHH",
          body="seriously, you are going to want to see this one"),
   ],
   # Every offer a card can make, then shapes that must stay plain (a test
-  # count, an issue reference).
+  # count, an issue reference). Numbers are 555 ones, so nobody gets called.
   "interactive": [
-    dict(web="app.slack.com", summary="#design",
-         body="Gurbinder: latest build is up, take a look https://axiom.co/preview/1841"),
-    dict(web="accounts.google.com", summary="Google",
-         body="Your verification code is 482913. Do not share it with anyone."),
-    dict(app="Signal", icon="signal-desktop", summary="Seif Lotfy", body="are you around later?",
+    dict(web="3.basecamp.com", summary="Omarchy",
+         body="DHH: latest build is up, take a look https://omarchy.org"),
+    dict(web="app.hey.com", summary="New Email in Imbox",
+         body="Your Basecamp verification code is 482913"),
+    dict(app="Signal", icon="signal-desktop", summary="DHH", body="are you around later?",
          actions=["read=Mark as read"]),
     dict(web="messages.google.com", summary="Messages",
          body="G-728341 is your Google verification code"),
-    dict(app="Discord", icon="discord", summary="Ravi",
-         body="here is my new number, +44 7911 123456",
+    dict(app="Discord", icon="discord", summary="Ryan Hughes",
+         body="new number for the group chat, (555) 555-5555",
          actions=["read=Mark as read"]),
-    dict(app="kitty", icon="kitty", summary="Tests passed",
+    dict(app="foot", icon="foot", summary="Tests passed",
          body="412 passed, 0 failed in 2m 14s"),
-    dict(web="github.com", summary="Review requested",
-         body="axiomhq/axiom · sub-second histograms (#4412)"),
+    dict(web="app.hey.com", summary="New Email in Imbox",
+         body="[omacom/omarchy] Replace the notification engine with Omapager (PR #15932)"),
   ],
   # Persistent cards with a live default action: each Close must dismiss
   # without the pointer moving, and never open the card.
@@ -103,7 +107,7 @@ SCENES = {
 DEFAULT = ["chat", "work", "personal", "system"]
 
 # Candidates for the "no window open" routing case, in preference order.
-CLOSED_CANDIDATES = ("linear.app", "notion.com", "app.slack.com", "github.com", "figma.com")
+CLOSED_CANDIDATES = ("app.hey.com", "3.basecamp.com", "github.com", "x.com", "app.slack.com")
 
 # Written by the shell, newest first.
 HISTORY = os.path.expanduser("~/.local/state/omarchy/notifications/history.json")
@@ -217,7 +221,7 @@ def routing_scene():
   items.append(dict(web=closed, summary=closed.split(".")[0].title(),
                     body="click me: nothing is showing %s, so it should open" % closed,
                     expect="open https://%s/ (no window for it)" % closed))
-  items.append(dict(app="kitty", icon="kitty", summary="Tests passed",
+  items.append(dict(app="foot", icon="foot", summary="Tests passed",
                     body="click me: a local app, so its own default action runs",
                     expect="the sender's own default action"))
   return items
