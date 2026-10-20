@@ -149,7 +149,7 @@ it with `provider:`.
 ```bash
 omarchy menu                    # toggle the root menu
 omarchy menu toggle system      # open at a route, or close if already open
-omarchy menu summon style.theme # always open (no close-if-visible)
+omarchy menu summon appearance.theme # always open (no close-if-visible)
 omarchy menu close
 omarchy menu refresh            # re-parse the JSONC files
 omarchy menu ping

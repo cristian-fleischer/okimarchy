@@ -314,7 +314,7 @@ function o.window(match, rules)
 end
 
 -- Opt a window in to Omarchy's standard active/inactive transparency. The tag
--- lets Appearance > Window Opacity turn these windows opaque or glassy.
+-- lets Appearance > Windows > Window Opacity turn these windows opaque or glassy.
 function o.transparent_window(match, opacity)
   o.window(match, { opacity = opacity or "0.985 0.96", tag = "+transparent-window" })
 end

@@ -373,7 +373,7 @@ function o.workspace_mode(spec)
   watch()
 
   -- The default for every workspace that has no mode of its own, chosen under
-  -- Trigger > Appearance > Workspace Layout. A tiled default is Hyprland's own
+  -- Appearance > Workspace Layout. A tiled default is Hyprland's own
   -- layout; a floating one is arranged once the saved modes have all loaded.
   if spec.default then
     default_mode = spec.default

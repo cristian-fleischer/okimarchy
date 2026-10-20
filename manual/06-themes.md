@@ -1,6 +1,6 @@
 # Themes
 
-Omarchy comes with twenty-two beautiful themes. You can select between them via _Style > Theme_ in the Omarchy Menu (`Super + Space`) or hop directly to the theme selector using `Super + Ctrl + Shift + Space`.
+Omarchy comes with twenty-two beautiful themes. You can select between them via _Appearance > Theme_ in the Omarchy Menu (`Super + Space`) or hop directly to the theme selector using `Super + Ctrl + Shift + Space`.
 
 Each theme styles the desktop, terminal, neovim, activity screen (btop), Chromium, and the entire Omarchy shell: top bar, menu, notifications, OSD, and the lock screen. (For Obsidian, you must manually select the Omarchy theme via _Appearance > Themes_ inside the app).
 
@@ -67,7 +67,7 @@ _White_
 
 ### Unlocks
 
-Themes can also have a custom unlock design, which is used for the boot decryption process. You can select one of these under _Style > Unlock_. They look like this:
+Themes can also have a custom unlock design, which is used for the boot decryption process. You can select one of these under _Appearance > Unlock_. They look like this:
 
  ![catppuccin](../themes/catppuccin/preview-unlock.png)
 _Catppuccin_
