@@ -1,5 +1,6 @@
 #!/usr/bin/python3
-# kdeconnect - the phone's side of a notification, run as `run kdeconnect`.
+# kdeconnect - the phone's side of a notification, run by Service.qml as
+# `python3 -I kdeconnect VERB ...`.
 #
 #   list                          every phone notification, as JSON
 #   find APP BODY                 the object path of a repliable match
@@ -12,21 +13,74 @@
 import json
 import os
 import re
+import selectors
+import stat
 import subprocess
 import sys
+import tempfile
 import time
-from notification_files import read_bounded, read_json, write_json
 
 BUS = "org.kde.kdeconnect"
 IFACE = "org.kde.kdeconnect.device.notifications.notification"
 
 # Only the named demo app uses the private, short-lived fixture, never mixed
-# into real-phone discovery. The launcher mounts exactly this directory.
+# into real-phone discovery.
 DEMO_APP = "Omarchy reply demo"
 STATE = os.path.expanduser("~/.local/state/omarchy/notifications/reply-demo")
 FIXTURE = os.path.join(STATE, "notification.json")
 REPLY_LOG = os.path.join(STATE, "reply.json")
 FIXTURE_MAX_AGE = 30 * 60
+MAX_BYTES = 65536
+os.umask(0o077)
+
+
+def read_json(path):
+  """A small regular file's JSON, never read through a symlink; else None."""
+  try:
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as f:
+      if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+        return None
+      data = f.read(MAX_BYTES + 1)
+    return json.loads(data) if len(data) <= MAX_BYTES else None
+  except (OSError, ValueError, RecursionError):
+    return None
+
+
+def write_json(path, value):
+  """Replace `path` whole, private to the user, never through a symlink."""
+  directory = os.path.dirname(path)
+  os.makedirs(directory, mode=0o700, exist_ok=True)
+  if os.path.islink(directory) or os.path.islink(path):
+    raise ValueError("symlink refused")
+  fd, temp = tempfile.mkstemp(prefix=".reply-", dir=directory)
+  try:
+    with os.fdopen(fd, "w") as f:
+      json.dump(value, f, separators=(",", ":"))
+    os.replace(temp, path)
+  finally:
+    if os.path.exists(temp):
+      os.unlink(temp)
+
+
+def read_bounded(fd, limit, deadline):
+  """Read `fd` to EOF before the monotonic `deadline`, refusing more than `limit` bytes."""
+  chunks, size = [], 0
+  with selectors.DefaultSelector() as selector:
+    selector.register(fd, selectors.EVENT_READ)
+    while True:
+      remaining = deadline - time.monotonic()
+      if remaining <= 0:
+        raise TimeoutError("read timed out")
+      if not selector.select(remaining):
+        continue
+      chunk = os.read(fd, 65536)
+      if not chunk:
+        return b"".join(chunks)
+      size += len(chunk)
+      if size > limit:
+        raise ValueError("output too large")
+      chunks.append(chunk)
 
 
 def fixture():

@@ -43,7 +43,11 @@ A click tries, in order: the card's `omarchy-exec-argv` command; the sender's `d
 
 ## Helper sandbox
 
-Helpers run under Bubblewrap when it works. Without a working sandbox, `store` and `kdeconnect` run directly as the user unless `requireSandbox` is set, in which case they are blocked. `omarchy-shell notifications probe` reports the mode, and the preferences page says when the sandbox is unavailable. No helper sandbox has a network.
+`store` runs under Bubblewrap when it works. Without a working sandbox it runs directly as the user unless `requireSandbox` is set, in which case it is blocked. `kdeconnect` runs directly as `python3 -I helpers/kdeconnect` (see Replies below). `omarchy-shell notifications probe` reports the mode, and the preferences page says when the sandbox is unavailable. No helper sandbox has a network.
+
+## Replies
+
+A phone notification forwarded by KDE Connect can be answered from its card. KDE Connect keeps an object per phone notification on the session bus with a `sendReply` method, but the desktop notification carries no handle to it, so `helpers/kdeconnect` finds it with `busctl` by exact app name and body text and refuses ambiguous matches; a reply re-matches before it is sent. The demo app `Omarchy reply demo` (`omarchy-dev-notification-demo --scene reply`) is answered from a short-lived private fixture in `reply-demo/` instead, and its reply is saved there rather than sent.
 
 ## Icons
 

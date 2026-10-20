@@ -32,7 +32,8 @@ Item {
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   readonly property string helperBin: Qt.resolvedUrl("helpers/run").toString().replace(/^file:\/\//, "")
   readonly property var storeBin: [helperBin, "store"]
-  readonly property var kdeBin: [helperBin, "kdeconnect"]
+  // -I: no PYTHON* variables, user site or script directory on its path.
+  readonly property var kdeBin: ["/usr/bin/python3", "-I", Qt.resolvedUrl("helpers/kdeconnect").toString().replace(/^file:\/\//, "")]
 
   // ------------------------------------------------------------- settings
   //
@@ -1315,7 +1316,6 @@ Item {
 
   Process {
     id: replyProc
-    environment: service.helperEnvironment
     property string replyKey: ""
     running: false
     onExited: function(code, status) {
@@ -1334,7 +1334,6 @@ Item {
 
   Process {
     id: findProc
-    environment: service.helperEnvironment
     property var job: ({})
     running: false
     stdout: StdioCollector {
@@ -1382,7 +1381,7 @@ Item {
   }
 
   function pumpReplies() {
-    if (!helperSettingsReady || findProc.running || replyQueue.length === 0) return
+    if (findProc.running || replyQueue.length === 0) return
     var queue = replyQueue.slice()
     var job = queue.shift()
     replyQueue = queue
@@ -1401,7 +1400,7 @@ Item {
     var at = rowIndexFor(key)
     if (at < 0) return
     var path = String(toasts.get(at).replyPath || "")
-    if (!helperSettingsReady || !path || !String(text).trim() || String(text).length > 4096 || replyProc.running) return
+    if (!path || !String(text).trim() || String(text).length > 4096 || replyProc.running) return
     replyProc.replyKey = key
     replyProc.command = kdeBin.concat(["reply", path, String(text), String(toasts.get(at).source), String(toasts.get(at).bodyLine)])
     replyProc.running = true
@@ -1564,7 +1563,6 @@ Item {
     quietRestoreProc.running = true
     tidyProc.running = true
     Store._pump(storeProc)
-    service.pumpReplies()
   })
 
   // ------------------------------------------------------------- server

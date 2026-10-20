@@ -14,6 +14,19 @@ else
   fail "notification logic holds its policies" "$output"
 fi
 
+# The KDE Connect reply bridge, in a scratch HOME so its demo fixture paths
+# never reach the real ~/.local/state.
+require_command python3
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+if output=$(cd "$tmp" && HOME="$tmp" python3 -I -B "$SHELL_TEST_DIR/notifications/kdeconnect-test.py" 2>&1); then
+  pass "the KDE Connect reply bridge matches and replies safely"
+else
+  fail "the KDE Connect reply bridge matches and replies safely" "$output"
+fi
+[[ -z $(find "$ROOT/shell/plugins/notifications/helpers" -name __pycache__) ]] ||
+  fail "the KDE Connect test leaves no bytecode in the checkout"
+
 service="$ROOT/shell/plugins/notifications/Service.qml"
 
 # Keybindings and commands call the notifications IPC target by method name.
