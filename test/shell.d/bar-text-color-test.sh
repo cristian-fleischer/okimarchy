@@ -6,6 +6,7 @@ source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/base-test.sh"
 
 require_command magick
 require_command ffmpeg
+require_command jq
 
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
@@ -72,3 +73,25 @@ pass "a bar inset from the left samples past the dark half"
 result=$(HOME="$TMPDIR" omarchy-bar-text-color top 20 '#ffffff' '#101010' --background "$split" --screen 100x100 --inset "0 50 0 0")
 [[ $result == "#ffffff" ]] || fail "a bar inset from the right stops before the light half" "expected #ffffff, got $result"
 pass "a bar inset from the right stops before the light half"
+
+# The bar's size and insets are logical pixels, while hyprctl reports the
+# physical mode. On a 2x screen the strip a bar inset by 20 covers is the dark
+# band at rows 60-79 of the logical 100x100 screen. Measured in physical pixels
+# instead, the same numbers would sample light rows above it.
+fake_bin="$TMPDIR/fake-bin"
+mkdir -p "$fake_bin"
+cat >"$fake_bin/hyprctl" <<'STUB'
+#!/bin/bash
+[[ $* == "monitors -j" ]] && printf '%s\n' '[{"width":200,"height":200,"scale":2}]'
+STUB
+chmod +x "$fake_bin/hyprctl"
+
+result=$(HOME="$TMPDIR" PATH="$fake_bin:$PATH" omarchy-bar-text-color bottom 20 '#ffffff' '#101010' --background "$dark_band" --inset "0 0 20 0")
+[[ $result == "#ffffff" ]] || fail "a detached bar on a scaled screen samples the strip it covers" "expected #ffffff, got $result"
+pass "a detached bar on a scaled screen samples the strip it covers"
+
+# A margin that pushes the strip off the screen falls back instead of sampling
+# whatever is left of it.
+result=$(HOME="$TMPDIR" omarchy-bar-text-color top 20 '#ffffff' '#101010' --background "$dark_top" --screen 100x100 --inset "90 0 0 0")
+[[ $result == "#ffffff" ]] || fail "a top bar inset past the screen falls back to the text color" "expected #ffffff, got $result"
+pass "a top bar inset past the screen falls back to the text color"
