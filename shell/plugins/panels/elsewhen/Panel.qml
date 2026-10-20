@@ -781,10 +781,14 @@ Panel {
     onTriggered: root.lookupPlaces()
   }
 
-  // A failed lookup is remembered as no places, so the list stops saying it is searching.
+  // A failed lookup is remembered as no places, so the list stops saying it is
+  // searching. The next query is tried on the answer and again on the exit: the
+  // output can finish while the process still reads as running, and a query
+  // turned away then would never be asked.
   Process {
     id: placeProc
     property string query: ""
+    onRunningChanged: if (!running) Qt.callLater(root.lookupPlaces)
     stdout: StdioCollector {
       onStreamFinished: {
         var next = Object.assign({}, root.placeCache)
@@ -795,17 +799,19 @@ Panel {
     }
   }
 
+  // Handles added mid-fetch are queued, and drained once it has exited rather
+  // than when its output ends, which can be while it still reads as running.
   Process {
     id: peopleProc
+    onRunningChanged: if (!running) Qt.callLater(function() {
+      if (!root.profilesQueued) return
+      root.profilesQueued = false
+      root.fetchProfiles()
+    })
     stdout: StdioCollector {
       onStreamFinished: {
         root.profiles = Object.assign({}, root.profiles, Model.parseProfiles(text))
         root.profileStamp = Date.now()
-        Qt.callLater(function() {
-          if (!root.profilesQueued) return
-          root.profilesQueued = false
-          root.fetchProfiles()
-        })
       }
     }
   }
