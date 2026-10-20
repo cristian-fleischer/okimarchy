@@ -10,7 +10,7 @@ fi
 
 # The package is installed for the whole machine, but only a user who has run
 # T3 Code has anything to carry over. Leave it in place for whoever does.
-if [[ ! -d $HOME/.t3 && ! -d $HOME/.config/t3code && ! -d $HOME/.config/t3code-v2 ]]; then
+if [[ ! -d ${T3CODE_HOME:-$HOME/.t3} && ! -d $HOME/.config/t3code && ! -d $HOME/.config/t3code-v2 ]]; then
   exit 0
 fi
 

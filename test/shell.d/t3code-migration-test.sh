@@ -25,8 +25,12 @@ SH
 chmod +x "$mock_bin"/*
 
 migrate() {
+  local packages=$1
+  shift
+
   : >"$TEST_LOG"
-  TEST_PACKAGES="$1" HOME="$test_tmp/home" PATH="$mock_bin:$PATH" bash -euo pipefail "$migration" >"$test_tmp/output" 2>&1
+  env -u T3CODE_HOME TEST_PACKAGES="$packages" HOME="$test_tmp/home" PATH="$mock_bin:$PATH" "$@" \
+    bash -euo pipefail "$migration" >"$test_tmp/output" 2>&1
 }
 
 fresh_home() {
@@ -57,6 +61,12 @@ mkdir -p "$test_tmp/home"
 migrate "t3code-bin" || fail "migrating for a user who never ran T3 Code succeeds" "$(cat "$test_tmp/output")"
 [[ ! -s $TEST_LOG ]] || fail "the package stays for the users who run T3 Code" "$(cat "$TEST_LOG")"
 pass "a user who never ran T3 Code leaves the package for those who do"
+
+rm -rf "$test_tmp/home" "$test_tmp/custom t3 home"
+mkdir -p "$test_tmp/home" "$test_tmp/custom t3 home/userdata"
+migrate "t3code-bin" T3CODE_HOME="$test_tmp/custom t3 home" || fail "migrating a custom T3 home succeeds" "$(cat "$test_tmp/output")"
+[[ $(cat "$TEST_LOG") == "install:stable --no-launch" ]] || fail "a custom T3 home counts as having run T3 Code" "$(cat "$TEST_LOG")"
+pass "a user whose T3 Code data lives in a custom T3CODE_HOME is migrated"
 
 fresh_home
 migrate "" || fail "migrating without a T3 Code package succeeds" "$(cat "$test_tmp/output")"
