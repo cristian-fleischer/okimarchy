@@ -592,6 +592,14 @@ function hasEntry(zones, id, label) {
   return false
 }
 
+// "Springfield" in "Missouri, US" -> "Springfield (Missouri)": a second town
+// of a name already in use, named so the two can be told apart. The name
+// alone when there is no region to add.
+function regionalName(name, region) {
+  var first = cleanLabel(String(region || "").split(",")[0])
+  return first === "" ? name : name + " (" + first + ")"
+}
+
 // Returns the same array when nothing changes, so callers can skip the write.
 // `place` may carry the city's coordinates and region from a place search. A
 // second town with a name and zone already on the list is a different place
@@ -605,10 +613,9 @@ function addZone(zones, id, label, place) {
   var row = withPlace({ label: name, id: zoneId }, place)
   var at = indexOfZone(zones, name, zoneId)
   if (at >= 0) {
-    var region = row.region ? cleanLabel(row.region.split(",")[0]) : ""
-    if (row.lat === undefined || zones[at].lat === undefined || nearPlace(zones[at], row) || region === "") return zones
-    row.label = name + " (" + region + ")"
-    if (hasEntry(zones, zoneId, row.label)) return zones
+    if (row.lat === undefined || zones[at].lat === undefined || nearPlace(zones[at], row)) return zones
+    row.label = regionalName(name, row.region)
+    if (row.label === name || hasEntry(zones, zoneId, row.label)) return zones
   }
   var out = zones.slice()
   out.push(row)
@@ -1326,6 +1333,8 @@ if (typeof module !== "undefined") {
     placeQuery: placeQuery,
     placeOptions: placeOptions,
     mergePlaces: mergePlaces,
+    nearPlace: nearPlace,
+    regionalName: regionalName,
     probeCommand: probeCommand,
     parseOffset: parseOffset,
     parseProbe: parseProbe,

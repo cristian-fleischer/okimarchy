@@ -62,7 +62,7 @@ A place added from the search brings its coordinates with it, and a row with coo
 
 A weather reading remembers the point it was taken for, so a city whose coordinates move - a better pick for here, say - gets fresh weather rather than its old spot's for the rest of twenty minutes.
 
-The geocoder's answer is network input and is read as such: only a real list, and no more entries than were asked for, so a malformed answer cannot hold the shell's UI thread in a loop. The globe's jump box searches places too, and a session city found that way flies to the exact spot.
+The geocoder's answer is network input and is read as such: only a real list, and no more entries than were asked for, so a malformed answer cannot hold the shell's UI thread in a loop. The globe's jump box searches places too, and a session city found that way flies to the exact spot. The globe holds one city per name, so a jump is matched by where the town is: Springfield, Missouri after Springfield, Illinois goes to Missouri, joining as `Springfield (Missouri)`, and the globe sets off for the picked coordinates without waiting for it to land.
 
 The globe's own **jump box** works the same way - arrows, Return, Escape, selection on the first match, wrapping over five results. Its results grow upward out of the field rather than down from it, but the first match is still at the top of them, so Down moves down the screen and down the list at once.
 
