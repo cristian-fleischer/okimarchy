@@ -22,10 +22,6 @@ cat >"$mock_bin/omarchy-install-ai-t3-code" <<'SH'
 #!/bin/bash
 echo "install:$*" >>"$TEST_LOG"
 SH
-cat >"$mock_bin/omarchy-pkg-drop" <<'SH'
-#!/bin/bash
-echo "drop:$*" >>"$TEST_LOG"
-SH
 chmod +x "$mock_bin"/*
 
 migrate() {
@@ -48,12 +44,13 @@ migrate "t3code-bin" || fail "migrating a stable package succeeds" "$(cat "$test
 [[ $(cat "$TEST_LOG") == "install:stable --no-launch" ]] || fail "the stable package becomes the stable app, without a prompt or a launch" "$(cat "$TEST_LOG")"
 pass "the stable package becomes the stable app"
 
+# An earlier run that failed after the app landed left the package behind.
 fresh_home
 mkdir -p "$test_tmp/home/.local/share/t3code"
 touch "$test_tmp/home/.local/share/t3code/T3-Code.AppImage"
 migrate "t3code-bin" || fail "migrating next to an installed app succeeds" "$(cat "$test_tmp/output")"
-[[ $(cat "$TEST_LOG") == "drop:t3code-bin t3code-nightly-bin" ]] || fail "only the leftover package goes" "$(cat "$TEST_LOG")"
-pass "a user who already has the app only loses the leftover package"
+[[ $(cat "$TEST_LOG") == "install:stable --no-launch" ]] || fail "the whole install is retried" "$(cat "$TEST_LOG")"
+pass "a retry after the app landed runs the whole install again"
 
 rm -rf "$test_tmp/home"
 mkdir -p "$test_tmp/home"

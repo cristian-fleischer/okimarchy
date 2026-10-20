@@ -78,6 +78,10 @@ omarchy-theme-set-t3code
 # Selects the published palette before the app's first launch.
 t3_cli theme set omarchy --base-dir "$T3CODE_HOME"
 
+# Only once the app is in place and themed. Until then a package is still
+# there, so the migration that replaces it stays pending and retries the lot.
+omarchy-pkg-drop t3code-bin t3code-nightly-bin
+
 # A migration replaces the app underneath a T3 Code that may already be
 # running, so it leaves opening the new one to the user.
 if ((launch)); then
