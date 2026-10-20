@@ -101,14 +101,23 @@ for (let i = 0; i < 1000; i++) {
 }
 
 { // `-i name` is an icon name, not a picture; only the strict charset is kept.
+  // A sender's file is kept as its path, read whole, once the policy accepts it.
+  const long = '/tmp/' + 'a'.repeat(400) + '.png'
   for (const [image, appIcon, kept] of [['image://icon/kitty', 'kitty', ''], ['image://qsimage/12/1', '', 'image://qsimage/12/1'],
       ['image://icon/../../etc/passwd', '', ''], ['image://icon/' + 'a'.repeat(500), 'a'.repeat(243), ''],
-      ['file:///etc/passwd', '', ''], ['https://example/image.png', '', '']]) {
+      ['image://icon//tmp/.org.chromium.Chromium.Xk3lQa/1', '', '/tmp/.org.chromium.Chromium.Xk3lQa/1'],
+      ['file:///home/u/Pictures/cover%20art.png', '', '/home/u/Pictures/cover art.png'], ['image://icon/' + long, '', long],
+      ['file:///proc/self/environ', '', ''], ['https://example/image.png', '', ''], ['image://icon//tmp/../etc/x.png', '', '']]) {
     const row = snap({ appName: 'Test', summary: 's', body: 'b', image })
     assert.equal(row.appIcon, appIcon, image)
     assert.equal(row.image, kept, image)
   }
-  for (const image of ['file:///etc/passwd', 'image://icon//tmp/../etc/x.png']) assert.equal(Store.normalise({ image }).image, '', image)
+  for (const [image, kept] of [['/tmp/a.png', '/tmp/a.png'], ['image://icon//tmp/a.png', '/tmp/a.png'], ['image://qsimage/1/2', 'image://qsimage/1/2'],
+                               ['image://icon//tmp/../etc/x.png', ''], ['/dev/zero', ''], ['image://qsimage/1/2/../3', ''], ['data:image/png;base64,AAAA', '']])
+    assert.equal(Store.normalise({ image }).image, kept, image)
+  // Images belong to the live sender: never persisted, never read back.
+  assert.equal(Store.persistable({ key: 'p', image: '/tmp/a.png' }).image, '')
+  assert.equal(Store.parseList(JSON.stringify([{ key: 'p', image: '/tmp/a.png' }]))[0].image, '')
   assert.equal(Store.normalise({ body: 'hello', bodyRich: '<img src="x">' }).bodyRich, 'hello')
   assert.equal(snap({ body: 'x'.repeat(100000), summary: 'y'.repeat(3000) }).body.length, 32768)
 }
@@ -167,6 +176,27 @@ for (const body of ['Your verification code is 938271', 'Your code is 938 271', 
   const secret = Store.sanitiseForPersistence(snap({ appName: 'x', summary: 'Sign in', body: 'Your verification code is 482913',
     hints: { 'omarchy-exec-argv': shot, 'omarchy-glyph': '\u{f0306}' } }))
   assert.deepEqual([secret.execArgv, secret.glyph], ['', ''])
+}
+
+{ // Sender image paths: absolute, one spelling, bounded, and never a kernel interface or service state.
+  for (const path of ['/tmp/.org.chromium.Chromium.Xk3lQa/1', '/tmp/.org.chromium.Chromium.Xk3lQa/notification-icon', '/home/u/.cache/app/avatar.png',
+                      '/usr/share/icons/hicolor/48x48/apps/slack.png', '/run/user/1000/app/com.slack.Slack/icon.png', '/tmp/a b#c?.png',
+                      '/home/u/' + 'x'.repeat(1000)])
+    assert.equal(S.localImagePath(path), path, path)
+  assert.equal(S.localImagePath('file:///tmp/a%20b.png'), '/tmp/a b.png')
+  assert.equal(S.localImagePath('image://icon/file:///tmp/a.png'), '/tmp/a.png')
+  assert.equal(S.localImagePath('FILE:///tmp/a.png'), '/tmp/a.png')
+  for (const bad of ['', 'a.png', './a.png', '~/a.png', 'tmp/a.png', '/', '/tmp/', '/tmp//a.png', '/tmp/./a.png', '/tmp/../etc/passwd',
+                     '/tmp/..', '/proc/self/environ', '/proc', '/sys/kernel/notes', '/dev/zero', '/dev/tty', '/run/dbus/system_bus_socket',
+                     '/var/run/x.png', '/run/user/1000', '/run/user//a.png', '/tmp/a\u0000.png', '/tmp/a\n.png', '/tmp/\u007f.png',
+                     '/home/u/' + 'x'.repeat(1020), 'file:///tmp/%2e%2e/etc/passwd', 'file:///tmp/a%00.png', 'file:///proc/self/environ',
+                     'file:///tmp/%ZZ.png', 'file://localhost/tmp/a.png', 'file://host/tmp/a.png', 'file:///tmp/a.png?x', 'file:///tmp/a.png#y',
+                     'http://example.com/a.png', 'https://example.com/a.png', 'data:image/png;base64,AAAA', 'qrc:/a.png', 'image://qsimage/1/2',
+                     'image://other//tmp/a.png', 'smb://host/a.png', null, undefined, 42, { path: '/tmp/a.png' }])
+    assert.equal(S.localImagePath(bad), '', String(bad))
+  // What Qt loads: each segment escaped, so a # or ? stays part of the name.
+  assert.equal(S.localImageUrl('/tmp/a b#c?.png'), 'file:///tmp/a%20b%23c%3F.png')
+  assert.equal(S.localImageUrl('/dev/zero'), '')
 }
 
 { // The desktop-entry hint names the icon when the sender gave none; a path there (Chrome's) does not.
@@ -310,19 +340,6 @@ function runIn(scope, ...names) {
   assert.deepEqual(calls, ['hl.dsp.focus({window = hl.get_window("address:0x123abc")})'])
 }
 
-{ // Sender data URLs: the exact PNG shape the launcher writes, nothing else.
-  const s = runIn({ liveKeys: { k: { senderImage: null } }, senderImageRevision: 0 }, 'finishSenderImage')
-  const b64 = text => Buffer.from(text, 'latin1').toString('base64')
-  const png = b64('\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01')
-  const finish = url => { const job = { key: 'k', image: '' }; s.liveKeys.k.senderImage = job; s.finishSenderImage(job, url); return job.image }
-  assert.ok(finish('data:image/png;base64,' + png).startsWith('data:image/png;base64,iVBORw0KGgo'))
-  for (const url of ['data:image/png;base64,' + b64('<svg xmlns="http://www.w3.org/2000/svg"><image href="/etc/x.png"/></svg>'),
-                     'data:image/png;base64,' + b64('<html></html>'), 'data:image/png;base64,' + b64('\xff\xd8\xff\xe0'),
-                     'data:image/png;base64,' + b64('BM6\x00'), ' data:image/png;base64,' + png, 'data:image/png;base64,' + png + '\n',
-                     'data:image/png;base64,' + png + 'data:image/png;base64,AAAA', 'data:image/svg+xml;base64,' + png, 'data:image/png,' + png])
-    assert.equal(finish(url), '', url.slice(0, 50))
-}
-
 { // Snooze lengths from IPC are finite and bounded before anything changes.
   const s = runIn({ maxSnoozeSeconds: 366 * 86400, Number, Math, isFinite }, 'snoozeMinutes')
   for (const v of ['Infinity', '1e309', 'NaN', '-5', '0', '', 'abc']) assert.equal(s.snoozeMinutes(v, 60), 60, v)
@@ -339,7 +356,7 @@ function runIn(scope, ...names) {
 // Admission, close and replay run for real; only the ListModel, QObject
 // signals, the deferred event loop and external effects are faked.
 const capacityFunctions = ['pinDeckDisplay', 'showsOn', 'fullscreenOn', 'awayFrom', 'routeAround', 'rememberRecent', 'recentForPanel',
-  'durationFor', 'liveCount', 'reserveLive', 'releaseLive', 'wantSenderImage', 'senderImageFor', 'finishSenderImage', 'pumpSenderImages',
+  'durationFor', 'liveCount', 'reserveLive', 'releaseLive',
   'nextKey', 'rowIndexFor', 'keyForOriginal', 'handleNotification', 'watchNotification', 'showRow', 'release', 'closeToast',
   'finishClose', 'clearAll', 'clearDeck', 'dismissNewest', 'releaseHeld', 'restoreRows', 'actionsOf', 'dismissOne']
 
@@ -356,7 +373,7 @@ function newCapacityScope() {
     maxLiveNotifications: 100, heights: {}, leaving: {}, layoutRevision: 0,
     replyingKey: '', held: [], doNotDisturb: false, globalSnoozeUntil: 0,
     recentRows: [], recentLimit: 20,
-    senderImageQueue: [], senderImageRevision: 0, helperSettingsReady: false,
+    helperSettingsReady: false,
     configuredDisplayName: 'fixture-display', deckDisplayName: '',
     fullscreenAway: false, fullscreenScope: '', hyprRevision: 0,
     displayNames: ['fixture-display'], focusedDisplayName: 'fixture-display',
@@ -492,28 +509,6 @@ const summaries = rows => Array.from(rows, row => row.summary)
   const unmatched = fixture('source', true, 'all')
   assert.equal(unmatched.clearDeck('dismissed'), 2)
   assert.deepEqual(leaving(unmatched), ['new', 'old'])
-}
-
-{ // A late decode cannot overwrite a replacement, even if it reuses the path.
-  const s = newCapacityScope()
-  const n = s.fakeNotification(1, 'First icon')
-  n.image = 'image://icon//tmp/site-icon.png'
-  s.admit(n)
-  const key = s.keyForOriginal(1), first = s.liveKeys[key].senderImage
-  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB'
-  n.replace({ summary: 'Replacement icon' })
-  s.drainCallLater()
-  const replacement = s.liveKeys[key].senderImage
-  s.finishSenderImage(first, png)
-  assert.equal(s.senderImageFor(key, n.image), '')
-  s.finishSenderImage(replacement, png)
-  assert.equal(s.senderImageFor(key, n.image), png)
-  n.replace({ image: '' })
-  s.drainCallLater()
-  assert.equal(s.senderImageFor(key, ''), '')
-  s.finishClose(key, 'dismissed')
-  s.finishSenderImage(replacement, png)
-  assert.equal(s.senderImageFor(key, n.image), '')
 }
 
 { // Expired notifications remain readable, newest first, without unbounded retention.

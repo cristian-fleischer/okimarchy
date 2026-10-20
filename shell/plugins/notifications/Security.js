@@ -75,3 +75,42 @@ function safeGlyph(value) {
   if (!text || text.length > 16 || /[\x00-\x1f\x7f-\x9f]/.test(text)) return ""
   return text
 }
+
+// A sender's picture as a local file: the image-path hint, which Quickshell
+// hands over as image://icon//path, or a file:// URL. It is decoded in the
+// shell like every other image the shell draws, which is fine now that nothing
+// is fetched: a native sender runs as you and could open the file itself, and
+// a sandboxed one can only name a file for you to see, never read it back.
+// Kernel interfaces and service state are refused by their spelling, as a read
+// there can block (/dev/tty), never end (/dev/zero) or turn up secrets
+// (/proc/self/environ); a symlink to them takes a sender that already writes
+// your files. Nothing else
+// is assumed: Chromium's temp files (/tmp/.org.chromium.Chromium.*) carry no
+// extension.
+var MAX_IMAGE_PATH = 1024
+var KERNEL_PATHS = /^\/(?:proc|sys|dev)(?:\/|$)/
+var RUN_PATHS = /^\/(?:var\/)?run(?:\/|$)/
+function localImagePath(raw) {
+  var text = typeof raw === "string" && raw.length <= MAX_IMAGE_PATH * 3 ? raw : ""
+  if (text.indexOf("image://icon/") === 0) text = text.slice("image://icon/".length)
+  if (/^file:\/\//i.test(text)) {
+    if (!/^file:\/\/\//i.test(text) || /[?#]/.test(text)) return ""
+    try { text = decodeURIComponent(text.slice("file://".length)) } catch (e) { return "" }
+  }
+  if (!text || text.length > MAX_IMAGE_PATH || text.charAt(0) !== "/" || /[\x00-\x1f\x7f-\x9f]/.test(text)) return ""
+  // One spelling per file: no empty, `.` or `..` segment.
+  var parts = text.slice(1).split("/")
+  for (var i = 0; i < parts.length; i++)
+    if (parts[i] === "" || parts[i] === "." || parts[i] === "..") return ""
+  if (KERNEL_PATHS.test(text)) return ""
+  // /run holds sockets and other services' state; only a runtime dir, which
+  // only its owner can read, keeps images there.
+  if (RUN_PATHS.test(text) && !/^\/run\/user\/[0-9]+\/./.test(text)) return ""
+  return text
+}
+
+// The file:// URL Qt loads a local image path from, each segment escaped.
+function localImageUrl(path) {
+  var text = localImagePath(path)
+  return text ? "file://" + text.split("/").map(encodeURIComponent).join("/") : ""
+}

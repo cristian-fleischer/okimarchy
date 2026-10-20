@@ -20,7 +20,6 @@ Item {
   property real fontScale: 1
   property bool showCountdown: false
   property var row: ({})
-  property string senderImage: "" // helper-validated PNG data URL, never the sender's path
   property var iconOverrides: ({})          // slug -> file URL, from the service
   property var place: ({ y: 0, scale: 1, opacity: 1, z: 1, front: true, hidden: false })
   property var scene: null                   // owns the clock; without it the card stands still
@@ -335,7 +334,7 @@ Item {
         // Quickshell.iconPath answers "" for a missing icon when asked to check,
         // where a bare image://icon/ URL would draw a checkerboard.
         readonly property string sent: /^image:\/\/qsimage\/[0-9]+\/[0-9]+$/.test(String(card.row.image || ""))
-                                       ? String(card.row.image) : card.senderImage
+                                       ? String(card.row.image) : Security.localImageUrl(card.row.image)
 
         // Best first: the sender's picture, then your override for the source,
         // then the icon theme, then a desktop entry's icon (Icons.candidates
@@ -406,6 +405,8 @@ Item {
           sourceSize.width: thumb.slot * Screen.devicePixelRatio
           sourceSize.height: thumb.slot * Screen.devicePixelRatio
           asynchronous: true
+          // A sender may write each picture to the same path (cover art, say).
+          cache: !(thumb.photo && thumb.best.indexOf("file:") === 0)
           // A one-colour icon is brightened to a silhouette and tinted with the
           // theme's text colour, keeping its anti-aliased edge. A photo is
           // rounded like the card, only when the theme rounds at all.

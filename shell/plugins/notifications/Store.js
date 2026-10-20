@@ -15,17 +15,15 @@ function snapshot(n, key, urgencyEnum) {
   // `-i some-icon` arrives as image "image://icon/some-icon": a theme name to
   // look up, not a picture (drawn raw it is a checkerboard). Pull the name out
   // before the qsimage check discards it. An absolute path (Chromium's site
-  // icon) is kept only as input to the sender-image helper, never drawn raw.
+  // icon) is kept as that path, once it passes Security.localImagePath.
   var img = Security.bounded(n.image, 256)
   var named = ""
-  if (img.indexOf("image://icon/") === 0) {
-    var iconPayload = img.substring("image://icon/".length)
-    if (iconPayload.charAt(0) !== "/") {
-      named = iconPayload
-      img = ""
-    }
-  } else if (!QSIMAGE.test(img)) {
+  if (img.indexOf("image://icon/") === 0 && !/^image:\/\/icon\/(?:\/|file:)/i.test(img)) {
+    named = img.substring("image://icon/".length)
     img = ""
+  } else if (!QSIMAGE.test(img)) {
+    // Read whole: a path cut short names another file.
+    img = Security.localImagePath(n.image)
   }
   var hints = n.hints || {}
   var raw = { app: Security.bounded(n.appName, Security.MAX_APP_NAME), summary: Security.bounded(n.summary, Security.MAX_SUMMARY),
@@ -113,10 +111,9 @@ function normalise(row) {
   var argv = Security.parseExecArgv(out.execArgv)
   out.execArgv = argv ? JSON.stringify(argv) : ""
   out.codes = out.codes.split(" ").slice(0, Security.MAX_CODES).join(" ")
-  // qsimage is in-process pixels. An icon-scheme absolute path is only pending
-  // helper input; keeping it does not authorise Qt to open it.
-  var okIconPath = out.image.indexOf("image://icon//") === 0 && out.image.indexOf("..") === -1
-  out.image = (QSIMAGE.test(out.image) || okIconPath) ? out.image : ""
+  // qsimage is in-process pixels; anything else must be a local path the
+  // policy accepts, kept in its one canonical spelling.
+  out.image = QSIMAGE.test(out.image) ? out.image : Security.localImagePath(out.image)
   // Derived fields are recomputed, never trusted: a stored row from an older
   // build picks up today's rendering and grouping rules.
   out.bodyRich = Markup.render(out.body)
