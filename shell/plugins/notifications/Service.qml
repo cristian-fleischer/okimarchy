@@ -1725,7 +1725,7 @@ Item {
     }
   }
 
-  // Startup housekeeping: aged history and long-unused icons.
+  // Startup housekeeping: aged history and leftovers.
   Process {
     id: tidyProc
     environment: service.helperEnvironment

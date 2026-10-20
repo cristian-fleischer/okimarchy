@@ -7,8 +7,8 @@
 #   drop KEY         forget a live notification without recording it
 #   restore          print the live notifications, oldest first
 #   history [N]      print the newest N history entries, newest first
-#   tidy             drop history past its age, icons nothing has wanted, and
-#                    the previous notification service's leftovers
+#   tidy             drop history past its age and the leftovers of the
+#                    previous notification service and of fetched site icons
 #   quiet            print the quiet state: snoozed sources, and silencing
 #   quiet-save       read the quiet state as JSON on stdin
 #   held [N]         print the newest N that were never shown, newest first
@@ -35,21 +35,18 @@ import time
 ROOT = os.path.expanduser("~/.local/state/omarchy/notifications")
 LIVE = os.path.join(ROOT, "live")
 HISTORY = os.path.join(ROOT, "history")
-ICONS = os.path.join(ROOT, "icons")
+QUIET = os.path.join(ROOT, "quiet.json")
 # The previous engine kept Do Not Disturb here; read until quiet.json exists.
 LEGACY_SETTINGS = os.path.join(os.path.dirname(ROOT), "notifications.json")
-QUIET = os.path.join(ROOT, "quiet.json")
 LEGACY_POPUP = re.compile(r"[0-9]+-.+\.json")
 # Every entry is somebody's message, so history keeps only the recent past:
 # whichever of the count and the retention hours bites first.
 HISTORY_MAX = 100
 RETENTION_HOURS = (0, 1, 24, 168)
-# Resolved icons outlive their notifications, but not a source gone this long.
-ICON_DAYS = 60
 
 
 def ensure():
-  for d in (ROOT, LIVE, HISTORY, ICONS):
+  for d in (ROOT, LIVE, HISTORY):
     private_dir(d)
   for d in (LIVE, HISTORY):
     for name in os.listdir(d):
@@ -257,30 +254,17 @@ def trim_history():
   return len(doomed)
 
 
-def trim_icons():
-  cutoff = time.time() - ICON_DAYS * 86400
-  dropped = 0
-  for name in os.listdir(ICONS):
-    path = os.path.join(ICONS, name)
-    try:
-      if os.path.getmtime(path) < cutoff:
-        os.remove(path)
-        dropped += 1
-    except OSError:
-      pass
-  return dropped
-
-
 def trim_legacy():
-  """The previous service's popups and images/, unlinked and never followed."""
+  """The previous service's popups and images/, and the fetched site icons
+  once kept in icons/, unlinked and never followed."""
   dropped = 0
   for name in os.listdir(ROOT):
     path = os.path.join(ROOT, name)
     try:
       info = os.lstat(path)
-      if name == "images" and stat.S_ISDIR(info.st_mode):
+      if name in ("images", "icons") and stat.S_ISDIR(info.st_mode):
         shutil.rmtree(path)
-      elif name == "images" or (LEGACY_POPUP.fullmatch(name)
+      elif name in ("images", "icons") or (LEGACY_POPUP.fullmatch(name)
                                 and not stat.S_ISDIR(info.st_mode)):
         os.unlink(path)
       else:
@@ -293,7 +277,7 @@ def trim_legacy():
 
 def cmd_tidy():
   trim_legacy()
-  sys.stdout.write("%d history, %d icons" % (trim_history(), trim_icons()))
+  sys.stdout.write("%d history" % trim_history())
   return 0
 
 
@@ -342,9 +326,6 @@ def main():
       return 2
     write_json(os.path.join(ROOT, "policy.json"), {"historyHours": hours})
     trim_history()
-    if not isinstance(state, dict):
-      legacy = read_json(LEGACY_SETTINGS) if not os.path.exists(QUIET) else None
-      state = {"snoozes": {}, "dnd": isinstance(legacy, dict) and legacy.get("dnd") is True}
     return 0
   if verb == "put":
     return cmd_put()
@@ -361,6 +342,9 @@ def main():
     return cmd_forget_all()
   if verb == "quiet":
     state = read_json(QUIET)
+    if not isinstance(state, dict):
+      legacy = read_json(LEGACY_SETTINGS) if not os.path.exists(QUIET) else None
+      state = {"snoozes": {}, "dnd": isinstance(legacy, dict) and legacy.get("dnd") is True}
     # Which sources are snoozed until when, and whether the desktop is silenced.
     return dump(state)
   if verb == "quiet-save":

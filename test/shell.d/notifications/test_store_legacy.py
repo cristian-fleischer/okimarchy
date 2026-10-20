@@ -100,8 +100,10 @@ class LegacyLayout(unittest.TestCase):
     for path in cases:
       self.assertFalse(path.exists(), path.name)
 
-  def test_tidy_removes_legacy_popups_and_images_only(self):
+  def test_tidy_removes_legacy_popups_images_and_icons_only(self):
     stamp, popup, old = self.write_legacy_state()
+    (self.root / "icons").mkdir()
+    (self.root / "icons" / "web-example.com.png").write_bytes(b"\x89PNG")
     victim = self.home / "victim"
     victim.mkdir()
     (victim / "keep.png").write_bytes(b"keep")
@@ -109,13 +111,13 @@ class LegacyLayout(unittest.TestCase):
     self.store("policy", payload={"historyHours": 168})
     self.store("put", payload={"key": "n1", "body": "live"})
     output = self.store("tidy")
-    self.assertRegex(output, r"^[0-9]+ history, [0-9]+ icons$")
+    self.assertRegex(output, r"^[0-9]+ history$")
     self.assertFalse(popup.exists())
     self.assertFalse((self.root / "images").exists())
     self.assertTrue((self.root / "quiet.json").exists())
     self.assertTrue((self.root / "policy.json").exists())
     self.assertEqual(sorted(p.name for p in self.root.iterdir()),
-                     ["history", "icons", "live", "policy.json", "quiet.json"])
+                     ["history", "live", "policy.json", "quiet.json"])
     self.assertEqual([row["key"] for row in json.loads(self.store("restore"))], ["n1"])
 
     # A symlink where images/ was is unlinked, not followed.
@@ -124,8 +126,6 @@ class LegacyLayout(unittest.TestCase):
     self.assertFalse((self.root / "images").exists())
     self.assertTrue((victim / "keep.png").exists())
 
-  def test_old_layout_directories_are_tightened(self):
-    self.write_legacy_state()
   def test_the_old_do_not_disturb_holds_until_quiet_is_saved(self):
     legacy = self.root.parent / "notifications.json"
     legacy.parent.mkdir(parents=True)
@@ -135,6 +135,8 @@ class LegacyLayout(unittest.TestCase):
     self.store("quiet-save", payload={"snoozes": {}, "dnd": False})
     self.assertFalse(json.loads(self.store("quiet"))["dnd"])
 
+  def test_old_layout_directories_are_tightened(self):
+    self.write_legacy_state()
     for directory in (self.root, self.root / "history"):
       directory.chmod(0o755)
     self.store("restore")
