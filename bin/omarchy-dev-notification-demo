@@ -256,7 +256,7 @@ class Bus:
 def replay(limit, match):
   """The last `limit` notifications from history, oldest first."""
   try:
-    _, env = helper_policy()
+    env = helper_environment()
     rows = json.loads(bounded_output([HELPER, "store", "history", str(limit)],
                                      limit=2 * 1024 * 1024, timeout=55, env=env) or "[]")
   except HELPER_ERRORS:
