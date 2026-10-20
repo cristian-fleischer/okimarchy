@@ -225,6 +225,15 @@ function persistable(row) {
   return out
 }
 
+// What a redacted row says, stored in English like any stored value (the
+// store writes the same) and translated where it is shown.
+var REDACTED_SUMMARY = "Verification notification"
+var REDACTED_BODY = "[redacted]"
+
+function redacted(row) {
+  return !!row && row.summary === REDACTED_SUMMARY && (row.body === REDACTED_BODY || row.bodyLine === REDACTED_BODY)
+}
+
 // A secret-bearing notification persists only as a placeholder, so encoded
 // variants, URLs and sender metadata cannot leak it.
 function sanitiseForPersistence(row) {
@@ -236,8 +245,8 @@ function sanitiseForPersistence(row) {
         .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()).length
   if (secret) {
     for (var k in SHAPE) if (typeof SHAPE[k] === "string" && k !== "key") out[k] = ""
-    out.summary = "Verification notification"
-    out.body = "[redacted]"
+    out.summary = REDACTED_SUMMARY
+    out.body = REDACTED_BODY
     out.rawBody = out.body
     out.bodyLine = out.body
     out.bodyRich = out.body

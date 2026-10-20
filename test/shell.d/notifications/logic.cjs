@@ -118,6 +118,8 @@ for (const body of ['Your verification code is 938271', 'Your code is 938 271', 
                     'Your code is A9F3K2']) {
   const saved = Store.sanitiseForPersistence(snap({ appName: 'Test', summary: 'Verification', body }))
   assert.equal(saved.body, '[redacted]', body)
+  // Shown translated: the stored placeholder, restored or listed, is recognised.
+  assert.ok(Store.redacted(Store.restored(Object.assign(saved, { key: 'r' }))), body)
   for (const secret of ['938271', '938 271', '938-271', 'A9F3K2']) assert.ok(!JSON.stringify(saved).includes(secret))
 }
 { // Literal attributes must not move legacy/raw-only codes outside the scan window.
@@ -512,6 +514,8 @@ const summaries = rows => Array.from(rows, row => row.summary)
   const group = s.toasts.get(0).groupKey
   s.finishClose(s.keyForOriginal(1), 'expired')
   assert.equal(s.recentForPanel(5)[0].bodyLine, '[redacted]')
+  assert.ok(Store.redacted(s.recentForPanel(5)[0]))
+  assert.ok(!Store.redacted({ summary: 'Verification notification', body: 'a real message' }))
   assert.ok(!JSON.stringify(s.recentRows).includes('938271'))
   s.snoozes[group] = 1
   assert.equal(s.recentForPanel(5).length, 0)

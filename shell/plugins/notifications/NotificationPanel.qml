@@ -8,6 +8,7 @@ import Quickshell
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
+import "Store.js" as Store
 
 Item {
   id: root
@@ -721,8 +722,9 @@ Item {
                           width: parent.width
                           text: {
                             var when = root.clockTime(new Date(Number(modelData.ts) * 1000))
-                            var head = String(modelData.summary || "")
-                            var rest = String(modelData.bodyLine || "")
+                            var redacted = Store.redacted(modelData)
+                            var head = redacted ? I18n.t("notifications.redactedSummary") : String(modelData.summary || "")
+                            var rest = redacted ? I18n.t("notifications.redactedBody") : String(modelData.bodyLine || "")
                             if (head && rest) return when + "  " + head + " · " + rest
                             return when + "  " + (head || rest)
                           }
@@ -935,7 +937,7 @@ Item {
 
       Text {
         width: parent.width
-        text: entryCard.entry.summary || ""
+        text: Store.redacted(entryCard.entry) ? I18n.t("notifications.redactedSummary") : (entryCard.entry.summary || "")
         textFormat: Text.PlainText
         color: root.panelFg
         font.family: "Liberation Sans"
@@ -947,7 +949,7 @@ Item {
       Text {
         visible: text !== ""
         width: parent.width
-        text: entryCard.entry.bodyLine || ""
+        text: Store.redacted(entryCard.entry) ? I18n.t("notifications.redactedBody") : (entryCard.entry.bodyLine || "")
         textFormat: Text.PlainText
         color: Qt.darker(root.panelFg, 1.15)
         font.family: "Liberation Sans"

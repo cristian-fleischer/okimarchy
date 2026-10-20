@@ -11,6 +11,7 @@ import qs.Ui
 import "Markup.js" as Markup
 import "Security.js" as Security
 import "Delivery.js" as Delivery
+import "Store.js" as Store
 
 Item {
   id: card
@@ -86,6 +87,7 @@ Item {
   readonly property color accentColor: critical ? Commons.Color.urgent
                                                : (row.urgency === 0 ? dimColor : Commons.Color.notifications.countdown)
   readonly property bool hasBody: String(row.body || "").length > 0
+  readonly property bool redacted: Store.redacted(row)
   // Omarchy's own toasts and bare notify-send calls name no source worth a
   // letter, and a summary that opens with its own glyph already has its mark.
   readonly property bool anonymous: row.app === "omarchy-action" || row.app === "notify-send"
@@ -437,7 +439,7 @@ Item {
                    - (badge.visible ? badge.width + Style.space(6) : 0)
                    - (titleMarks.visible ? titleMarks.width + Style.space(7) : 0)
                    - Style.space(8))
-            text: String(card.row.summary || "")
+            text: card.redacted ? I18n.t("notifications.redactedSummary") : String(card.row.summary || "")
             color: card.critical ? Commons.Color.urgent : Commons.Color.notifications.text
             font.family: "Liberation Sans"
             font.pixelSize: Style.font.title * card.fontScale
@@ -592,7 +594,7 @@ Item {
             width: parent.width
             visible: !bodyBox.overflow
             textFormat: Text.RichText
-            text: Markup.colourLinks(String(card.row.bodyRich || card.row.body || ""),
+            text: card.redacted ? I18n.t("notifications.redactedBody") : Markup.colourLinks(String(card.row.bodyRich || card.row.body || ""),
                                      String(Commons.Color.notifications.countdown))
             color: card.bodyColor
             font.family: "Liberation Sans"
@@ -609,7 +611,7 @@ Item {
             id: plain
             width: parent.width
             visible: bodyBox.overflow
-            text: String(card.row.bodyLine || card.row.body || "")
+            text: card.redacted ? I18n.t("notifications.redactedBody") : String(card.row.bodyLine || card.row.body || "")
             color: card.bodyColor
             font.family: "Liberation Sans"
             font.pixelSize: Style.font.title * card.fontScale

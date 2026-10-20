@@ -461,6 +461,8 @@
   "notifications.openLink": "Open link",
   "notifications.preferences": "Preferences",
   "notifications.recentHeader": "RECENT · %1",
+  "notifications.redactedBody": "Code hidden",
+  "notifications.redactedSummary": "Verification notification",
   "notifications.reply": "Reply",
   "notifications.replyFailed": "Could not find the message to reply to",
   "notifications.replyTo": "Reply to %1",
