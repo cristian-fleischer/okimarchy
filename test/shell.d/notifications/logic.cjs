@@ -93,11 +93,6 @@ for (let i = 0; i < 1000; i++) {
   // A restored row cannot claim a site either unless it came from a browser.
   assert.equal(Store.restored({ key: 'r', app: 'Chat', source: 'bank.example' }).groupKey, 'app:chat')
   assert.equal(Store.restored({ key: 'r', app: 'Chromium', source: 'app.slack.com' }).groupKey, 'web:app.slack.com')
-  // KDE Connect is its exact names, not a substring.
-  for (const app of ['KDE Connect', 'kdeconnect', 'org.kde.kdeconnect.daemon'])
-    assert.equal(id(app, 'message', 'Pixel · Bank').groupKey, 'kdeconnect:Bank', app)
-  for (const app of ['not-kdeconnect-agent', 'mykdeconnect', 'KDE Connector'])
-    assert.ok(!id(app, 'message', 'Pixel · Bank').groupKey.startsWith('kdeconnect:'), app)
 }
 
 { // `-i name` is an icon name, not a picture; only the strict charset is kept.
@@ -224,7 +219,6 @@ for (const body of ['Your verification code is 938271', 'Your code is 938 271', 
     overrides: ['spotify-client', 'spotify', 'app-spotify'],
     themed: ['spotify-client', 'Spotify', 'spotify'],
     entries: ['spotify-client', 'Spotify'] })
-  same(Icons.candidates(Store.restored({ key: 'p', app: 'KDE Connect', source: 'WhatsApp' })).themed, ['WhatsApp', 'whatsapp', 'kde-connect'])
   // A hostname-looking app is not a site unless a browser lifted it.
   same(Icons.candidates({ app: 'example.com', source: 'example.com', groupKey: 'app:example-com' }).themed, ['example.com'])
   same(Icons.candidates({}), { overrides: [], themed: [], entries: [] })
@@ -235,9 +229,9 @@ for (const body of ['Your verification code is 938271', 'Your code is 938 271', 
   assert.equal(Icons.slug('../../etc/passwd'), 'etc-passwd')
   // One-colour icons go by their freedesktop name, as a theme name or a file.
   for (const mono of ['image://icon/audio-volume-high-symbolic', 'file:///usr/share/icons/Adwaita/symbolic/apps/x.svg',
-                      'file:///icons/kdeconnect-symbolic.svg', 'image://icon/x-symbolic?fallback=y'])
+                      'file:///icons/signal-symbolic.svg', 'image://icon/x-symbolic?fallback=y'])
     assert.ok(Icons.isSymbolic(mono), mono)
-  for (const colour of ['image://icon/kdeconnect', 'image://icon/symbolic-thing', 'file:///icons/slack.png', '', 'image://qsimage/1/2'])
+  for (const colour of ['image://icon/signal', 'image://icon/symbolic-thing', 'file:///icons/slack.png', '', 'image://qsimage/1/2'])
     assert.ok(!Icons.isSymbolic(colour), colour)
 }
 

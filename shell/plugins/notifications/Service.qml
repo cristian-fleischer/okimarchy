@@ -1182,7 +1182,7 @@ Item {
       return null
     }
 
-    // Not a host (a phone forward says "WhatsApp"): match whole web-app host
+    // Not a host (an app name, say "Signal"): match whole web-app host
     // labels and native classes, never shorter than four characters.
     var slug = name.replace(/[^a-z0-9]+/g, "")
     if (slug.length < 4) return null

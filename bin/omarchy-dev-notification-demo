@@ -5,7 +5,7 @@
 # omarchy:hidden=true
 """A realistic run of notifications, sent straight onto the session bus as an
 app would. The senders mimic what really notifies this desktop (Chrome web
-apps, KDE Connect, a terminal); the words are invented."""
+apps, chat apps, a terminal); the words are invented."""
 import argparse
 import json
 import os
@@ -71,19 +71,18 @@ SCENES = {
          body="seriously, you are going to want to see this one"),
   ],
   # Every offer a card can make, then shapes that must stay plain (a test
-  # count, an issue reference). Each phone app has its own summary so the
-  # cards do not stack.
+  # count, an issue reference).
   "interactive": [
     dict(web="app.slack.com", summary="#design",
          body="Gurbinder: latest build is up, take a look https://axiom.co/preview/1841"),
     dict(web="accounts.google.com", summary="Google",
          body="Your verification code is 482913. Do not share it with anyone."),
-    dict(app="KDE Connect", summary="WhatsApp", body="Seif Lotfy: are you around later?",
+    dict(app="Signal", icon="signal-desktop", summary="Seif Lotfy", body="are you around later?",
          actions=["read=Mark as read"]),
-    dict(app="KDE Connect", summary="Messages",
+    dict(web="messages.google.com", summary="Messages",
          body="G-728341 is your Google verification code"),
-    dict(app="KDE Connect", summary="Discord",
-         body="Ravi: here is my new number, +44 7911 123456",
+    dict(app="Discord", icon="discord", summary="Ravi",
+         body="here is my new number, +44 7911 123456",
          actions=["read=Mark as read"]),
     dict(app="kitty", icon="kitty", summary="Tests passed",
          body="412 passed, 0 failed in 2m 14s"),

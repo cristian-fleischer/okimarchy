@@ -1,6 +1,6 @@
 # Notifications
 
-The shell is the notification daemon: `shell/plugins/notifications/Service.qml` hosts a Quickshell `NotificationServer` that claims `org.freedesktop.Notifications` on the session bus, so anything that speaks the freedesktop protocol (notify-send, libnotify apps, Chromium web apps, KDE Connect) is drawn as a card in a deck at the top-right corner. The end-user view is in `manual/10-notices.md`.
+The shell is the notification daemon: `shell/plugins/notifications/Service.qml` hosts a Quickshell `NotificationServer` that claims `org.freedesktop.Notifications` on the session bus, so anything that speaks the freedesktop protocol (notify-send, libnotify apps, Chromium web apps) is drawn as a card in a deck at the top-right corner. The end-user view is in `manual/10-notices.md`.
 
 ## Files
 
@@ -10,7 +10,7 @@ The shell is the notification daemon: `shell/plugins/notifications/Service.qml` 
 | `Toast.qml`, `DeedButton.qml` | One card and its buttons; a card is positioned by the service and animates nothing itself |
 | `NotificationPanel.qml`, `Picker.qml` | The panel and its preferences page, opened from the bar's Dnd indicator (`shell/plugins/bar/indicators/Dnd.qml`) |
 | `Store.js` | Notification snapshots, normalisation, what a stored row keeps, the stored file formats, restore |
-| `Markup.js` | Safe body markup, source lifting (`web:app.slack.com`), KDE Connect forwarding, one-line previews |
+| `Markup.js` | Safe body markup, source lifting (`web:app.slack.com`), one-line previews |
 | `Detect.js` | Verification codes, links, meeting links and phone numbers |
 | `Security.js` | URL policy, bounds, the sender image path policy, the `omarchy-exec-argv` and glyph checks |
 | `Icons.js` | The names a card's icon may go by: site names, overrides, symbolic icons |
@@ -22,7 +22,7 @@ The JS modules also load in Node: `test/shell.d/notifications-test.sh` covers th
 
 ## Decks and the scene clock
 
-Each notification gets its own key (`n…`); the sender's id names a slot that `replaces_id` reuses, not an event. Cards group by source: per site for browser notifications (the leading `<a href>` Chromium adds is lifted off and becomes the source, but only from a browser and only for an http(s) href that passes the URL policy), per forwarded app for KDE Connect (recognised by exact app name), per app name otherwise. `stacking: "all"` puts everything in one deck.
+Each notification gets its own key (`n…`); the sender's id names a slot that `replaces_id` reuses, not an event. Cards group by source: per site for browser notifications (the leading `<a href>` Chromium adds is lifted off and becomes the source, but only from a browser and only for an http(s) href that passes the URL policy), per app name otherwise. `stacking: "all"` puts everything in one deck.
 
 A collapsed deck draws its cards at the front card's height; hovering opens it. While the pointer is on an open deck, new cards are held back for at most 30 seconds. All positions, scales, opacities and heights come from one clock (`Service.at()`): a change snapshots the current state, recomputes the layout, and starts one move for every card. A leaving card keeps its model row until that move finishes.
 

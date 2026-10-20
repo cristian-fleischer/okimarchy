@@ -112,60 +112,36 @@ function oneLine(body) {
     .trim()
 }
 
-// KDE Connect forwards every phone notification as app "KDE Connect" with the
-// real app in the summary. That app is the source: snoozing the phone would
-// snooze everything on it.
-function forwardedApp(app, summary) {
-  var text = String(summary || "")
-  if (!isKdeConnect(app)) return { name: "", summary: text }
-  // "Pixel · Calendar": keep the app, not the phone.
-  var m = text.match(/^(.{1,28}?)\s*[·|]\s*(.+)$/)
-  if (m) text = m[2].trim()
-  // A short summary without sentence punctuation is an app name, multi-word
-  // ones ("Prime Video") included.
-  if (text && text.length <= 28 && !/[.!?:]$/.test(text)) return { name: text, summary: text }
-  return { name: "", summary: text }
-}
-
-// Exact names: a substring match made any app containing "kdeconnect" a
-// phone multiplexer.
-var KDE_CONNECT_NAMES = ["kde connect", "kdeconnect", "kdeconnectd", "org.kde.kdeconnect.daemon", "org.kde.kdeconnect"]
-function isKdeConnect(app) {
-  return KDE_CONNECT_NAMES.indexOf(String(app || "").trim().toLowerCase()) >= 0
-}
-
 // Only a browser's leading anchor names a site; any other app's is just a link.
 var BROWSERS = /^(google chrome|chromium|brave|brave browser|microsoft edge|vivaldi|opera|helium|firefox|zen|librewolf)$/i
 function isBrowser(app) {
   return BROWSERS.test(String(app || "").trim())
 }
 
-// Who a notification is from, and its summary and body with the sender's own
-// labelling taken off.
+// Who a notification is from, and its body with the sender's own labelling
+// taken off.
 function identify(row) {
   var app = String(row.app || "")
   var lifted = isBrowser(app) ? liftSource(row.body) : { source: "", body: Security.bounded(row.body, Security.MAX_BODY) }
-  var forwarded = forwardedApp(app, row.summary)
   return {
-    source: lifted.source || forwarded.name || app,
+    source: lifted.source || app,
     body: lifted.body,
-    summary: forwarded.summary || row.summary
+    summary: row.summary
   }
 }
 
 // Group on the app's own name, not the desktop-entry hint: Chrome puts a
-// per-session temp path there and KDE Connect alternates names.
+// per-session temp path there.
 function slug(text) {
   return String(text || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
 }
 
-// The group key, rebuilt from a row's fields: per site for a browser, per
-// forwarded app for KDE Connect, otherwise per app.
+// The group key, rebuilt from a row's fields: per site for a browser,
+// otherwise per app.
 function regroup(row) {
   var app = String(row.app || "")
   var source = String(row.source || "")
   if (isBrowser(app) && source && source !== app && hostname(source)) return "web:" + hostname(source)
-  if (isKdeConnect(app) && source && source !== app) return "kdeconnect:" + source
   return "app:" + slug(app)
 }
 
