@@ -169,6 +169,12 @@ for (const body of ['Your verification code is 938271', 'Your code is 938 271', 
   assert.deepEqual([secret.execArgv, secret.glyph], ['', ''])
 }
 
+{ // The desktop-entry hint names the icon when the sender gave none; a path there (Chrome's) does not.
+  assert.equal(snap({ appName: 'Slack', desktopEntry: 'slack' }).appIcon, 'slack')
+  assert.equal(snap({ appName: 'Slack', appIcon: 'slack-tray', desktopEntry: 'slack' }).appIcon, 'slack-tray')
+  assert.equal(snap({ appName: 'Google Chrome', desktopEntry: '/tmp/.org.chromium.Chromium.x/google-chrome' }).appIcon, '')
+}
+
 { // Icon names: a site by its own names first and its browser last, never fetched.
   const same = (actual, expected, message = '') => assert.equal(JSON.stringify(actual), JSON.stringify(expected), message)
   same(Icons.siteNames('app.slack.com'), ['app.slack.com', 'slack'])

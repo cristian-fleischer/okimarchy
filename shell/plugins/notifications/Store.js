@@ -46,7 +46,9 @@ function snapshot(n, key, urgencyEnum) {
     glyph: hints["omarchy-glyph"],
     transient: hints["transient"] === true || hints["transient"] === 1,
     app: raw.app,
-    appIcon: Security.bounded(n.appIcon || named, 256),
+    // Else the desktop-entry hint, which names the app's .desktop file and so,
+    // usually, its icon. normalise() drops it when it is a path (Chrome's).
+    appIcon: Security.bounded(n.appIcon || named || n.desktopEntry, 256),
     summary: id.summary,
     body: id.body,
     // What the sender sent, so a replay keeps the source anchor.
