@@ -262,6 +262,10 @@ local function sync_open_rules()
   open_rules = math.max(open_rules, #ranges)
 end
 
+-- Personal rules can follow saved workspace modes in hyprland.lua. Keep the
+-- exclusions current before their first window opens, including tag rules.
+o.floating_apps_changed = sync_open_rules
+
 -- A rule's tag leaves with the rule, so a window the open rule floated is
 -- claimed for good as it opens, and the mode tiles it again when it ends. A
 -- rule's tags are listed with a trailing "*", and a strict tag query passes
