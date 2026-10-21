@@ -32,7 +32,7 @@ run_setup() (
   OMARCHY_PROC_ROOT="$dir/proc" \
     OMARCHY_SURFACE_PRO11_MKINITCPIO_DIR="$dir/mkinitcpio.conf.d" \
     OMARCHY_SURFACE_PRO11_UKI_CONFIG="$dir/kernel/uki.conf" \
-    OMARCHY_SURFACE_PRO11_DTB="$dir/dtbs/linux-omarchy/qcom/x1e80100-microsoft-denali-oled.dtb" \
+    OMARCHY_QUALCOMM_DTB_ROOT="$dir/dtbs" \
     source "$setup"
 )
 
@@ -45,7 +45,8 @@ surface_pro11() {
 
 matching="$scratch/matching"
 surface_pro11 "$matching"
-mkdir -p "$matching/kernel"
+mkdir -p "$matching/kernel" "$matching/mkinitcpio.conf.d"
+printf 'MODULES=(pinctrl_tigerlake intel_lpss_pci 8250_dw)\n' >"$matching/mkinitcpio.conf.d/surface_device_modules.conf"
 cat >"$matching/kernel/uki.conf" <<'CONF'
 [UKI]
 Cmdline=@/etc/kernel/cmdline
@@ -60,17 +61,17 @@ run_setup "$matching" >/dev/null
 expected_packages=$'add surface-pro-11-support iptsd surface-pro-11-sensors\nextract\nsystemctl enable surface-pro-11-sensors.service'
 [[ $(head -n3 "$matching/packages.log") == "$expected_packages" ]] ||
   fail "Surface Pro 11 setup adds its hardware support and enables the light sensor even without Windows"
+[[ ! -e $matching/mkinitcpio.conf.d/surface_device_modules.conf ]] ||
+  fail "a stale Intel Surface module file cannot reset the Surface Pro 11's early modules"
 
 grep -Fxq 'Cmdline=@/etc/kernel/cmdline' "$matching/kernel/uki.conf" ||
   fail "unrelated UKI settings are preserved"
 ! grep -q 'DeviceTreeAuto' "$matching/kernel/uki.conf" ||
   fail "the shared device-tree list is replaced, since the Denali models share an SMBIOS identity"
-[[ $(grep -c "^DeviceTree=$matching/dtbs/linux-omarchy/qcom/x1e80100-microsoft-denali-oled.dtb\$" "$matching/kernel/uki.conf") == 1 ]] ||
+(( $(grep -c "^DeviceTree=$matching/dtbs/linux-omarchy/qcom/x1e80100-microsoft-denali-oled.dtb\$" "$matching/kernel/uki.conf") == 1 )) ||
   fail "the UKI embeds the OLED model's device tree exactly once across reruns"
-[[ $(find "$matching/kernel" -type f | wc -l) == 1 ]] ||
+(( $(find "$matching/kernel" -type f | wc -l) == 1 )) ||
   fail "no temporary UKI configuration is left behind"
-grep -Eq '(^|[( ])videocc_sm8550\?( |$)' "$matching/mkinitcpio.conf.d/surface-pro-11-initramfs.conf" ||
-  fail "the video clock controller a kernel may lack is optional in the early-boot list"
 
 request="$scratch/boot-rebuild"
 (export OMARCHY_IMAGE_BOOT_REBUILD="$request" && run_setup "$matching" >/dev/null)
@@ -99,7 +100,7 @@ printf '# BEGIN OMARCHY QUALCOMM DEVICE TREES\n[UKI]\nDeviceTreeAuto=/boot/dtbs/
   [[ " ${MODULES[*]} " != *" qcom_q6v5_pas "* ]] ||
     fail "the Surface Pro 11 initramfs leaves the DSP driver to the USB-root guard"
   for module in "${MODULES[@]}"; do
-    [[ $module != surface_* || $module == *\? ]] ||
+    [[ $module == *\? ]] ||
       fail "$module is optional, so a kernel without it still builds its image"
   done
 
@@ -124,7 +125,7 @@ surface_pro11 "$fresh"
 run_setup "$fresh" >/dev/null
 grep -Fxq "DeviceTree=$fresh/dtbs/linux-omarchy/qcom/x1e80100-microsoft-denali-oled.dtb" "$fresh/kernel/uki.conf" ||
   fail "a missing UKI configuration is created with the OLED model's device tree"
-[[ $(stat -c %a "$fresh/kernel/uki.conf") == 644 ]] ||
+[[ $(stat -c %a "$fresh/kernel/uki.conf") == "644" ]] ||
   fail "a created UKI configuration is readable like the one dtb-uki.sh writes"
 
 no_dtb="$scratch/no-dtb"
@@ -138,6 +139,24 @@ cmp -s "$scratch/no-dtb-uki.conf" "$no_dtb/kernel/uki.conf" ||
   fail "without Omarchy's kernel the device-tree list is left as it is"
 grep -Fxq 'add surface-pro-11-support iptsd surface-pro-11-sensors' "$no_dtb/packages.log" ||
   fail "the hardware support is added even before Omarchy's kernel is installed"
+
+stale_pin="$scratch/stale-pin"
+surface_pro11 "$stale_pin"
+run_setup "$stale_pin" >/dev/null
+printf '# BEGIN OMARCHY QUALCOMM DEVICE TREES\n[UKI]\nDeviceTreeAuto=/boot/dtbs/qcom/x1e80100-crd.dtb\n# END OMARCHY QUALCOMM DEVICE TREES\n' >>"$stale_pin/kernel/uki.conf"
+rm -r "$stale_pin/dtbs/linux-omarchy"
+run_setup "$stale_pin" >/dev/null
+! grep -q '^DeviceTree=' "$stale_pin/kernel/uki.conf" ||
+  fail "a pin to a device tree that is gone is removed, so the UKI still builds"
+grep -Fxq 'DeviceTreeAuto=/boot/dtbs/qcom/x1e80100-crd.dtb' "$stale_pin/kernel/uki.conf" ||
+  fail "without Omarchy's kernel the device-tree list dtb-uki.sh wrote is kept"
+
+renamed="$scratch/renamed"
+surface_pro11 "$renamed"
+mv "$renamed/dtbs/linux-omarchy" "$renamed/dtbs/linux-omarchy-aarch64"
+run_setup "$renamed" >/dev/null
+grep -Fxq "DeviceTree=$renamed/dtbs/linux-omarchy-aarch64/qcom/x1e80100-microsoft-denali-oled.dtb" "$renamed/kernel/uki.conf" ||
+  fail "the device tree is found under any linux-omarchy package directory, as dtb-uki.sh finds it"
 
 for model in 'microsoft,denali\0qcom,x1p64100' 'lenovo,yoga-slim7x\0qcom,x1e80100'; do
   other="$scratch/other"
