@@ -14,6 +14,13 @@ grep -Fxq 'run_logged "$OMARCHY_INSTALL/hardware/microsoft/surface-pro-11.sh"' "
 
 require_platform_fixtures "the Surface Pro 11 setup"
 
+# The installer is offline, so the ISO's mirror must carry what the setup adds.
+for package in linux-omarchy linux-omarchy-headers surface-pro-11-support pipewire-libcamera \
+  iptsd surface-pro-11-sensors; do
+  grep -Fxq "$package" "$ROOT/install/omarchy-other.packages" ||
+    fail "the ISO can supply $package offline"
+done
+
 run_setup() (
   set -eE
   local dir=$1
