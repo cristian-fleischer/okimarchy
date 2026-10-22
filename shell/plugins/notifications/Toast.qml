@@ -386,7 +386,7 @@ Item {
                    - (titleMarks.visible ? titleMarks.width + Style.space(7) : 0)
                    - Style.space(8))
             text: card.redacted ? I18n.t("notifications.redactedSummary") : String(card.row.summary || "")
-            color: card.critical ? Commons.Color.urgent : Commons.Color.notifications.text
+            color: Commons.Color.notifications.text
             font.family: "Liberation Sans"
             font.pixelSize: Style.font.title
             font.bold: true
