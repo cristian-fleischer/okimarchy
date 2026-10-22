@@ -533,7 +533,7 @@ assertDeepEqual(
 }
 assertDeepEqual(
   defaultItems.filter(item => item.parent === 'appearance.top-bar.indicators').map(item => item.label),
-  ['Show Battery Percentage', 'Hide Battery Percentage', 'Clock'],
+  ['Show Battery %', 'Hide Battery %', 'Clock'],
   'menu gathers bar indicator options under Menu Bar > Bar Indicators'
 )
 const clockModel = requireFromRoot('shell/plugins/panels/clock/Model.js')
