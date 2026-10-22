@@ -667,7 +667,7 @@ Item {
   readonly property bool vertical: position === "left" || position === "right"
   readonly property int barSize: vertical ? Style.bar.sizeVertical : Style.bar.sizeHorizontal
   // A detached bar floats barMargins away from every screen edge it touches
-  // and rounds its corners by barRadius. Every side is 0 by default, which
+  // and rounds its corners by radiusFor(). Every side is 0 by default, which
   // anchors the bar flush against its edge with square corners. The keys are
   // the position names, so barMargins[position] is the anchored edge's gap.
   //
@@ -678,11 +678,11 @@ Item {
   readonly property bool floating: BarModel.barFloating(floatingSetting, Style.bar.margins, position)
   readonly property var barMargins: floating ? BarModel.barMargins(true, Style.bar.margins, Style.gapsOutEdges, position) : BarModel.NO_MARGINS
   readonly property bool floatInGap: BarModel.floatsInGap(floating, Style.bar.margins, position)
-  readonly property int barRadius: BarModel.barRadius(
-    floating,
-    Style.barOverrides["radius"] !== undefined ? Style.bar.radius : undefined,
-    Style.cornerRadius,
-    barSize)
+  // The corner radius of a bar `thickness` thick. Each surface passes its own:
+  // one floored at a display cutout is taller than barSize and rounds further.
+  function radiusFor(thickness) {
+    return BarModel.barRadius(floating, Style.barOverrides["radius"] !== undefined ? Style.bar.radius : undefined, Style.cornerRadius, thickness)
+  }
 
   // Display cutouts (a camera notch) the platform's own package describes in
   // the fixed platform root, which no environment variable moves. Most machines
@@ -1659,12 +1659,12 @@ Item {
     WlrLayershell.layer: WlrLayer.Top
 
     // Declared before the loader so it paints behind the widgets. Carries the
-    // bar's background instead of the window, which is what lets barRadius
+    // bar's background instead of the window, which is what lets radiusFor()
     // round the corners.
     Rectangle {
       anchors.fill: parent
       color: root.transparent ? "transparent" : (root.glassy ? root.glassBackground : root.background)
-      radius: root.barRadius
+      radius: root.radiusFor(barWindow.thickness)
     }
 
     Loader {
