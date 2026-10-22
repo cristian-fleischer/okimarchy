@@ -83,8 +83,12 @@ Item {
   readonly property bool glyphLed: Delivery.summaryStartsWithGlyph(row.summary)
   readonly property real contentPaddingY: hasBody ? Style.space(10) : Style.space(7)
   // A card behind the front of a collapsed deck is a shape: the cards are
-  // translucent, so its text would read through the one in front.
-  readonly property bool showsContent: expanded || place.front
+  // translucent, so its text would read through the one in front. Only
+  // opening and closing the deck fades the text; taking or giving up the
+  // front, as cards arrive and leave, is instant.
+  property real expandShare: expanded ? 1 : 0
+  Behavior on expandShare { NumberAnimation { duration: card.fade } }
+  readonly property real contentOpacity: place.front ? 1 : expandShare
 
   // The body opens in an open deck, or on hover when nothing else is on
   // screen. Never in a collapsed stack: every card there is drawn at the front
@@ -255,8 +259,7 @@ Item {
         height: width > 0 ? (compact ? glyphText.implicitHeight : slot) : 0
         visible: width > 0
         y: Math.max(0, (card.restingBlock - height) / 2)
-        opacity: card.showsContent ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: card.fade } }
+        opacity: card.contentOpacity
 
         function entryIcon(icon) {
           var value = String(icon || "")
@@ -374,8 +377,7 @@ Item {
           id: headline
           width: parent.width
           height: Math.max(title.implicitHeight, rightSide.height)
-          opacity: card.showsContent ? 1 : 0
-          Behavior on opacity { NumberAnimation { duration: card.fade } }
+          opacity: card.contentOpacity
 
           Text {
             textFormat: Text.PlainText
@@ -527,8 +529,7 @@ Item {
           // The closed height, read only by the icon so it does not move.
           readonly property real restHeight: Math.ceil(Math.max(1, metrics.height) * Math.min(2, lineCount))
           visible: card.hasBody
-          opacity: card.showsContent ? 1 : 0
-          Behavior on opacity { NumberAnimation { duration: card.fade } }
+          opacity: card.contentOpacity
 
           textFormat: Text.StyledText
           text: card.redacted ? I18n.t("notifications.redactedBody") : String(card.row.bodyRich || "")

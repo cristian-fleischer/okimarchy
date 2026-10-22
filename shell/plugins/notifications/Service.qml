@@ -552,6 +552,10 @@ Item {
 
   property var heights: ({})       // key -> measured card height
   property int layoutRevision: 0
+  // Cards that arrived since the deck last opened or closed. They settle into
+  // their measured height at once (a late icon, a re-wrap) instead of growing.
+  property var fresh: ({})
+  onExpandedChanged: fresh = ({})
 
   Timer {
     id: collapseGrace
@@ -601,7 +605,12 @@ Item {
   // Fed target heights, never mid-animation ones, so layout moves on events.
   function noteHeight(key, h) {
     if (Math.abs((heights[key] || 0) - h) < 0.5) return
-    commit(function() { service.heights[key] = h })
+    if (fresh[key] && !expanded) {
+      heights[key] = h
+      land()
+    } else {
+      commit(function() { service.heights[key] = h })
+    }
   }
 
   // ------------------------------------------------------- the scene clock
@@ -621,7 +630,7 @@ Item {
     duration: Math.max(1, service.sceneDuration)
     easing.type: Easing.Bezier
     easing.bezierCurve: service.sceneCurve
-    onFinished: service.sceneSettled()
+    onFinished: service.settled()
   }
 
   function at(key, what) {
@@ -651,13 +660,11 @@ Item {
   function commit(change) {
     var snap = snapshot(), deckNow = deckHeight
     change()
-    retarget(undefined, undefined, snap, deckNow)
+    retarget(snap, deckNow)
   }
 
-  function retarget(seedKey, seed, snap, deckNow) {
+  function retarget(snap, deckNow) {
     if (!snap) { snap = snapshot(); deckNow = deckHeight }
-    // A new card has no previous place, so the caller seeds one.
-    if (seedKey) snap[seedKey] = seed
     deckWas = deckNow
     was = snap
     layoutRevision += 1
@@ -665,24 +672,18 @@ Item {
     sceneRun.restart()
   }
 
-  // A leaving card fades exactly where it was while the others close over it.
-  function restingPlace(key) {
-    var prev = was[key]
-    // front: true keeps its text on the way out instead of blanking a frame.
-    return { y: prev ? prev.y : 0, scale: prev ? prev.scale : 1, opacity: 0,
-             height: prev ? prev.height : 0, z: 2000, front: true,
-             hidden: false }
+  // Arrivals and departures skip the clock: everything jumps to its place.
+  function land() {
+    sceneRun.stop()
+    layoutRevision += 1
+    t = 1
+    Qt.callLater(landed)
   }
 
-  // Leaving rows stay in the model until the gap has closed.
-  function sceneSettled() {
-    var keys = []
-    for (var key in leaving) keys.push(key)
-    if (!keys.length) return
-    for (var i = 0; i < keys.length; i++) finishClose(keys[i], leaving[keys[i]])
-    t = 1
-    was = snapshot()
-  }
+  // Cards come to rest when the clock finishes or a jump has been drawn.
+  signal settled()
+  // A move started after the jump settles on its own finish instead.
+  function landed() { if (t >= 1) settled() }
 
   readonly property var layout: {
     layoutRevision
@@ -700,15 +701,8 @@ Item {
     })
   }
 
-  // Copied, not borrowed: writing the leaving cards into layout.placements
-  // would mutate this binding's own input while reading it.
-  readonly property var placements: {
-    var out = {}
-    var base = layout.placements
-    for (var k in base) out[k] = base[k]
-    for (var key in leaving) out[key] = restingPlace(key)
-    return out
-  }
+  // A leaving card has no placement, so its Toast is hidden and takes no input.
+  readonly property var placements: layout.placements
 
   // Our own identity: the sender's id is reused by replaces_id.
   function nextKey() {
@@ -855,21 +849,17 @@ Item {
       var row = pending.row
       pending.row = null
       var at = service.rowIndexFor(key)
-      var snap = service.snapshot(), deckNow = service.deckHeight
       if (at >= 0) {
+        var snap = service.snapshot(), deckNow = service.deckHeight
         Store.applyTo(toasts, at, row)      // an update, in place
-        service.retarget(undefined, undefined, snap, deckNow)
+        service.retarget(snap, deckNow)
       } else {
         service.pinDeckDisplay()
+        // Before the insert: the delegate measures itself while it is built.
+        service.fresh[key] = true
         toasts.insert(0, row)
-        // Where it comes from: under the bar, transparent.
-        var landing = service.layout.placements[key]
-        service.retarget(key, {
-          y: (landing ? landing.y : 0) - Style.space(30),
-          scale: landing ? landing.scale : 1,
-          opacity: 0,
-          height: landing ? landing.height : 0
-        }, snap, deckNow)
+        // Arrivals don't slide in: the card and the deck are simply there.
+        service.land()
       }
     })
   }
@@ -892,21 +882,36 @@ Item {
 
   // ------------------------------------------------------------- departure
   //
-  // A leaving row keeps its model slot but no layout room, so the gap closes as it fades.
+  // A leaving row loses its layout room and vanishes at once, but keeps its
+  // model slot until the next tick: removing it from inside the delegate
+  // handler that dismissed it would destroy that delegate mid-call.
   property var leaving: ({})
 
-  function closeToast(key, reason) {
-    if (leaving[key]) return
-    if (rowIndexFor(key) < 0) {
-      finishClose(key, reason || "dismissed")
-      return
-    }
-    var snap = snapshot(), deckNow = deckHeight
-    var next = {}
+  function closeToast(key, reason) { closeToasts([key], reason) }
+
+  // One jump for the lot, however many cards leave together.
+  function closeToasts(keys, reason) {
+    var next = {}, marked = false
     for (var k in leaving) next[k] = leaving[k]
-    next[key] = reason || "dismissed"
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i]
+      if (next[key]) continue
+      if (rowIndexFor(key) < 0) {
+        finishClose(key, reason || "dismissed")
+        continue
+      }
+      next[key] = reason || "dismissed"
+      marked = true
+    }
+    if (!marked) return
     leaving = next
-    retarget(key, snap[key], snap, deckNow)
+    land()
+    Qt.callLater(finishLeaving)
+  }
+
+  function finishLeaving() {
+    var keys = Object.keys(leaving)
+    for (var i = 0; i < keys.length; i++) finishClose(keys[i], leaving[keys[i]])
   }
 
   function finishClose(key, reason) {
@@ -919,6 +924,7 @@ Item {
     release(key, reason)
     if (at >= 0) toasts.remove(at)
     delete heights[key]
+    delete fresh[key]
     // A placeholder (the empty-history notice) was never recorded.
     if (key.indexOf("placeholder") !== 0) storeClose(key, reason)
     layoutRevision += 1
@@ -928,7 +934,7 @@ Item {
   // a row leaving rather than removing it, so a count loop never progresses.
   function clearAll(reason) {
     var keys = Object.keys(liveKeys)
-    for (var k = 0; k < keys.length; k++) closeToast(keys[k], reason || "dismissed")
+    closeToasts(keys, reason)
     return keys.length
   }
 
@@ -1632,8 +1638,8 @@ Item {
             // Cards move under a still pointer after a dismissal: re-hit-test
             // once settled, or a second click invokes a stale card.
             Connections {
-              target: sceneRun
-              function onFinished() {
+              target: service
+              function onSettled() {
                 Qt.callLater(function() {
                   if (hoverArea.containsMouse)
                     hoverArea.hoverAt(hoverArea.mouseX, hoverArea.mouseY)

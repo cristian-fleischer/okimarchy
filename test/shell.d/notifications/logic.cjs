@@ -329,7 +329,7 @@ function runIn(scope, ...names) {
 const capacityFunctions = ['pinDeckDisplay', 'showsOn', 'fullscreenOn', 'rememberRecent', 'recentForPanel',
   'durationFor', 'liveCount', 'reserveLive', 'releaseLive',
   'nextKey', 'rowIndexFor', 'keyForOriginal', 'handleNotification', 'watchNotification', 'showRow', 'release', 'closeToast',
-  'finishClose', 'clearAll', 'dismissNewest', 'releaseHeld', 'restoreRows', 'actionsOf', 'dismissOne',
+  'closeToasts', 'finishLeaving', 'finishClose', 'clearAll', 'dismissNewest', 'releaseHeld', 'restoreRows', 'actionsOf', 'dismissOne',
   'storePut', 'storeClose', 'storeDrop', 'storeRecord', 'saveSoon', 'loadLive']
 
 function newCapacityScope() {
@@ -342,7 +342,7 @@ function newCapacityScope() {
   const later = []
   const s = {
     toasts, refs: {}, refsRevision: 0, keySeed: 0, liveKeys: Object.create(null),
-    maxLiveNotifications: 100, heights: {}, leaving: {}, layoutRevision: 0,
+    maxLiveNotifications: 100, heights: {}, fresh: {}, leaving: {}, layoutRevision: 0,
     held: [], doNotDisturb: false, globalSnoozeUntil: 0,
     recentRows: [], recentLimit: 20,
     liveEntries: [], historyEntries: [], historyHours: 24, unsaved: {}, liveLoaded: false,
@@ -362,7 +362,7 @@ function newCapacityScope() {
       md5: value => require('node:crypto').createHash('md5').update(value).digest('hex') },
     Style: { space: n => n },
     holding: () => s.pointerHolding === true,
-    snapshot: () => ({}), deckHeight: 0, retarget: () => {}, layout: { placements: {} },
+    snapshot: () => ({}), deckHeight: 0, retarget: () => {}, land: () => {}, layout: { placements: {} },
   }
   // Bare QML properties and service-qualified accesses are the same object.
   s.service = s
@@ -419,7 +419,7 @@ const summaries = rows => Array.from(rows, row => row.summary)
   assert.equal(s.fullscreenOn('game'), false)
 }
 
-{ // Rapid single dismissals must skip rows still playing their exit animation.
+{ // Rapid single dismissals must skip rows that are leaving but not yet removed.
   const s = newCapacityScope()
   assert.equal(s.dismissOne(), 'none')
   const senders = [1, 2, 3, 4].map(id => s.fakeNotification(id))
@@ -431,13 +431,25 @@ const summaries = rows => Array.from(rows, row => row.summary)
     assert.equal(s.leaving[key], 'dismissed', 'each press selects the next live card')
   }
   assert.equal(s.dismissOne(), 'none', 'departing cards are not dismissible')
-  assert.equal(s.toasts.count, 4, 'exit animations retain their model rows')
+  assert.equal(s.toasts.count, 4, 'leaving rows keep their model slots until the next tick')
   assert.equal(s.leaving[keys[0]], 'expired', 'dismissal preserves an earlier expiry')
-  for (const key of keys) s.finishClose(key, s.leaving[key])
-  assert.equal(s.toasts.count, 0)
+  s.drainCallLater()
+  assert.equal(s.toasts.count, 0, 'the next tick removes every leaving row')
+  assert.equal(Object.keys(s.leaving).length, 0)
   assert.equal(senders[3].expiries, 1)
   for (const sender of senders.slice(0, 3)) assert.equal(sender.dismissals, 1)
   for (const sender of senders) assert.equal(sender.closeAttempts, 1)
+}
+
+{ // Clearing takes every card out together, with one jump.
+  const s = newCapacityScope()
+  s.admit(...[1, 2, 3].map(id => s.fakeNotification(id)))
+  let lands = 0
+  s.land = () => { lands += 1 }
+  assert.equal(s.clearAll('dismissed'), 3)
+  assert.equal(lands, 1)
+  s.drainCallLater()
+  assert.equal(s.toasts.count, 0)
 }
 
 { // Expired notifications remain readable, newest first, without unbounded retention.
