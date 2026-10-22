@@ -302,19 +302,6 @@ function serialiseQuiet(state) {
                           codesBypassQuiet: !!state.codesBypassQuiet }) + "\n"
 }
 
-// The previous engine kept Do Not Disturb in ~/.local/state/omarchy/notifications.json;
-// it holds until quiet.json is first written.
-function legacyDnd(text) {
-  var raw = String(text || "")
-  if (raw.length > 1048576) return false
-  try {
-    var read = JSON.parse(raw)
-    return !!read && typeof read === "object" && read.dnd === true
-  } catch (e) {
-    return false
-  }
-}
-
 // What a redacted row says, stored in English like any stored value and
 // translated where it is shown.
 var REDACTED_SUMMARY = "Verification notification"

@@ -24,10 +24,6 @@ Item {
     settingsView = false
     controller.show()
   }
-  function openSettings() {
-    settingsView = true
-    controller.show()
-  }
   function close() { controller.hide() }
   function toggle() {
     if (controller.open) controller.hide()
@@ -105,12 +101,8 @@ Item {
   readonly property string chevronUp: "\u{f0143}"
 
   // ------------------------------------------------------------- words
-  readonly property string timeFormat: preferences.timeFormat || "system"
-
   function clockTime(when) {
     var locale = Qt.locale(I18n.formatLocale)
-    if (timeFormat === "24h") return locale.toString(when, "HH:mm")
-    if (timeFormat === "12h") return locale.toString(when, "h:mm ap")
     return locale.toString(when, locale.timeFormat(Locale.ShortFormat))
   }
 
@@ -176,20 +168,6 @@ Item {
       : configuredDisplayMode === "specific"
         ? I18n.t("notifications.displayMissingHint")
         : I18n.t("notifications.displayActiveHint")
-
-  readonly property string configuredFullscreenOverlay: preferences.fullscreenOverlay || "all"
-  readonly property var fullscreenOverlayOptions: [
-    { value: "off", label: I18n.t("notifications.stepAsideOff") },
-    { value: "all", label: I18n.t("notifications.stepAsideAll") },
-    { value: "steam", label: I18n.t("notifications.stepAsideSteam") }
-  ]
-  readonly property string fullscreenOverlayExplanation: {
-    switch (configuredFullscreenOverlay) {
-    case "all": return I18n.t("notifications.stepAsideAllHint")
-    case "steam": return I18n.t("notifications.stepAsideSteamHint")
-    default: return I18n.t("notifications.stepAsideOffHint")
-    }
-  }
 
   function selectDisplay(value) {
     if (!service) return
@@ -301,37 +279,11 @@ Item {
 
             PanelSeparator { foreground: root.panelFg }
 
-            Column {
-              width: parent.width
-              spacing: Style.spacing.lg
-
-              Picker {
-                width: parent.width
-                label: I18n.t("notifications.stepAside")
-                value: root.configuredFullscreenOverlay
-                options: root.fullscreenOverlayOptions
-                foreground: root.panelFg
-                fontFamily: root.fontFamily
-                onPicked: function(value) { if (root.service) root.service.setSetting("fullscreenOverlay", value) }
-              }
-
-              Hint { text: root.fullscreenOverlayExplanation }
-            }
-
-            PanelSeparator { foreground: root.panelFg }
-
             SwitchRow {
-              label: I18n.t("notifications.groupBySource")
-              hint: I18n.t("notifications.groupBySourceHint")
-              checked: root.preferences.stacking !== "all"
-              onToggled: if (root.service) root.service.setSetting("stacking", root.preferences.stacking === "all" ? "source" : "all")
-            }
-
-            SwitchRow {
-              label: I18n.t("notifications.showCountdown")
-              hint: I18n.t("notifications.showCountdownHint")
-              checked: root.preferences.showCountdown === true
-              onToggled: if (root.service) root.service.setSetting("showCountdown", !root.preferences.showCountdown)
+              label: I18n.t("notifications.stepAside")
+              hint: I18n.t("notifications.stepAsideHint")
+              checked: root.preferences.fullscreenOverlay !== "off"
+              onToggled: if (root.service) root.service.setSetting("fullscreenOverlay", root.preferences.fullscreenOverlay === "off" ? "all" : "off")
             }
 
             SwitchRow {

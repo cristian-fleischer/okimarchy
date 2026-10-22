@@ -94,6 +94,7 @@ for (let i = 0; i < 1000; i++) {
   assert.equal(real.groupKey, 'web:app.slack.com')
   assert.equal(real.source, 'app.slack.com')
   assert.equal(id('Chromium', '<a href="https://evil.example/">bank.example</a>hi').source, 'evil.example', 'the href is the origin')
+  assert.equal(id('Brave Origin', '<a href="https://app.basecamp.com/">app.basecamp.com</a>\n\nKendall: hi').groupKey, 'web:app.basecamp.com')
   // A restored row cannot claim a site either unless it came from a browser.
   assert.equal(Store.restored({ key: 'r', app: 'Chat', source: 'bank.example' }).groupKey, 'app:chat')
   assert.equal(Store.restored({ key: 'r', app: 'Chromium', source: 'app.slack.com' }).groupKey, 'web:app.slack.com')
@@ -212,21 +213,16 @@ for (const body of ['Your verification code is 938271', 'Your code is 938 271', 
   // Only the browser is looked up among desktop entries: a fuzzy match on a
   // domain label is how mail.google.com would wear Google Contacts.
   same(Icons.candidates(Store.restored({ key: 'w', app: 'Google Chrome', appIcon: 'google-chrome', source: 'app.slack.com' })), {
-    overrides: ['app.slack.com', 'slack', 'google-chrome', 'web-app.slack.com'],
     themed: ['app.slack.com', 'slack', 'google-chrome'],
     entries: ['google-chrome', 'Google Chrome'] })
   // An app: its hint, then its source and name, as given and slugged; a name
   // with a space is no theme name.
   same(Icons.candidates(Store.restored({ key: 'a', app: 'Spotify', appIcon: 'spotify-client' })), {
-    overrides: ['spotify-client', 'spotify', 'app-spotify'],
     themed: ['spotify-client', 'Spotify', 'spotify'],
     entries: ['spotify-client', 'Spotify'] })
   // A hostname-looking app is not a site unless a browser lifted it.
   same(Icons.candidates({ app: 'example.com', source: 'example.com', groupKey: 'app:example-com' }).themed, ['example.com'])
-  same(Icons.candidates({}), { overrides: [], themed: [], entries: [] })
-  // Overrides: by slug, PNG first, any case, image formats only.
-  same(Icons.overrideMap(['slack.svg', 'slack.png', 'Spotify.PNG', 'notes.txt', '.png', 'x.jpg', 'x.ico', 'readme']),
-       { slack: 'slack.png', spotify: 'Spotify.PNG', x: 'x.jpg' })
+  same(Icons.candidates({}), { themed: [], entries: [] })
   assert.equal(Icons.slug('  Google Chrome!! '), 'google-chrome')
   assert.equal(Icons.slug('../../etc/passwd'), 'etc-passwd')
   // One-colour icons go by their freedesktop name, as a theme name or a file.
@@ -284,31 +280,17 @@ for (const body of ['Your verification code is 938271', 'Your code is 938 271', 
 
 // ------------------------------------------------------------------ settings
 { // Every key optional, every invalid value falls back.
-  const d = Settings.resolve(null)
-  assert.equal(d.stacking, 'source')
-  assert.equal(d.fullscreenOverlay, 'all')
-  assert.equal(d.edgeSpacing, null, 'unset edge spacing follows the theme gap')
-  assert.equal(d.allowDefaultActionOnCardClick, true)
-  assert.equal(d.codesBypassQuiet, null)
-  assert.deepEqual([...d.snoozeDurations], ['30', '60', '240', 'tomorrow'])
-  const r = Settings.resolve({ stacking: 'nope', fontScale: 500, edgeSpacing: '8', wakeHour: 0,
-                               snoozeDurations: ['15', 'bogus', '15', 'tomorrow'], historyHours: 7,
-                               clipboardTimeout: 90, codesBypassQuiet: false, displayName: 7 })
-  assert.equal(r.stacking, 'source')
-  assert.equal(r.fontScale, 200)
-  assert.equal(r.edgeSpacing, 8)
-  assert.equal(r.wakeHour, 0, 'midnight is a valid wake hour')
-  assert.deepEqual([...r.snoozeDurations], ['15', 'tomorrow'])
+  const r = Settings.resolve({ fullscreenOverlay: 'steam-away', historyHours: 7, displayName: 7,
+                               offerSnoozeWhenSharing: 'no' })
+  assert.equal(r.fullscreenOverlay, 'all', 'retired step-aside variants fall back')
+  assert.equal(Settings.resolve({ fullscreenOverlay: 'off' }).fullscreenOverlay, 'off')
   assert.equal(r.historyHours, 24)
-  assert.equal(r.clipboardTimeout, 90)
-  assert.equal(r.codesBypassQuiet, false)
   assert.equal(r.displayName, '')
-  assert.deepEqual([...Settings.resolve({ snoozeDurations: [] }).snoozeDurations], [...d.snoozeDurations])
+  assert.equal(r.offerSnoozeWhenSharing, true)
   const now = new Date(2026, 9, 19, 22, 30).getTime()
-  assert.equal(Settings.snoozeSeconds('60', 8, now), 3600)
-  assert.equal(Settings.snoozeSeconds('tomorrow', 8, now), 9 * 3600 + 1800)
-  assert.equal(Settings.snoozeSeconds('tomorrow', 0, new Date(2026, 9, 19, 23, 58).getTime()), 600, 'never less than ten minutes')
-  assert.equal(Settings.snoozeSeconds('nope', 8, now), 0)
+  assert.equal(Settings.snoozeSeconds('60', now), 3600)
+  assert.equal(Settings.snoozeSeconds('tomorrow', now), 9 * 3600 + 1800)
+  assert.equal(Settings.snoozeSeconds('nope', now), 0)
 }
 
 // --------------------------------------------------- Service.qml functions
@@ -342,25 +324,12 @@ function runIn(scope, ...names) {
   assert.deepEqual(calls, ['hl.dsp.focus({window = hl.get_window("address:0x123abc")})'])
 }
 
-{ // Snooze lengths from IPC are finite and bounded before anything changes.
-  const s = runIn({ maxSnoozeSeconds: 366 * 86400, Number, Math, isFinite }, 'snoozeMinutes')
-  for (const v of ['Infinity', '1e309', 'NaN', '-5', '0', '', 'abc']) assert.equal(s.snoozeMinutes(v, 60), 60, v)
-  assert.equal(s.snoozeMinutes('1e308', 60), 366 * 1440, 'capped, not overflowed')
-  assert.equal(s.snoozeMinutes('30', 60), 30)
-  assert.ok(/isFinite\(seconds\)/.test(fn('snoozeSource')) && /maxSnoozeSeconds/.test(fn('snoozeSource')), 'snoozeSource bounds its own input')
-}
-
-{ // The summary is plain text everywhere it is drawn.
-  const toast = fs.readFileSync(load.dir + '/Toast.qml', 'utf8'), title = toast.indexOf('id: title')
-  assert.ok(/Text\.PlainText/.test(toast.slice(toast.lastIndexOf('Text {', title), title)), 'the summary renders as plain text')
-}
-
 // Admission, close and replay run for real; only the ListModel, QObject
 // signals, the deferred event loop and external effects are faked.
 const capacityFunctions = ['pinDeckDisplay', 'showsOn', 'fullscreenOn', 'rememberRecent', 'recentForPanel',
   'durationFor', 'liveCount', 'reserveLive', 'releaseLive',
   'nextKey', 'rowIndexFor', 'keyForOriginal', 'handleNotification', 'watchNotification', 'showRow', 'release', 'closeToast',
-  'finishClose', 'clearAll', 'clearDeck', 'dismissNewest', 'releaseHeld', 'restoreRows', 'actionsOf', 'dismissOne',
+  'finishClose', 'clearAll', 'dismissNewest', 'releaseHeld', 'restoreRows', 'actionsOf', 'dismissOne',
   'storePut', 'storeClose', 'storeDrop', 'storeRecord', 'saveSoon', 'loadLive']
 
 function newCapacityScope() {
@@ -379,11 +348,11 @@ function newCapacityScope() {
     liveEntries: [], historyEntries: [], historyHours: 24, unsaved: {}, liveLoaded: false,
     saveTimer: { running: false, start() {} },
     configuredDisplayName: 'fixture-display', deckDisplayName: '',
-    fullscreenScope: '', hyprRevision: 0,
+    stepsAside: false, hyprRevision: 0,
     displayNames: ['fixture-display'], focusedDisplayName: 'fixture-display',
     Quickshell: { screens: [] }, Hyprland: { monitorFor: screen => screen.monitor },
     snoozeRevision: 0, snoozes: {},
-    codesBypassQuiet: false, hideSettingsAction: false,
+    codesBypassQuiet: false,
     lowDuration: 5000, normalDuration: 8000, maxDuration: 30000,
     snoozedUntil: key => s.snoozes[key] || 0,
     liveSnoozes: () => Object.keys(s.snoozes).map(key => ({ key })),
@@ -437,23 +406,16 @@ function newCapacityScope() {
 }
 const summaries = rows => Array.from(rows, row => row.summary)
 
-{ // Step aside for real fullscreen windows, not merely maximised ones.
+{ // Step aside for fullscreen windows, but not merely maximised ones.
   const s = newCapacityScope()
   const game = { lastIpcObject: { fullscreen: 1, class: 'steam_app_31' } }
-  const work = { lastIpcObject: { fullscreen: 2, class: 'editor' } }
-  s.Quickshell.screens = [game, work].map((window, i) => ({
-    name: ['game', 'work'][i],
-    monitor: { activeWorkspace: { hasFullscreen: true, toplevels: { values: [window] } } },
-  }))
-  s.fullscreenScope = 'all'
+  s.Quickshell.screens = [{ name: 'game',
+    monitor: { activeWorkspace: { hasFullscreen: true, toplevels: { values: [game] } } } }]
+  s.stepsAside = true
   assert.equal(s.fullscreenOn('game'), false)
   game.lastIpcObject.fullscreen = 2
   assert.equal(s.fullscreenOn('game'), true)
-  assert.equal(s.fullscreenOn('work'), true)
-  s.fullscreenScope = 'steam'
-  assert.equal(s.fullscreenOn('game'), true)
-  assert.equal(s.fullscreenOn('work'), false)
-  s.fullscreenScope = ''
+  s.stepsAside = false
   assert.equal(s.fullscreenOn('game'), false)
 }
 
@@ -476,38 +438,6 @@ const summaries = rows => Array.from(rows, row => row.summary)
   assert.equal(senders[3].expiries, 1)
   for (const sender of senders.slice(0, 3)) assert.equal(sender.dismissals, 1)
   for (const sender of senders) assert.equal(sender.closeAttempts, 1)
-}
-
-{ // Dismiss the visible deck, including across mode changes and exit animations.
-  function fixture(stacking, expanded, openDeck) {
-    const s = newCapacityScope()
-    Object.assign(s, { stacking, expanded, openDeck })
-    for (const [key, groupKey] of [['old', 'chat'], ['build', 'build'], ['new', 'chat']]) {
-      s.reserveLive(key)
-      s.toasts.insert(0, { key, groupKey })
-    }
-    Object.defineProperty(s, 'layout', { get: () => Layout.compute(
-      s.toasts.rows.filter(row => !s.leaving[row.key]),
-      { stacking: s.stacking, expanded: s.expanded, openDeck: s.openDeck }) })
-    return s
-  }
-  const leaving = s => Object.keys(s.leaving).sort()
-  const collapsed = fixture('source', false, '')
-  assert.equal(collapsed.clearDeck('dismissed'), 2)
-  assert.deepEqual(leaving(collapsed), ['new', 'old'])
-  // Departing rows remain in the model, but must not consume the next press.
-  assert.equal(collapsed.clearDeck('dismissed'), 1)
-  assert.deepEqual(leaving(collapsed), ['build', 'new', 'old'])
-  assert.equal(collapsed.clearDeck('dismissed'), 0)
-  const open = fixture('source', true, 'build')
-  assert.equal(open.clearDeck('dismissed'), 1)
-  assert.deepEqual(leaving(open), ['build'])
-  assert.equal(open.clearDeck('dismissed'), 2)
-  const all = fixture('all', true, 'chat')
-  assert.equal(all.clearDeck('dismissed'), 3)
-  const unmatched = fixture('source', true, 'all')
-  assert.equal(unmatched.clearDeck('dismissed'), 2)
-  assert.deepEqual(leaving(unmatched), ['new', 'old'])
 }
 
 { // Expired notifications remain readable, newest first, without unbounded retention.
@@ -980,8 +910,6 @@ const eq = (actual, expected, message) => assert.deepEqual(plain(actual), plain(
                                '"dnd":"yes","silencedSince":"later","codesBypassQuiet":"no"}')
   eq(odd, { snoozes: { c: { until: 5, label: '7', since: 0 } }, dnd: false, silencedSince: 0, codesBypassQuiet: null })
   assert.ok(!('until' in odd.snoozes), 'a __proto__ key cannot replace the prototype')
-  assert.equal(Store.legacyDnd('{"version":3,"dnd":true}'), true)
-  for (const text of ['', '{"dnd":"true"}', '[true]', 'garbage']) assert.equal(Store.legacyDnd(text), false, text)
 }
 
 { // The service: shown rows are saved live, closed ones move to history, quiet

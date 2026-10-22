@@ -112,7 +112,7 @@ function oneLine(body) {
 }
 
 // Only a browser's leading anchor names a site; any other app's is just a link.
-var BROWSERS = /^(google chrome|chromium|brave|brave browser|microsoft edge|vivaldi|opera|helium|firefox|zen|librewolf)$/i
+var BROWSERS = /^(google chrome|chromium|brave|brave browser|brave origin|microsoft edge|vivaldi|opera|helium|firefox|zen|librewolf)$/i
 function isBrowser(app) {
   return BROWSERS.test(String(app || "").trim())
 }

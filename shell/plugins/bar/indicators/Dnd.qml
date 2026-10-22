@@ -60,8 +60,7 @@ BarIndicator {
       }
       var panel = panelLoader.item
       if (!panel) return
-      if (action === "settings") panel.openSettings()
-      else panel.open()
+      panel.open()
     }
   }
 
