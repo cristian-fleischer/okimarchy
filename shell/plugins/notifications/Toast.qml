@@ -384,7 +384,7 @@ Item {
           visible: thumb.glyphed
           text: String(card.row.glyph || "")
           color: Commons.Color.notifications.text
-          font.family: Style.font.family
+          font.family: Delivery.omarchyGlyph(card.row.glyph) ? "omarchy" : Style.font.family
           font.pixelSize: (thumb.compact ? Style.font.icon : Style.font.displayLarge) * card.fontScale
         }
 

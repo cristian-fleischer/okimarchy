@@ -34,6 +34,14 @@ function quietReason(row, state) {
 
 // A summary that opens with its own glyph ("󰂚  Silenced": one code point, two
 // spaces) already carries its mark, so the card drops the icon slot.
+// Omarchy's own marks (default/fonts/omarchy) sit at U+E900 and up, where the
+// Nerd Font has devicons, so a glyph there must be drawn in the icon font by
+// name, as the menu does with iconFont, or it renders as a devicon.
+function omarchyGlyph(glyph) {
+  var code = String(glyph || "").codePointAt(0)
+  return code >= 0xe900 && code <= 0xe9ff
+}
+
 function summaryStartsWithGlyph(summary) {
   var text = String(summary || "").replace(/^\s+/, "")
   if (!text) return false

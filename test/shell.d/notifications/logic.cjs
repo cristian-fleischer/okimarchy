@@ -263,6 +263,12 @@ for (const body of ['Your verification code is 938271', 'Your code is 938 271', 
   assert.ok(Delivery.summaryStartsWithGlyph('\u{f009b}  Silenced'))
   assert.ok(!Delivery.summaryStartsWithGlyph('Silenced  notifications'))
   assert.ok(!Delivery.summaryStartsWithGlyph(''))
+  // Omarchy's marks share code points with Nerd Font devicons.
+  assert.ok(Delivery.omarchyGlyph(''))
+  assert.ok(Delivery.omarchyGlyph(''))
+  assert.ok(!Delivery.omarchyGlyph('\u{f048a}'))
+  assert.ok(!Delivery.omarchyGlyph(''))
+  assert.ok(!Delivery.omarchyGlyph(''))
 
   // The deck clears the bar only on the top and right edges it touches.
   const bar = { barHidden: false, barSize: 26, barSizeFor: name => name === 'notched' ? 40 : 26 }
