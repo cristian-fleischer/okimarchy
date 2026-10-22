@@ -181,16 +181,12 @@ Item {
   readonly property var fullscreenOverlayOptions: [
     { value: "off", label: I18n.t("notifications.stepAsideOff") },
     { value: "all", label: I18n.t("notifications.stepAsideAll") },
-    { value: "steam", label: I18n.t("notifications.stepAsideSteam") },
-    { value: "all-away", label: I18n.t("notifications.stepAsideAllAway") },
-    { value: "steam-away", label: I18n.t("notifications.stepAsideSteamAway") }
+    { value: "steam", label: I18n.t("notifications.stepAsideSteam") }
   ]
   readonly property string fullscreenOverlayExplanation: {
     switch (configuredFullscreenOverlay) {
     case "all": return I18n.t("notifications.stepAsideAllHint")
     case "steam": return I18n.t("notifications.stepAsideSteamHint")
-    case "all-away": return I18n.t("notifications.stepAsideAllAwayHint")
-    case "steam-away": return I18n.t("notifications.stepAsideSteamAwayHint")
     default: return I18n.t("notifications.stepAsideOffHint")
     }
   }

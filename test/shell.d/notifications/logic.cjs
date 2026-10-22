@@ -45,6 +45,10 @@ for (const body of ['<img src="file:///etc/passwd">', '<svg><image href="https:/
   assert.ok(!/<(?:img|svg|script|iframe|object|embed|style|font)\b|<a[^>]+onmouseover=|href="(?:qrc|image|javascript|file|data):/i
     .test(M.render(body)), body)
 
+// A bare URL is a link even beside formatting, but never inside the sender's own anchor.
+assert.equal(M.render('<b>Standup</b> https://example.com/x'), '<b>Standup</b> <a href="https://example.com/x">https://example.com/x</a>')
+assert.equal(M.render('<a href="https://example.com/">https://example.com/</a>'), '<a href="https://example.com/">https://example.com/</a>')
+
 { // Escaped sender markup must not leak into collapsed or restored previews.
   const body = 'Thread in #support: &lt;b&gt;Sam&lt;/b&gt;&lt;br/&gt;the preview is readable &amp; compact'
   const expected = 'Thread in #support: Sam the preview is readable & compact'
@@ -135,16 +139,14 @@ for (const body of ['Your verification code is 938271', 'Your code is 938 271', 
   }
 }
 
-{ // Restore recomputes link/meeting/phone from the text under today's policy,
-  // never trusting fields on the stored entry.
+{ // Restore recomputes the link from the text under today's policy, never
+  // trusting the field on the stored entry.
   const entry = body => ({ key: 'n1', app: 'Chat', summary: 'New message', body, rawBody: body, urgency: 1 })
-  const row = Store.restored(entry('Join https://meet.google.com/abc-defg-hij or call +44 7911 123456'))
+  const row = Store.restored(entry('Join https://meet.google.com/abc-defg-hij'))
   assert.equal(row.link, 'https://meet.google.com/abc-defg-hij')
-  assert.equal(row.meeting, true)
-  assert.equal(row.phone, '+44 7911 123456')
   assert.equal(row.restored, true)
-  const tampered = Store.restored({ ...entry('Nothing to see here'), link: 'https://evil.example/phish', meeting: true, phone: '+1 555 0100' })
-  assert.deepEqual([tampered.link, tampered.meeting, tampered.phone], ['', false, ''])
+  const tampered = Store.restored({ ...entry('Nothing to see here'), link: 'https://evil.example/phish' })
+  assert.equal(tampered.link, '')
   assert.equal(Store.restored(entry('See http://127.0.0.1/admin for details')).link, '')
 }
 
@@ -355,7 +357,7 @@ function runIn(scope, ...names) {
 
 // Admission, close and replay run for real; only the ListModel, QObject
 // signals, the deferred event loop and external effects are faked.
-const capacityFunctions = ['pinDeckDisplay', 'showsOn', 'fullscreenOn', 'awayFrom', 'routeAround', 'rememberRecent', 'recentForPanel',
+const capacityFunctions = ['pinDeckDisplay', 'showsOn', 'fullscreenOn', 'rememberRecent', 'recentForPanel',
   'durationFor', 'liveCount', 'reserveLive', 'releaseLive',
   'nextKey', 'rowIndexFor', 'keyForOriginal', 'handleNotification', 'watchNotification', 'showRow', 'release', 'closeToast',
   'finishClose', 'clearAll', 'clearDeck', 'dismissNewest', 'releaseHeld', 'restoreRows', 'actionsOf', 'dismissOne',
@@ -377,7 +379,7 @@ function newCapacityScope() {
     liveEntries: [], historyEntries: [], historyHours: 24, unsaved: {}, liveLoaded: false,
     saveTimer: { running: false, start() {} },
     configuredDisplayName: 'fixture-display', deckDisplayName: '',
-    fullscreenAway: false, fullscreenScope: '', hyprRevision: 0,
+    fullscreenScope: '', hyprRevision: 0,
     displayNames: ['fixture-display'], focusedDisplayName: 'fixture-display',
     Quickshell: { screens: [] }, Hyprland: { monitorFor: screen => screen.monitor },
     snoozeRevision: 0, snoozes: {},
@@ -435,27 +437,24 @@ function newCapacityScope() {
 }
 const summaries = rows => Array.from(rows, row => row.summary)
 
-{ // Route away from fullscreen outputs, but not merely maximised windows.
+{ // Step aside for real fullscreen windows, not merely maximised ones.
   const s = newCapacityScope()
   const game = { lastIpcObject: { fullscreen: 1, class: 'steam_app_31' } }
-  const work = { lastIpcObject: { fullscreen: 0, class: 'editor' } }
-  s.displayNames = ['game', 'work']
-  s.focusedDisplayName = 'game'
+  const work = { lastIpcObject: { fullscreen: 2, class: 'editor' } }
   s.Quickshell.screens = [game, work].map((window, i) => ({
-    name: s.displayNames[i],
+    name: ['game', 'work'][i],
     monitor: { activeWorkspace: { hasFullscreen: true, toplevels: { values: [window] } } },
   }))
-  s.fullscreenAway = true
   s.fullscreenScope = 'all'
-  assert.equal(s.routeAround('game'), 'game')
+  assert.equal(s.fullscreenOn('game'), false)
   game.lastIpcObject.fullscreen = 2
-  assert.equal(s.routeAround('game'), 'work')
-  work.lastIpcObject.fullscreen = 2
-  assert.equal(s.routeAround('game'), '')
+  assert.equal(s.fullscreenOn('game'), true)
+  assert.equal(s.fullscreenOn('work'), true)
   s.fullscreenScope = 'steam'
-  assert.equal(s.routeAround('game'), 'work')
-  s.fullscreenAway = false
-  assert.equal(s.routeAround('game'), 'game')
+  assert.equal(s.fullscreenOn('game'), true)
+  assert.equal(s.fullscreenOn('work'), false)
+  s.fullscreenScope = ''
+  assert.equal(s.fullscreenOn('game'), false)
 }
 
 { // Rapid single dismissals must skip rows still playing their exit animation.
@@ -846,10 +845,10 @@ const plain = value => JSON.parse(JSON.stringify(value))
 // Arrays from the module's own realm compare by value.
 const eq = (actual, expected, message) => assert.deepEqual(plain(actual), plain(expected), message)
 
-{ // A stored row keeps only its scalar fields: no codes, links, phones,
-  // images or derived text.
-  const saved = Store.persistable({ key: 'n1', app: 'Chat', summary: 'Hi', body: 'Call +44 7911 123456 or https://example.com',
-    code: '1234', codes: '1234', link: 'https://example.com', meeting: true, phone: '+44 7911 123456', image: '/tmp/a.png',
+{ // A stored row keeps only its scalar fields: no codes, links, images or
+  // derived text.
+  const saved = Store.persistable({ key: 'n1', app: 'Chat', summary: 'Hi', body: 'See https://example.com',
+    code: '1234', codes: '1234', link: 'https://example.com', image: '/tmp/a.png',
     bodyRich: '<b>x</b>', transient: true })
   eq(Object.keys(saved).sort(), [...Store.STORED].sort())
   assert.equal(saved.rawBody, '', 'a raw body the same as the body is not stored twice')
@@ -944,9 +943,9 @@ const eq = (actual, expected, message) => assert.deepEqual(plain(actual), plain(
   eq(Store.parseLive(' '.repeat(Store.LIVE_LIMIT * Store.LIVE_ROW_CHARS * 2 + 1) + '[{"key":"a"}]'), [],
                    'an oversized file is not parsed at all')
   const [row] = Store.parseLive(JSON.stringify([{ key: '__proto__', summary: 's', image: '/tmp/a.png', bodyRich: '<img src=x>',
-    link: 'https://evil.example/', meeting: true, phone: '+1 555 0100', urgency: 'high', ts: 'soon', glyph: '\n' }]))
-  eq([row.key, row.image, row.link, row.phone, row.urgency, row.ts, row.glyph, 'bodyRich' in row],
-                   ['__proto__', undefined, undefined, undefined, 1, 0, '', false])
+    link: 'https://evil.example/', urgency: 'high', ts: 'soon', glyph: '\n' }]))
+  eq([row.key, row.image, row.link, row.urgency, row.ts, row.glyph, 'bodyRich' in row],
+                   ['__proto__', undefined, undefined, 1, 0, '', false])
   assert.equal(Store.parseLive('[{"key":"a","summary":"first"},{"key":"a","summary":"second"}]').length, 1)
   // The previous engine's rows had no key; rows without a close time are not history.
   eq(Store.parseHistory('[{"id":7,"summary":"Legacy","timestamp":1},{"key":"n1","summary":"open"}]'), [])

@@ -11,7 +11,7 @@ The shell is the notification daemon: `shell/plugins/notifications/Service.qml` 
 | `NotificationPanel.qml`, `Picker.qml` | The panel and its preferences page, opened from the bar's Dnd indicator (`shell/plugins/bar/indicators/Dnd.qml`) |
 | `Store.js` | Notification snapshots, normalisation, what a stored row keeps, the stored file formats, restore |
 | `Markup.js` | Safe body markup, source lifting (`web:app.slack.com`), one-line previews |
-| `Detect.js` | Verification codes, links, meeting links and phone numbers |
+| `Detect.js` | Verification codes and links |
 | `Security.js` | URL policy, bounds, the sender image path policy, the `omarchy-exec-argv` and glyph checks |
 | `Icons.js` | The names a card's icon may go by: site names, overrides, symbolic icons |
 | `Layout.js` | Pure deck layout: rows in, placements out |
@@ -28,7 +28,7 @@ A collapsed deck draws its cards at the front card's height; hovering opens it. 
 
 Live `Notification` objects are kept in a plain JS map (`refs`), never a ListModel role, which would dangle once the server destroys the object. At most 100 are live.
 
-The surface is one fixed-width `WlrLayer.Overlay` window per output (namespace `omarchy-notifications`), input-masked to the deck. It stays mapped while idle, because a layer surface coming and going makes Hyprland re-evaluate focus and drags a scrolling layout's viewport. The exception is `fullscreenOverlay` (default `all`), which unmaps it over a fullscreen window when nothing is showing so the window can be scanned out directly; the `-away` variants never cover a fullscreen window and send cards to another output or to Recent.
+The surface is one fixed-width `WlrLayer.Overlay` window per output (namespace `omarchy-notifications`), input-masked to the deck. It stays mapped while idle, because a layer surface coming and going makes Hyprland re-evaluate focus and drags a scrolling layout's viewport. The exception is `fullscreenOverlay` (default `all`), which unmaps it over a fullscreen window when nothing is showing so the window can be scanned out directly; `steam` does the same for Steam games only.
 
 ## Toast lifecycle
 
@@ -44,11 +44,11 @@ The shell keeps its state in `~/.local/state/omarchy/notifications/` (0700), thr
 - `history.json`: closed rows, newest first, each with `closed_ts` and `closed_reason`. Capped at 100 entries and `historyHours` (default 24; `0` keeps none). Rows whose reason is `snoozed` or `silenced` were held back by quiet and are what the panel lists under each source.
 - `quiet.json`: `{ snoozes, dnd, silencedSince, codesBypassQuiet }`. While it is still empty, Do Not Disturb is read from the previous engine's `~/.local/state/omarchy/notifications.json`.
 
-`Store.persistable` decides what a row keeps: its scalar fields, never images, detected links or phone numbers, or derived text. Text with a verification code is stored only as the redacted placeholder, the click command and glyph included. A live row is cut to 16K characters and a history row, shown as a one-line preview, to 4K. Rows keep `execArgv` and `glyph`, so a card restored after a shell restart clicks through like the live one. Rows are re-checked the same way when read back; a file that is not an array of keyed objects, or is oversized, reads as empty, and a file that does not read back exactly as it would be written is rewritten.
+`Store.persistable` decides what a row keeps: its scalar fields, never images, detected links, or derived text. Text with a verification code is stored only as the redacted placeholder, the click command and glyph included. A live row is cut to 16K characters and a history row, shown as a one-line preview, to 4K. Rows keep `execArgv` and `glyph`, so a card restored after a shell restart clicks through like the live one. Rows are re-checked the same way when read back; a file that is not an array of keyed objects, or is oversized, reads as empty, and a file that does not read back exactly as it would be written is rewritten.
 
 Writes go through one short timer, started (not restarted) by a change, so a burst of arrivals writes each file once and a flood writes at most four times a second; no file is written before it has been read. `FileView` writes atomically, which keeps the mode of the file it replaces, so the files are created at 0600 before anything writes them.
 
-At startup one process makes the directory and those files, and removes older layouts' leftovers, which hold old message content: the per-file `live/` and `history/` directories and `policy.json` of the Python store, the previous engine's `<ms>-<id>.json` popups and `images/`, fetched site icons in `icons/`, `~/.cache/omarchy/notification-icons/`, and the `reply-demo/` fixture of an earlier demo. A symlink in place of a state file is replaced, and nothing is followed through a symlink. Persistence starts no other process.
+At startup one process makes the directory and those files, and removes the previous engine's leftovers, which hold old message content: its `<ms>-<id>.json` popups and its `history/` and `images/` directories. A symlink in place of a state file is replaced, and nothing is followed through a symlink. Persistence starts no other process.
 
 ## Icons
 
@@ -185,7 +185,7 @@ Keybindings live in `default/hypr/bindings/utilities.lua`: `Super+comma`
 variants map to the IPC methods `dismissOne`, `dismissAll`, `invokeLast`,
 `showHistory` (put the last few back on screen), and the silencing toggle.
 
-The `notifications` IPC target also answers `dismissStack`, `count`, `expand`, `snooze <minutes>`, `snoozeAll <minutes>`, `unsnooze <key>`, `snoozes`, `codes <on|off>`, `act <identifier>`, `offer <code|link|phone>`, `togglePanel`, `openPanel`, `openSettings`, `closePanel`, `probe`, and `clear` (forget history). `omarchy-dev-notification-demo` sends test scenes through it.
+The `notifications` IPC target also answers `dismissStack`, `count`, `expand`, `snooze <minutes>`, `snoozeAll <minutes>`, `unsnooze <key>`, `snoozes`, `codes <on|off>`, `act <identifier>`, `copyCode`, `togglePanel`, `openPanel`, `openSettings`, `closePanel`, `probe`, and `clear` (forget history). `omarchy-dev-notification-demo` sends test scenes through it.
 
 ## How subsystems plug in
 

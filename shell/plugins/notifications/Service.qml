@@ -98,7 +98,7 @@ Item {
     var wanted = focusedDisplayName
     if (displayMode === "specific" && displayNames.indexOf(displayName) >= 0) wanted = configuredDisplayName
     else if (displayNames.indexOf(deckDisplayName) >= 0) wanted = deckDisplayName
-    return routeAround(wanted)
+    return wanted
   }
   onDisplayNamesChanged: {
     if (deckDisplayName && displayNames.indexOf(deckDisplayName) < 0)
@@ -107,11 +107,11 @@ Item {
   onDisplayModeChanged: { if (toasts.count > 0) deckDisplayName = configuredDisplayName }
   onDisplayNameChanged: { if (displayMode === "specific" && toasts.count > 0) deckDisplayName = configuredDisplayName }
   function pinDeckDisplay() {
-    if (toasts.count === 0) deckDisplayName = routeAround(configuredDisplayName)
+    if (toasts.count === 0) deckDisplayName = configuredDisplayName
   }
 
   function showsOn(name) {
-    return (displayMode === "all" && !awayFrom(name)) || name === targetDisplayName
+    return displayMode === "all" || name === targetDisplayName
   }
 
   // ------------------------------------------------------------- quiet
@@ -203,10 +203,8 @@ Item {
   // Hyprland refuses direct scanout while any overlay-layer surface exists on
   // a monitor, so an idle canvas makes fullscreen games composite each frame.
   // "all"/"steam" step aside under fullscreen (Steam) windows until a card
-  // arrives; the "-away" variants send cards to another display instead.
-  readonly property string fullscreenScope: fullscreenOverlay.indexOf("steam") === 0 ? "steam"
-    : fullscreenOverlay.indexOf("all") === 0 ? "all" : ""
-  readonly property bool fullscreenAway: fullscreenScope !== "" && /-away$/.test(fullscreenOverlay)
+  // arrives.
+  readonly property string fullscreenScope: fullscreenOverlay === "off" ? "" : fullscreenOverlay
   // Bumped after Hyprland's window snapshot refreshes, so fullscreenOn() re-evaluates.
   property int hyprRevision: 0
 
@@ -244,15 +242,6 @@ Item {
       if (/^steam_app_\d+$/.test(appClass)) return true
     }
     return false
-  }
-
-  function awayFrom(name) { return fullscreenAway && fullscreenOn(name) }
-  function routeAround(name) {
-    if (!awayFrom(name)) return name
-    if (focusedDisplayName !== name && !awayFrom(focusedDisplayName)) return focusedDisplayName
-    for (var i = 0; i < displayNames.length; i++)
-      if (!awayFrom(displayNames[i])) return displayNames[i]
-    return ""
   }
 
   Connections {
@@ -611,10 +600,13 @@ Item {
   }
 
   // One clock the cards' relative times hang off, rather than a timer per card.
+  // It stops with no cards on screen, so it catches up as soon as one shows:
+  // replayed history would otherwise read against the hour it last ticked.
   property double nowTick: Date.now()
   Timer {
     interval: 20000
     repeat: true
+    triggeredOnStart: true
     running: toasts.count > 0
     onTriggered: service.nowTick = Date.now()
   }
@@ -1222,7 +1214,7 @@ Item {
     var handled = allowDefaultActionOnCardClick && invokeSenderAction(key, "default")
     if (!handled && row) {
       // Source first, link last: a Slack message quoting a link is still a
-      // Slack notification, and that link has its own button.
+      // Slack notification, and that link is clickable in its text.
       var win = windowForPid(row.senderPid) || windowForSource(row.source)
       if (win) focusWindow(win)
       else if (Markup.hostname(row.source))
@@ -1233,9 +1225,9 @@ Item {
     closeToast(key, "activated")
   }
 
-  // ------------------------------------------------------------- offers
+  // -------------------------------------------------------------- codes
   //
-  // Acting on what Detect.js found in a card: copy the code, open the link.
+  // Copying the code Detect.js found in a card.
   Process { id: clipProc; running: false }
 
   function runClip(args) {
@@ -1275,18 +1267,14 @@ Item {
     }
   }
 
-  function takeOffer(kind, value, key) {
-    if (kind === "code") {
-      var at = rowIndexFor(String(key || ""))
-      var codes = at >= 0 ? String(toasts.get(at).codes) : ""
-      if (at < 0 || codes.split(" ").indexOf(String(value)) < 0) return
-      copyText(value, true)
-      // A copied code finishes its card unless it carried several, a moment
-      // after the press so the button's tick is seen.
-      if (codes.indexOf(" ") <= 0) codeTaken.keys = codeTaken.keys.concat([String(key)])
-    }
-    else if (kind === "phone") copyText(value, false)
-    else Security.openExternalUrl(value)
+  function copyCode(value, key) {
+    var at = rowIndexFor(String(key || ""))
+    var codes = at >= 0 ? String(toasts.get(at).codes) : ""
+    if (at < 0 || codes.split(" ").indexOf(String(value)) < 0) return
+    copyText(value, true)
+    // A copied code finishes its card unless it carried several, a moment
+    // after the press so the button's tick is seen.
+    if (codes.indexOf(" ") <= 0) codeTaken.keys = codeTaken.keys.concat([String(key)])
   }
 
   Timer {
@@ -1462,25 +1450,23 @@ Item {
     onLoadFailed: service.applyQuiet(null)
   }
 
-  // Once at startup: the private directory and its files, and the leftovers
-  // of older layouts, which hold old message content (per-file rows, the
-  // previous engine's popups and images, fetched site icons and their
-  // published copies, the reply demo's fixture). rm and find never follow a
-  // symlink they are given.
+  // Once at startup: the private directory and its files, and the previous
+  // engine's leftovers, which hold old message content (its per-file popups,
+  // history and images). rm and find never follow a symlink they are given.
   Process {
     id: storePrepare
     command: ["bash", "-c",
       "umask 077\n" +
       "dir=$1\n" +
       "mkdir -p -- \"$dir\" && chmod 700 -- \"$dir\" || exit 1\n" +
-      "rm -rf -- \"$dir/live\" \"$dir/history\" \"$dir/images\" \"$dir/icons\" \"$dir/reply-demo\" \"$dir/policy.json\" \"$2\"\n" +
-      "find \"$dir/\" -maxdepth 1 -type f \\( -regex '.*/[0-9]+-[^/]+\\.json' -o -name '.omarchy-notification-*' \\) -delete\n" +
+      "rm -rf -- \"$dir/history\" \"$dir/images\"\n" +
+      "find \"$dir/\" -maxdepth 1 -type f -regex '.*/[0-9]+-[^/]+\\.json' -delete\n" +
       "for name in live.json history.json quiet.json; do\n" +
       "  file=$dir/$name\n" +
       "  if [[ -L $file ]]; then rm -f -- \"$file\"; fi\n" +
       "  if [[ -f $file ]]; then chmod 600 -- \"$file\"; elif [[ ! -e $file ]]; then : >\"$file\"; fi\n" +
       "done\n",
-      "omarchy-notifications-state", service.stateDir, Quickshell.env("HOME") + "/.cache/omarchy/notification-icons"]
+      "omarchy-notifications-state", service.stateDir]
     onExited: function(code) { service.storeReady = code === 0 }
   }
 
@@ -1709,16 +1695,12 @@ Item {
       return wanted
     }
 
-    // Take one of the front card's offers: code, link or phone.
-    function offer(kind: string): string {
+    // Copy the front card's code.
+    function copyCode(): string {
       if (toasts.count === 0) return "nothing"
       var row = toasts.get(0)
-      var want = String(kind || "code")
-      var value = want === "code" ? String(row.code || "")
-                : want === "phone" ? String(row.phone || "")
-                : String(row.link || "")
-      if (!value) return "none"
-      service.takeOffer(want, value, String(row.key))
+      if (!String(row.code || "")) return "none"
+      service.copyCode(String(row.code), String(row.key))
       return "performed"
     }
 
@@ -1740,8 +1722,7 @@ Item {
         displays: service.displayNames, focusedDisplay: service.focusedDisplayName,
         targetDisplay: service.targetDisplayName,
         notificationDisplays: service.displayNames.filter(function(name) { return service.showsOn(name) }),
-        fullscreenOverlay: service.fullscreenOverlay, surfaces: service.surfaceStates(),
-        avoidedDisplays: service.displayNames.filter(function(n) { return service.awayFrom(n) }) })
+        fullscreenOverlay: service.fullscreenOverlay, surfaces: service.surfaceStates() })
     }
   }
 
@@ -1887,7 +1868,7 @@ Item {
               hoverX: service.hoverX
               hoverY: service.hoverY
               onActionInvoked: function(identifier) { service.invokeAction(model.key, identifier) }
-              onOfferTaken: function(kind, value) { service.takeOffer(kind, value, model.key) }
+              onCodeCopied: function(code) { service.copyCode(code, model.key) }
               iconOverrides: service.iconOverrides
               now: service.nowTick
               expanded: service.expanded

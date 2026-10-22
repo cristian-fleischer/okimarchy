@@ -14,9 +14,8 @@ Button {
   property var toast: null
   property bool wide: false
 
-  // Matched on the value too: a card with two codes has two Copy buttons.
-  readonly property bool taken: toast && toast.takenKind
-                                === String(deed.kind) + ":" + String(deed.value)
+  // Matched on the value: a card with two codes has two Copy buttons.
+  readonly property bool taken: toast && deed.kind === "code" && toast.copiedCode === String(deed.value)
 
   // The deck's hover region sits above every card, so hover is worked out
   // from the pointer position the deck hands down.

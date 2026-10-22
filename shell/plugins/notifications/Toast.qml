@@ -8,7 +8,6 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 
-import "Markup.js" as Markup
 import "Security.js" as Security
 import "Delivery.js" as Delivery
 import "Store.js" as Store
@@ -49,12 +48,13 @@ Item {
         && localHoverY >= origin.y && localHoverY <= origin.y + item.height
   }
 
-  // "now", then minutes, then the clock time, then "yesterday", then the day.
+  // Nothing while it is fresh, then minutes, then the clock time, then
+  // "yesterday", then the day.
   function ago() {
     var t = Number(row.ts || 0) * 1000
     if (!t) return ""
     var s = Math.max(0, (now - t) / 1000)
-    if (s < 50) return I18n.t("notifications.now")
+    if (s < 300) return ""
     if (s < 3600) return I18n.t("notifications.minutesAgo").arg(I18n.formatNumber(Math.round(s / 60)))
     var then = new Date(t)
     var locale = Qt.locale(I18n.formatLocale)
@@ -73,7 +73,7 @@ Item {
   signal dismissed()
   signal snoozeRequested(int seconds)
   signal silenceRequested()
-  signal offerTaken(string kind, string value)
+  signal codeCopied(string code)
   signal actionInvoked(string identifier)
 
   readonly property bool critical: row.urgency === 2
@@ -114,12 +114,6 @@ Item {
       out.push({ kind: "code", value: foundCodes[c],
                  label: foundCodes.length > 1 ? I18n.t("notifications.copyThisCode").arg(foundCodes[c])
                                               : I18n.t("notifications.copyCode") })
-    if (String(row.link || ""))
-      out.push({ kind: row.meeting ? "meeting" : "link",
-                 label: row.meeting ? I18n.t("notifications.join") : I18n.t("notifications.openLink"),
-                 value: String(row.link) })
-    if (String(row.phone || ""))
-      out.push({ kind: "phone", label: I18n.t("notifications.copyNumber"), value: String(row.phone) })
     for (var i = 0; i < actions.length; i++)
       out.push({ kind: "action", label: String(actions[i].text || ""), value: String(actions[i].id) })
     return out
@@ -130,8 +124,6 @@ Item {
   readonly property var marks: {
     var out = []
     if (String(row.code || "")) out.push("\u{f0306}")
-    if (String(row.link || "")) out.push(row.meeting ? "\u{f0567}" : "\u{f0339}")
-    if (String(row.phone || "")) out.push("\u{f03f2}")
     if (actions.length > 0) out.push("\u{f0cfd}")
     return out
   }
@@ -194,14 +186,14 @@ Item {
     if (kind === "snooze") { menuOpen = false; snoozeRequested(Number(deed.value)); return }
     if (kind === "silence") { menuOpen = false; silenceRequested(); return }
     if (kind === "action") { actionInvoked(String(deed.value)); return }
-    offerTaken(kind, String(deed.value))
-    takenKind = kind + ":" + String(deed.value)
+    codeCopied(String(deed.value))
+    copiedCode = String(deed.value)
     tick.restart()
   }
 
-  // "kind:value" of the last press, ticked for a moment: copying is silent.
-  property string takenKind: ""
-  Timer { id: tick; interval: 1400; onTriggered: card.takenKind = "" }
+  // The code last copied, ticked for a moment: copying is silent.
+  property string copiedCode: ""
+  Timer { id: tick; interval: 1400; onTriggered: card.copiedCode = "" }
 
   // One ticker drives both the countdown and the expiry, so they cannot drift;
   // pausing holds the remaining time rather than restarting it.
@@ -577,123 +569,97 @@ Item {
           font.pixelSize: Style.font.title * card.fontScale
         }
 
-        // Rich text cannot elide, so a body over the current line cap is
-        // flattened into the plain rendering, which can end in an ellipsis.
-        Item {
+        // StyledText, not RichText: it covers the tags Markup lets through,
+        // keeps links clickable, and can still end a long body in an ellipsis.
+        Text {
           id: bodyBox
-          clip: true
           width: parent.width
-          // Laid-out height, never lineCount: in RichText mode lineCount counts
-          // paragraphs, not wrapped lines.
-          readonly property real lineH: Math.max(1, metrics.height)
-          readonly property real cap: lineH * card.bodyLines
-          // A body a hair over the cap is worth one more pixel, not flattening.
-          readonly property bool overflow: rich.contentHeight > cap + lineH * 0.4
-          readonly property real shown: overflow ? plain.contentHeight : rich.contentHeight
-          // Not clamped to `cap`: plain.maximumLineCount enforces the limit, and
-          // clamping to the arithmetic slices the last line instead of eliding.
-          height: Math.ceil(shown)
-
           // The closed height, read only by the icon so it does not move.
-          readonly property real restHeight:
-              Math.min(Math.ceil(lineH * 2), Math.ceil(rich.contentHeight))
+          readonly property real restHeight: Math.ceil(Math.max(1, metrics.height) * Math.min(2, lineCount))
           visible: card.hasBody
           opacity: card.showsContent ? 1 : 0
           Behavior on opacity { NumberAnimation { duration: card.fade } }
 
-          Text {
-            id: rich
-            width: parent.width
-            visible: !bodyBox.overflow
-            textFormat: Text.RichText
-            text: card.redacted ? I18n.t("notifications.redactedBody") : Markup.colourLinks(String(card.row.bodyRich || card.row.body || ""),
-                                     String(Commons.Color.notifications.countdown))
-            color: card.bodyColor
-            font.family: "Liberation Sans"
-            font.pixelSize: Style.font.title * card.fontScale
-            wrapMode: Text.Wrap
-            // Second gate: Markup already drops anchors it will not vouch for.
-            onLinkActivated: function(url) {
-              Security.openExternalUrl(url)
-            }
-          }
+          textFormat: Text.StyledText
+          text: card.redacted ? I18n.t("notifications.redactedBody") : String(card.row.bodyRich || "")
+          color: card.bodyColor
+          linkColor: Commons.Color.notifications.countdown
+          font.family: "Liberation Sans"
+          font.pixelSize: Style.font.title * card.fontScale
+          wrapMode: Text.Wrap
+          maximumLineCount: card.bodyLines
+          elide: Text.ElideRight
+          // Second gate: Markup already drops anchors it will not vouch for.
+          onLinkActivated: function(url) { Security.openExternalUrl(url) }
+        }
+      }
+    }
 
-          Text {
-            textFormat: Text.PlainText
-            id: plain
-            width: parent.width
-            visible: bodyBox.overflow
-            text: card.redacted ? I18n.t("notifications.redactedBody") : String(card.row.bodyLine || card.row.body || "")
-            color: card.bodyColor
-            font.family: "Liberation Sans"
-            font.pixelSize: Style.font.title * card.fontScale
-            wrapMode: Text.Wrap
-            maximumLineCount: card.bodyLines
-            elide: Text.ElideRight
+    // The space under the body does one job at a time: the right-click
+    // menu, the "More" list, or the button row. Lists are drawn in the
+    // card, not as popups, because the surface is clipped. The row shows
+    // only under the pointer in an open deck. It spans the content under the
+    // mark too, and keeps the side padding below it.
+    Item {
+      id: deedArea
+      anchors { left: parent.left; right: parent.right; bottom: parent.bottom
+                leftMargin: plate.contentLeftInset + Style.space(12)
+                rightMargin: plate.contentRightInset + Style.space(12)
+                bottomMargin: plate.contentBottomInset + Style.space(12) }
+
+      readonly property string mode: card.menuOpen ? "menu"
+                                   : card.deedsOpen ? "list"
+                                   : (card.hovered && card.expanded
+                                      && card.allDeeds.length > 0) ? "row" : ""
+
+      readonly property real contentHeight: mode === "menu" ? menuColumn.implicitHeight
+                                          : mode === "list" ? deedColumn.implicitHeight
+                                          : mode === "row" ? deedRow.implicitHeight : 0
+      // What the state asks for; the drawn height is whatever slack the
+      // scene has given the card so far. The card already pads its text at
+      // the bottom; extraPadding tops that up to the side padding.
+      readonly property real extraPadding: Style.space(12) - card.contentPaddingY
+      readonly property real wanted: mode === "" ? 0 : contentHeight + Style.space(10) + extraPadding
+      height: Math.max(0, card.drawnHeight - card.fixedHeight - extraPadding)
+      visible: height > 0
+      clip: true
+
+      Row {
+        id: deedRow
+        anchors.bottom: parent.bottom
+        anchors.right: card.actionsAlign === "right" ? parent.right : undefined
+        anchors.left: card.actionsAlign === "right" ? undefined : parent.left
+        spacing: Style.space(6)
+        opacity: deedArea.mode === "row" ? 1 : 0
+        visible: opacity > 0.01
+        Behavior on opacity { NumberAnimation { duration: card.fade } }
+
+        Repeater {
+          model: card.deeds
+          DeedButton {
+            required property var modelData
+            deed: modelData
+            toast: card
           }
         }
 
-        // The space under the body does one job at a time: the right-click
-        // menu, the "More" list, or the button row. Lists are drawn in the
-        // card, not as popups, because the surface is clipped. The row shows
-        // only under the pointer in an open deck.
-        Item {
-          id: deedArea
-          width: parent.width
-
-          readonly property string mode: card.menuOpen ? "menu"
-                                       : card.deedsOpen ? "list"
-                                       : (card.hovered && card.expanded
-                                          && card.allDeeds.length > 0) ? "row" : ""
-
-          readonly property real contentHeight: mode === "menu" ? menuColumn.implicitHeight
-                                              : mode === "list" ? deedColumn.implicitHeight
-                                              : mode === "row" ? deedRow.implicitHeight : 0
-          // What the state asks for; the drawn height is whatever slack the
-          // scene has given the card so far.
-          readonly property real wanted: mode === "" ? 0 : contentHeight + Style.space(7)
-          height: Math.max(0, card.drawnHeight - card.fixedHeight)
-          visible: height > 0
-          clip: true
-
-          Row {
-            id: deedRow
-            anchors.bottom: parent.bottom
-            anchors.right: card.actionsAlign === "right" ? parent.right : undefined
-            anchors.left: card.actionsAlign === "right" ? undefined : parent.left
-            spacing: Style.space(6)
-            opacity: deedArea.mode === "row" ? 1 : 0
-            visible: opacity > 0.01
-            Behavior on opacity { NumberAnimation { duration: card.fade } }
-
-            Repeater {
-              model: card.deeds
-              DeedButton {
-                required property var modelData
-                deed: modelData
-                toast: card
-              }
-            }
-
-            DeedButton {
-              visible: card.spare.length > 0
-              deed: card.moreDeed
-              toast: card
-            }
-          }
-
-          DeedList {
-            id: deedColumn
-            shown: deedArea.mode === "list"
-            deedModel: card.deedsOpen ? card.allDeeds : []
-          }
-
-          DeedList {
-            id: menuColumn
-            shown: deedArea.mode === "menu"
-            deedModel: card.menuOpen ? card.menuDeeds : []
-          }
+        DeedButton {
+          visible: card.spare.length > 0
+          deed: card.moreDeed
+          toast: card
         }
+      }
+
+      DeedList {
+        id: deedColumn
+        shown: deedArea.mode === "list"
+        deedModel: card.deedsOpen ? card.allDeeds : []
+      }
+
+      DeedList {
+        id: menuColumn
+        shown: deedArea.mode === "menu"
+        deedModel: card.menuOpen ? card.menuDeeds : []
       }
     }
 

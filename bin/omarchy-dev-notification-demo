@@ -6,7 +6,7 @@
 """A realistic run of notifications, sent straight onto the session bus as an
 app would. The senders mimic what really notifies this desktop (Chrome web
 apps, chat apps, a terminal); the words are invented, the only people named
-are Omarchy's own, and phone numbers are 555 ones."""
+are Omarchy's own, and phone numbers are 555 ones, which no card offers."""
 import argparse
 import json
 import os
@@ -74,8 +74,8 @@ SCENES = {
     dict(app="Signal", icon="signal-desktop", summary="DHH",
          body="seriously, you are going to want to see this one"),
   ],
-  # Every offer a card can make, then shapes that must stay plain (a test
-  # count, an issue reference). Numbers are 555 ones, so nobody gets called.
+  # Codes, links and sender actions, then shapes that must stay plain (a
+  # phone number, a test count, an issue reference).
   "interactive": [
     dict(web="3.basecamp.com", summary="Omarchy",
          body="DHH: latest build is up, take a look https://omarchy.org"),

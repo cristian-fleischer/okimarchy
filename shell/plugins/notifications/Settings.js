@@ -27,7 +27,7 @@ var DEFAULTS = {
 }
 
 var SNOOZE_CHOICES = ["15", "30", "60", "120", "240", "480", "tomorrow"]
-var FULLSCREEN_MODES = ["off", "all", "steam", "all-away", "steam-away"]
+var FULLSCREEN_MODES = ["off", "all", "steam"]
 
 function oneOf(value, options, fallback) {
   return options.indexOf(value) >= 0 ? value : fallback
