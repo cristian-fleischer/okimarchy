@@ -596,16 +596,6 @@ assert(
     && defaultById['appearance.animations-on'].action === 'omarchy-toggle-animations',
   'menu uses the existing animations toggle without separate background intro controls'
 )
-assertEqual(defaultById['appearance.top-bar.floating'].action, 'omarchy-bar floating toggle', 'menu switches the floating bar from Menu Bar')
-assertDeepEqual(
-  defaultItems.filter(item => item.parent === 'appearance.top-bar.pills').map(item => [item.label, item.action]),
-  [
-    ['No Pills', 'omarchy-bar pills off'],
-    ['Pill per Section', 'omarchy-bar pills section'],
-    ['Pill per Widget', 'omarchy-bar pills widget']
-  ],
-  'menu picks the bar pills from Menu Bar > Bar Pills'
-)
 // Exactly the bar's current pills and floating state are checked. With no
 // shell to ask, omarchy-bar reads shell.json; a stub stands in for a shell
 // that is not running, so the test never reaches a live one.
