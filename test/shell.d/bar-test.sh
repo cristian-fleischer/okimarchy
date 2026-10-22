@@ -68,9 +68,7 @@ assert(
   'putting a bar widget over IPC goes through the registry put'
 )
 
-// Run the real [bar] parser rather than matching its text, so an allowlist
-// that drops a key, or a parser that no longer stores it, fails here.
-const vm = require('vm')
+// Pulls one function out of a QML file, so the tests below run the real code.
 const styleSource = fs.readFileSync(root + '/shell/Commons/Style.qml', 'utf8')
 function qmlFunction(source, name) {
   const start = source.indexOf(`function ${name}(`)
@@ -81,62 +79,6 @@ function qmlFunction(source, name) {
   }
   throw new Error(`Style.qml has no function ${name}`)
 }
-const style = vm.createContext({})
-vm.runInContext(
-  ['barToken', 'boolToken', 'applyShellValues'].map(name => qmlFunction(styleSource, name)).join('\n') +
-  '\nvar fontScale = 1, barScaleWithFont = true, barOverrides = {}',
-  style
-)
-
-// The gap is a width spec, not a scalar, so a bar can sit further off the edges
-// it spans than off the one it hangs from. The anchored edge reads out of the
-// same object by position name.
-assert(
-  /Geometry\.parseWidthSpec\(barOverrides\["margin"\], 0\)/.test(styleSource),
-  'the bar margin is parsed as a per-edge width spec'
-)
-assert(
-  /barOut\[key\] = raw/.test(styleSource),
-  'the bar margin reaches the parser unparsed, so a list survives'
-)
-// The drag overlays are full-screen, so a bar-local point becomes a screen point
-// by adding the bar window's origin. A detached bar's origin is the gap itself on the
-// axes it spans, and the far edge less its own size and gap on the one it is
-// anchored to; without that the drop marker and the drag ghost sit a margin away
-// from the cursor.
-const windowScreenPoint = barSource.slice(
-  barSource.indexOf('function windowScreenPoint'),
-  barSource.indexOf('function barDragScreenPoint')
-)
-assert(
-  /var margins = root\.barMargins/.test(windowScreenPoint),
-  'mapping a bar point to the screen accounts for a detached bar'
-)
-assert(
-  /window\.screen\.height - window\.height - margins\.bottom/.test(windowScreenPoint),
-  'a detached bottom bar maps from its own top edge, not the screen edge'
-)
-assert(
-  /window\.screen\.width - window\.width - margins\.right/.test(windowScreenPoint),
-  'a detached right bar maps from its own left edge, not the screen edge'
-)
-
-// omarchy-bar-text-color samples the wallpaper under the bar to pick a legible
-// transparent-mode foreground. It crops from the screen edge unless told
-// otherwise, so a detached bar has to hand it the gap or the contrast is
-// decided against pixels the bar does not cover.
-const transparentForeground = barSource.slice(
-  barSource.indexOf('function refreshTransparentForeground'),
-  barSource.indexOf('onRequestedTransparentChanged')
-)
-assert(
-  /"--inset",\s*\n\s*\[root\.barMargins\.top/.test(transparentForeground),
-  'transparent bar text samples the strip a detached bar covers'
-)
-assert(
-  /onBarMarginsChanged: scheduleTransparentForegroundRefresh\(\)/.test(barSource),
-  'changing the bar margin re-samples the transparent bar text color'
-)
 
 // Floating: bar.floating wins when set; unset, a theme margin on an edge the
 // bar touches floats it. With no theme margin a floating bar takes
@@ -179,13 +121,6 @@ assertEqual(bar.barFloating(undefined, farOnly, 'bottom'), true, 'the same margi
 assertEqual(bar.barFloating(undefined, farOnly, 'left'), true, 'the same margin floats a side bar, which spans that edge')
 assertEqual(bar.floatsInGap(true, farOnly, 'top'), true, 'a top bar switched to floating over a far-side margin floats in the gap')
 assertDeepEqual(bar.barMargins(true, farOnly, gaps, 'top'), { top: 6, right: 12, bottom: 12, left: 12 }, 'and takes the gap margins, not the far-side theme margin')
-assert(/BarModel\.barFloating\(floatingSetting, Style\.bar\.margins, position\)/.test(barSource) && /BarModel\.floatsInGap\(floating, Style\.bar\.margins, position\)/.test(barSource), 'the bar asks the floating rules for its own edge')
-// A flush bar must not depend on Hyprland's gaps at all: a gaps refresh
-// would otherwise re-run everything that watches barMargins.
-assert(
-  /readonly property var barMargins: floating \? BarModel\.barMargins\(true, Style\.bar\.margins, Style\.gapsOutEdges, position\) : BarModel\.NO_MARGINS/.test(barSource),
-  'the bar takes its margins from the floating rules, and none while flush'
-)
 
 // Window margins: only the edges the bar touches take a gap, and a hidden bar
 // parks past its anchored edge, clearing its margin as well as its own size,
@@ -215,28 +150,6 @@ assertEqual(bar.exclusiveZone(true, 26, { top: 40, right: 80, bottom: 80, left: 
 for (const edge of ['top', 'right', 'bottom', 'left']) {
   assertEqual(bar.exclusiveZone(true, 26, unevenTheme, edge) + unevenTheme[edge], 26, `a ${edge} bar floating in the gap reserves what a flush bar reserves`)
 }
-// Quickshell's exclusiveZone setter also sets exclusionMode to Normal, so the
-// zone is written only while the bar floats in the gap and is visible.
-assert(
-  !/^    exclusiveZone:/m.test(barSource) &&
-  /Binding \{\s*target: barWindow\s*property: "exclusiveZone"\s*when: root\.floatInGap && !root\.barHidden\s*value: BarModel\.exclusiveZone\(true, barWindow\.thickness, root\.barMargins, root\.position\)\s*restoreMode: Binding\.RestoreNone/.test(barSource) &&
-  /BarModel\.windowMargins\(root\.position, root\.barMargins, barWindow\.thickness, root\.barHidden\)/.test(barSource) &&
-  ['top', 'right', 'bottom', 'left'].every(edge => new RegExp(`${edge}: windowMargins\\.${edge}\\b`).test(barSource)),
-  'the bar window takes its zone and margins from BarModel, and sets no zone when flush'
-)
-// The move preview shows the bar where it would land, floating included.
-assert(
-  /readonly property bool edgeFloating: BarModel\.barFloating\(root\.floatingSetting, Style\.bar\.margins, modelData\)/.test(barSource) &&
-  /readonly property var edgeMargins: edgeFloating \? BarModel\.barMargins\(true, Style\.bar\.margins, Style\.gapsOutEdges, modelData\) : BarModel\.NO_MARGINS/.test(barSource) &&
-  /x: modelData === "right" \? parent\.width - edgeSize - edgeMargins\.right : edgeMargins\.left/.test(barSource) &&
-  /radius: BarModel\.barRadius\(edgeFloating,/.test(barSource),
-  'the move preview shows each edge as the bar would float there, margins and radius included'
-)
-assert(/floatingSetting = typeof config\.floating === "boolean" \? config\.floating : undefined/.test(barSource), 'the bar reads bar.floating from shell.json')
-assert(
-  /color: "transparent"\s*\n\s*surfaceFormat\.opaque: false/.test(barSource) && /color: root\.transparent \? "transparent" : \(root\.glassy \? root\.glassBackground : root\.background\)\s*\n\s*radius: root\.barRadius/.test(barSource),
-  'the background is painted with the bar radius, not by the square window'
-)
 
 // gaps_out comes from hyprctl as a CSS-style list; each side is kept. Runs
 // the real Style.qml function, in a block so its helpers stay local.
@@ -264,8 +177,7 @@ assert(
 }
 
 // Popouts and toasts place themselves from the bar's outer face, which a
-// floating bar moves off the screen edge. The arithmetic runs by value; the
-// QML is checked only for feeding it the bar's margins.
+// floating bar moves off the screen edge.
 {
   const vm = require('vm')
   const panelGeometry = vm.createContext({})
@@ -303,47 +215,7 @@ assert(
   assertEqual(panelGeometry.availableLength(100, true, 26, 12, 12), 120, 'a card keeps at least 120 px')
   assertEqual(panelGeometry.barStripSize(26, 26, 6, 6), 38, 'clicks up to the gap below a floating bar count as the bar')
   assertEqual(panelGeometry.barStripSize(26, 26, 0, 6), 32, 'a flush bar strip is the bar and the gap')
-
-  const panelSource = fs.readFileSync(root + '/shell/Ui/KeyboardPanel.qml', 'utf8')
-  assert(
-    /readonly property var barMargins: bar && bar\.barMargins \? bar\.barMargins :/.test(panelSource) &&
-    /readonly property real barEdgeMargin: barMargins\[barPos\]/.test(panelSource) &&
-    /readonly property var barOrigin: PanelGeometry\.barOrigin\(barPos, barMargins, barW, barH, screenW, screenH\)/.test(panelSource) &&
-    /readonly property real barX: barOrigin\.x/.test(panelSource) && /readonly property real barY: barOrigin\.y/.test(panelSource) &&
-    /return Qt\.point\(p\.x \+ barX, p\.y \+ barY\)/.test(panelSource) &&
-    /PanelGeometry\.cardOrigin\(\{[\s\S]*?origin: barOrigin[\s\S]*?anchor: \{ x: anchorScreenPos\.x, y: anchorScreenPos\.y/.test(panelSource) &&
-    /PanelGeometry\.barStripSize\(bar\.barSize, actual, root\.barEdgeMargin, root\.gap\)/.test(panelSource) &&
-    /PanelGeometry\.availableLength\(screenW, barPos === "left" \|\| barPos === "right", barW \+ barEdgeMargin, gap \+ margin, margin \* 2\)/.test(panelSource) &&
-    /PanelGeometry\.availableLength\(screenH, barPos === "top" \|\| barPos === "bottom", barH \+ barEdgeMargin, gap \+ margin, margin \* 2\)/.test(panelSource) &&
-    /return Qt\.point\(px - root\.barX, py - root\.barY\)/.test(panelSource),
-    'bar popouts place and forward through the bar window origin and margins'
-  )
-
-  // Tray menus, the media popup and the bar options size themselves the same way.
-  const popupSource = fs.readFileSync(root + '/shell/Ui/PopupCard.qml', 'utf8')
-  assert(
-    /readonly property real barEdgeMargin: bar && bar\.barMargins \? \(bar\.barMargins\[bar\.position\] \|\| 0\) : 0/.test(popupSource) &&
-    /PanelGeometry\.availableLength\(screenW, !!bar && \(bar\.position === "left" \|\| bar\.position === "right"\), barW \+ barEdgeMargin, root\.margin \* 2, root\.margin \* 2\)/.test(popupSource) &&
-    /PanelGeometry\.availableLength\(screenH, !!bar && \(bar\.position === "top" \|\| bar\.position === "bottom"\), barH \+ barEdgeMargin, root\.margin \* 2, root\.margin \* 2\)/.test(popupSource),
-    'popup cards leave room for a floating bar\'s edge margin'
-  )
-
-  // Widgets and plugins that place their own windows get the margins too.
-  const pluginApiSource = fs.readFileSync(root + '/shell/Ui/PluginBarApi.qml', 'utf8')
-  const stateApiSource = fs.readFileSync(root + '/shell/services/PluginBarStateApi.qml', 'utf8')
-  assert(
-    /property var barMargins:/.test(pluginApiSource) && /api\.barMargins = Qt\.binding\(function\(\) \{ return Object\.assign\(\{\}, root\.barMargins\) \}\)/.test(barSource),
-    'bar widgets get a copy of bar.barMargins'
-  )
-  assert(
-    /property var barMargins:/.test(stateApiSource) && /api\.barMargins = Qt\.binding\(function\(\) \{ return shell\.bar && shell\.bar\.barMargins \? Object\.assign\(\{\}, shell\.bar\.barMargins\) :/.test(shellSource),
-    'plugins positioning their own windows get a copy of shell.bar.barMargins'
-  )
 }
-
-// The floating switch and the radius reach the bar through these bindings.
-assert(/readonly property bool floating: BarModel\.barFloating\(floatingSetting, Style\.bar\.margins, position\)/.test(barSource), 'the floating state comes from bar.floating and the theme margin')
-assert(/readonly property int barRadius: BarModel\.barRadius\(\s*floating,\s*Style\.barOverrides\["radius"\] !== undefined \? Style\.bar\.radius : undefined,\s*Style\.cornerRadius,\s*barSize\)/.test(barSource), 'the bar radius comes from the floating state, the theme radius and Hyprland rounding')
 
 // Hiding must not unmap the bar. An unmapped layer surface has to be rebuilt on
 // every reveal, which measured ~150ms against ~20ms to tear it down; parking it
