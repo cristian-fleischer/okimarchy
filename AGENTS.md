@@ -163,7 +163,8 @@ When to add a test. A test earns its place only by catching a regression nothing
 - No change-detectors: snapshots of large output, file lists, or exact counts that break whenever someone adds an unrelated entry.
 - Extend the area's existing test file (`git grep` the command or function under `test/`) rather than adding a new `*-test.sh`, and follow its style.
 - Keep tests in proportion to the change. A few lines of change rarely justify more than a few lines of test, and usually none.
-- Do test real logic: parsing, routing, a migration's idempotence and no-op paths, a guard on hardware without the feature, the edge case a fix handles. A bug fix with logic in it gets the one test that fails on the base branch and passes with the fix.
+- No test for a migration. It runs once and is frozen once it ships; test logic it needs by moving that logic into a `bin/` command.
+- Do test real logic: parsing, routing, a guard on hardware without the feature, the edge case a fix handles. A bug fix with logic in it gets the one test that fails on the base branch and passes with the fix.
 
 New Omarchy shell tests should live in `test/shell.d/*-test.sh` so `./test/shell` picks them up automatically. Source `test/shell.d/base-test.sh` for shared root-path discovery, assertions, and Node test helpers.
 
