@@ -76,13 +76,13 @@ assert(
   'bar stays mapped while hidden so revealing it does not rebuild the surface'
 )
 assert(
-  /exclusionMode: root\.barHidden \? ExclusionMode\.Ignore : ExclusionMode\.Auto/.test(barSource),
+  /exclusionMode: root\.barHidden \? ExclusionMode\.Ignore : ExclusionMode\.Normal/.test(barSource),
   'a hidden bar reserves no space for itself'
 )
 for (const edge of ['top', 'bottom', 'left', 'right']) {
   assert(
-    new RegExp(`${edge}: root\\.barHidden && root\\.position === "${edge}" \\? -barWindow\\.thickness : 0`).test(barSource),
-    `a hidden bar parks past the ${edge} edge by its whole thickness`
+    new RegExp(`${edge}: root\\.barHidden && root\\.position === "${edge}" \\? -barWindow\\.parkDistance : 0`).test(barSource),
+    `a hidden bar parks its whole surface past the ${edge} edge`
   )
 }
 
@@ -313,9 +313,10 @@ assertDeepEqual(
   'vertical bars resolve free space along their vertical axis'
 )
 assertEqual(bar.nearestDropTarget([], { x: 10, y: 10 }, false), null, 'bar reports no insertion edge without targets')
+// The window spans its screen, so the strip, not the window, bounds a drop.
 assert(
-  /contentItem\.mapFromItem\(null, scenePoint\.x, scenePoint\.y\)[\s\S]*?return null/.test(barSource),
-  'bar rejects free-space drops after the pointer leaves the bar'
+  /if \(moduleRemoveDistance\(windowScreenPoint\(scenePoint, sourceWindow\)\) > 0\) return null/.test(barSource),
+  'bar rejects free-space drops after the pointer leaves the bar strip'
 )
 assert(
   /BarModel\.centerDropTarget\(onBar, root\.centerBoxDropRect\(box\), scenePoint, root\.vertical, sourceSlot\)/.test(barSource) &&
@@ -350,6 +351,28 @@ assertDeepEqual(strayConfig.bar.layout.left, [42, 'a', {}, 'c', 'b'], 'the move 
 const aliasConfig = { bar: { layout: { left: ['clock', 'b'] } } }
 assertEqual(bar.moveEntry(aliasConfig, { from: { region: 'left', index: 0, id: 'omarchy.clock' }, to: { region: 'left', index: -1 } }, entry => entry === 'clock' ? { id: 'omarchy.clock' } : entry), true, 'an entry is matched by the id the bar knows it by')
 assertDeepEqual(aliasConfig.bar.layout.left, ['b', 'clock'], 'and moved as it is written')
+
+// A widget dragged off the bar leaves just its own entry, found as a move
+// finds it.
+let removeConfig = moveLayout()
+assertEqual(bar.removeEntry(removeConfig, { region: 'left', index: 2, id: 'b' }), true, 'a widget dragged off the bar leaves the layout')
+assertDeepEqual(moved(removeConfig), { left: ['a', 'bx', 'c'], right: ['d'] }, 'the second of two entries with one id goes when it is the one dragged off')
+removeConfig = moveLayout()
+assertEqual(bar.removeEntry(removeConfig, { region: 'left', index: 0, id: 'b' }), false, 'a layout that changed since the drag started is left alone')
+assertEqual(bar.removeEntry(removeConfig, { region: 'centerEnd', index: 0, id: 'b' }), false, 'a removal from a section the config lacks changes nothing')
+assertEqual(bar.removeEntry(removeConfig, { region: 'left', index: 9, id: 'b' }), false, 'a removal past the end of the section changes nothing')
+assertDeepEqual(moved(removeConfig), moved(moveLayout()), 'a removal that does not apply leaves the layout as it was')
+const strayRemoval = { bar: { layout: { left: [42, 'a', {}, 'b', 'c'] } } }
+assertEqual(bar.removeEntry(strayRemoval, { region: 'left', index: 1, id: 'b' }), true, 'a removal counts by the bar\'s indexes past entries it leaves out')
+assertDeepEqual(strayRemoval.bar.layout.left, [42, 'a', {}, 'c'], 'and leaves the entries it left out alone')
+
+// Removal arms only once the drag is well clear of the bar strip.
+assertEqual(bar.dragDistanceOutside({ x: 400, y: 12 }, 1000, 26), 0, 'a drag along the bar is no distance off it')
+assertEqual(bar.dragDistanceOutside({ x: 0, y: 26 }, 1000, 26), 0, 'the strip\'s own edge still counts as on the bar')
+assertEqual(bar.dragDistanceOutside({ x: 400, y: 86 }, 1000, 26), 60, 'a drag below a top bar is measured from the strip\'s inner edge')
+assertEqual(bar.dragDistanceOutside({ x: 1030, y: 66 }, 1000, 26), 50, 'a drag off a corner is the straight-line distance past it')
+assertEqual(bar.dragDistanceOutside({ x: -20, y: 12 }, 1000, 26), 20, 'a drag off the end of the bar counts too')
+assertEqual(bar.dragDistanceOutside({ x: NaN, y: 12 }, 1000, 26), 0, 'a point with no position is no distance off')
 
 // Horizontal bar: indicators in centerBegin, the clock alone in the center box
 // at 340-400, weather in centerEnd, the menu far off in the left section.
