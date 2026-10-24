@@ -662,6 +662,9 @@
   "setup.security.passwordless-sudo": {
     "label": "Passwordless Sudo"
   },
+  "setup.config.git": {
+    "label": "Git"
+  },
   "setup.config.hyprland": {
     "label": "Hyprland"
   },
