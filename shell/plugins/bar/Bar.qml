@@ -575,6 +575,7 @@ Item {
 
   function clearTooltip() {
     tooltipTimer.stop()
+    if (tooltipShown) tooltipWarmTimer.restart()
     pendingTooltipTarget = null
     pendingTooltipText = ""
     tooltipTarget = null
@@ -1562,6 +1563,10 @@ Item {
   }
 
   function showTooltip(target, text) {
+    // The delay only guards the first tooltip against a passing pointer. Once
+    // one is up, or was a moment ago, the next icon's shows at once, so
+    // sliding along the bar reads each label without waiting on every one.
+    var warm = tooltipShown || tooltipWarmTimer.running
     clearTooltip()
 
     if (!targetTooltipHovered(target) || !text) {
@@ -1584,7 +1589,8 @@ Item {
       tooltipText = pendingTooltipText
       pendingTooltipTarget = null
       pendingTooltipText = ""
-      tooltipTimer.restart()
+      if (warm) tooltipShown = true
+      else tooltipTimer.restart()
     })
   }
 
@@ -1602,6 +1608,14 @@ Item {
       if (root.targetTooltipHovered(root.tooltipTarget)) root.tooltipShown = true
       else root.clearTooltip()
     }
+  }
+
+  // How long after a tooltip hides the next one still skips the delay. Long
+  // enough to cross the gap between two icons, short enough that coming back
+  // to the bar later waits again.
+  Timer {
+    id: tooltipWarmTimer
+    interval: 400
   }
 
   Timer {
