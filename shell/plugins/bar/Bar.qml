@@ -89,9 +89,11 @@ Item {
   readonly property color glassBackground: Qt.rgba(background.r, background.g, background.b, Math.min(background.a, 0.35))
   property color urgent: Commons.Color.bar.active
 
-  Behavior on barForeground { enabled: root.foregroundAnimationEnabled; ColorAnimation { duration: Style.duration(420); easing.type: Easing.OutCubic } }
-  Behavior on background { ColorAnimation { duration: Style.duration(420); easing.type: Easing.OutCubic } }
-  Behavior on urgent { ColorAnimation { duration: Style.duration(420); easing.type: Easing.OutCubic } }
+  // A theme change cross-fades the bar's colors. Cycling the background
+  // between opaque, glassy and clear jumps, text color included.
+  Behavior on barForeground { enabled: root.foregroundAnimationEnabled; ColorAnimation { duration: Style.duration(250); easing.type: Easing.OutCubic } }
+  Behavior on background { ColorAnimation { duration: Style.duration(250); easing.type: Easing.OutCubic } }
+  Behavior on urgent { ColorAnimation { duration: Style.duration(250); easing.type: Easing.OutCubic } }
   property var tooltipTarget: null
   property var pendingTooltipTarget: null
   property string tooltipText: ""
