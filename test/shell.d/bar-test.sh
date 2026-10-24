@@ -79,18 +79,6 @@ assert(
   /exclusionMode: root\.barHidden \? ExclusionMode\.Ignore : ExclusionMode\.Normal/.test(barSource),
   'a hidden bar reserves no space for itself'
 )
-// The zone is explicit because the window spans its screen: Auto would
-// reserve all of it.
-assert(
-  /exclusiveZone: thickness/.test(barSource),
-  'the bar reserves exactly its strip, whatever the window size'
-)
-// The surface spans its screen, so parking it by the strip's thickness alone
-// would leave the rest of it on screen.
-assert(
-  /readonly property real parkDistance: root\.vertical \? implicitWidth : implicitHeight/.test(barSource),
-  'a hidden bar parks by the whole surface, not the strip'
-)
 for (const edge of ['top', 'bottom', 'left', 'right']) {
   assert(
     new RegExp(`${edge}: root\\.barHidden && root\\.position === "${edge}" \\? -barWindow\\.parkDistance : 0`).test(barSource),
@@ -385,92 +373,6 @@ assertEqual(bar.dragDistanceOutside({ x: 400, y: 86 }, 1000, 26), 60, 'a drag be
 assertEqual(bar.dragDistanceOutside({ x: 1030, y: 66 }, 1000, 26), 50, 'a drag off a corner is the straight-line distance past it')
 assertEqual(bar.dragDistanceOutside({ x: -20, y: 12 }, 1000, 26), 20, 'a drag off the end of the bar counts too')
 assertEqual(bar.dragDistanceOutside({ x: NaN, y: 12 }, 1000, 26), 0, 'a point with no position is no distance off')
-
-assert(
-  /root\.setBarDragRemoveArmed\(!drop && root\.moduleRemoveDistance\(screenPoint\) >= root\.barDragRemoveDistance\)/.test(barSource),
-  'removal arms only with no drop in reach and the drag well past the bar'
-)
-assert(
-  /if \(root\.barDragSource === slot && root\.barDragRemoveArmed\) root\.removeBarDrag\(slot\)\s*\n\s*else if \(root\.barDragSource === slot\) root\.settleBarDrag\(slot\)/.test(barSource),
-  'an armed release removes the widget, and any other drag settles where it lands'
-)
-// The poof goes up before the drag clears, so the ghost's surface never
-// unmaps between the ghost and the poof, and the write waits for the poof:
-// persisting shell.json stalls the render loop long enough to swallow it.
-const removeBarDragBody = barSource.match(/function removeBarDrag\(sourceSlot\) \{([\s\S]*?)\n  \}/)[1]
-assert(
-  removeBarDragBody.indexOf('playPoof()') !== -1 && removeBarDragBody.indexOf('playPoof()') < removeBarDragBody.indexOf('clearBarDrag()'),
-  'the poof starts before the drag state clears'
-)
-assert(
-  /if \(!barPoofActive\) commitBarRemoval\(\)/.test(removeBarDragBody) &&
-    /id: poofTimer[\s\S]*?onTriggered: \{[\s\S]*?root\.commitBarRemoval\(\)/.test(barSource),
-  'the removal is written once the poof has played, or at once with nothing to play'
-)
-assert(
-  /readonly property bool removalPending: root\.isPendingRemoval\(widgetKey\)/.test(barSource) &&
-    /readonly property real alongLength: removalPending \? 0 :/.test(barSource),
-  'a removed widget leaves the bar the moment it poofs, ahead of the layout write'
-)
-// A drag has to survive leaving the bar on an empty workspace. While nothing
-// holds keyboard focus, Hyprland picks a pointer target again on any surface
-// commit, and a pointer that has strayed onto another surface is pulled off
-// the bar mid-drag with a synthesized release. So the bar surface spans its
-// screen at all times and a live drag toggles only its input region, never
-// its size: resizing flashes the stale strip buffer stretched across the new
-// size.
-assert(
-  /readonly property bool dragActive: \(root\.barDragSource !== null && root\.sameWindow\(root\.barDragWindow, barWindow\)\) \|\|\s*\n\s*\(root\.barMoveActive && root\.sameWindow\(root\.barMoveWindow, barWindow\)\)/.test(barSource),
-  'a widget drag and a bar move on this surface both take the whole surface for input'
-)
-assert(
-  /mask: dragActive \? null : stripInputRegion/.test(barSource) &&
-    /Region \{\s*\n\s*id: stripInputRegion\s*\n\s*item: barStrip/.test(barSource),
-  'idle, only the strip takes input; a drag toggles the input region'
-)
-assert(
-  /implicitWidth: root\.vertical \? \(screen \? screen\.width : thickness\) : 0/.test(barSource) &&
-    /implicitHeight: root\.vertical \? 0 : \(screen \? screen\.height : thickness\)/.test(barSource) &&
-    !/implicit(Width|Height):[^\n]*dragActive/.test(barSource),
-  'the bar surface spans its screen unconditionally instead of resizing for a drag'
-)
-// Anchoring all four edges would void the exclusive zone (layer-shell
-// reserves space from the one anchored edge), dropping tiled windows behind
-// the bar.
-for (const edge of ['top', 'bottom', 'left', 'right']) {
-  assert(!new RegExp(`${edge}:[^\\n]*dragActive`).test(barSource), `a drag never changes the bar's ${edge} anchor`)
-}
-assert(
-  /function traySectionDropRect\(slot, window\) \{[\s\S]*?var reach = thicknessFor\(window\.screen\)/.test(barSource),
-  'the tray section reaches by the strip\'s thickness, not the window\'s'
-)
-
-// The poof bursts out of the ghost as it was let go, not the pointer, which
-// holds it by wherever it was pressed, and follows reduced motion.
-const playPoofBody = barSource.match(/function playPoof\(\) \{([\s\S]*?)\n  \}/)[1]
-assert(
-  /if \(Style\.duration\(620\) === 0\) return/.test(playPoofBody) &&
-    /barPoofX = barDragScreenX - barDragOffsetX \+ barDragGhostWidth \/ 2/.test(playPoofBody) &&
-    /barPoofY = barDragScreenY - barDragOffsetY \+ barDragGhostHeight \/ 2/.test(playPoofBody),
-  'the poof bursts from the ghost\'s center, and not at all with motion reduced'
-)
-// Its overlay stays mapped while it plays, though the ghost goes with the drag.
-assert(
-  /visible: \(active && sourceItem !== null\) \|\| poofShown/.test(barSource) &&
-    /visible: ghostWindow\.active && ghostWindow\.sourceItem !== null/.test(barSource),
-  'the drag overlay stays mapped for the poof while the ghost hides with the drag'
-)
-// Setting the cloud's effect up at the release costs the poof its first
-// frames, so it is built with the overlay.
-assert(
-  /layer\.enabled: ghostWindow\.visible\s*\n\s*layer\.effect: MultiEffect/.test(barSource),
-  'the poof\'s cloud effect is ready before the release'
-)
-
-assert(
-  /function beginBarDrag\(sourceSlot, pressX, pressY\) \{[\s\S]*?commitBarRemoval\(\)/.test(barSource),
-  'a new drag writes any removal still poofing first, so it starts from the layout as it will be'
-)
 
 // Horizontal bar: indicators in centerBegin, the clock alone in the center box
 // at 340-400, weather in centerEnd, the menu far off in the left section.

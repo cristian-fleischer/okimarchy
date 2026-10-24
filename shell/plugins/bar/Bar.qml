@@ -166,18 +166,11 @@ Item {
   // A widget let go of past that, until its entry is written out of the
   // layout once its poof has played: { key, region, id }.
   property var barRemoval: null
-  // The poof a removed widget vanishes in: the screen it plays on, the
-  // ghost as it was let go (its center, size and picture), and a serial
-  // that starts it again and lays it out a little differently each time.
-  property bool barPoofActive: false
-  property var barPoofScreen: null
-  property real barPoofX: 0
-  property real barPoofY: 0
-  property real barPoofWidth: 0
-  property real barPoofHeight: 0
-  property bool barPoofArmed: false
-  property url barPoofImage: ""
-  property int barPoofSerial: 0
+  // The poof a removed widget vanishes in, while it plays: { screen, x, y,
+  // width, height, image, seed }, the ghost as it was let go (its center,
+  // size and picture) and a seed that lays each poof out a little
+  // differently.
+  property var barPoof: null
   property bool barMoveActive: false
   property string barMoveCandidate: ""
   property var barMoveWindow: null
@@ -1302,17 +1295,23 @@ Item {
   function landBarDrag(move) {
     clearBarDrag()
     if (!move || JSON.stringify(layoutWidgets.sections) !== move.keys) return
-    if (!root.shell || typeof root.shell.mutateShellConfig !== "function") return
     var expected = JSON.parse(move.keys)
     var into = expected[move.to.region]
     var before = move.to.index >= 0 ? into[move.to.index] : null
     expected[move.from.region].splice(move.from.index, 1)
     into.splice(before ? into.indexOf(before) : into.length, 0, move.key)
+    writeLayout(expected, function(config) {
+      BarModel.moveEntry(config, move, function(entry) { return Util.normalizeLayoutEntry(entry) })
+    })
+  }
+
+  // Writes a layout edit to shell.json. Widgets keep their instances through
+  // the write as long as the sections come out as `expected`.
+  function writeLayout(expected, edit) {
+    if (!root.shell || typeof root.shell.mutateShellConfig !== "function") return
     widgetMemo.expected = expected
     try {
-      root.shell.mutateShellConfig(function(config) {
-        BarModel.moveEntry(config, move, function(entry) { return Util.normalizeLayoutEntry(entry) })
-      })
+      root.shell.mutateShellConfig(edit)
     } finally {
       widgetMemo.expected = null
     }
@@ -1349,13 +1348,12 @@ Item {
   // was let go, its slot closing at once (ModuleSlot.removalPending), and
   // its entry leaves the layout once the poof has played.
   function removeBarDrag(sourceSlot) {
-    commitBarRemoval()
     barRemoval = { key: sourceSlot.widgetKey, region: sourceSlot.region, id: entryId(sourceSlot.entry) }
     // Up before the drag clears, so the ghost's surface never unmaps
     // between the ghost and the poof.
     playPoof()
     clearBarDrag()
-    if (!barPoofActive) commitBarRemoval()
+    if (!barPoof) commitBarRemoval()
   }
 
   // Writes a removed widget out of the layout. Every other widget keeps its
@@ -1363,35 +1361,30 @@ Item {
   function commitBarRemoval() {
     var removal = barRemoval
     barRemoval = null
-    if (!removal || !root.shell || typeof root.shell.mutateShellConfig !== "function") return
+    if (!removal) return
     var expected = JSON.parse(JSON.stringify(layoutWidgets.sections))
     var list = expected[removal.region] || []
     var index = list.indexOf(removal.key)
     if (index < 0) return
     list.splice(index, 1)
-    widgetMemo.expected = expected
-    try {
-      root.shell.mutateShellConfig(function(config) {
-        BarModel.removeEntry(config, { region: removal.region, index: index, id: removal.id }, function(entry) { return Util.normalizeLayoutEntry(entry) })
-      })
-    } finally {
-      widgetMemo.expected = null
-    }
+    writeLayout(expected, function(config) {
+      BarModel.removeEntry(config, { region: removal.region, index: index, id: removal.id }, function(entry) { return Util.normalizeLayoutEntry(entry) })
+    })
   }
 
   // Bursts out of the ghost where it was let go, so it runs before
   // clearBarDrag wipes the drag. With motion reduced there is nothing to play.
   function playPoof() {
     if (Style.duration(620) === 0) return
-    barPoofScreen = barDragScreen
-    barPoofWidth = barDragGhostWidth
-    barPoofHeight = barDragGhostHeight
-    barPoofX = barDragScreenX - barDragOffsetX + barDragGhostWidth / 2
-    barPoofY = barDragScreenY - barDragOffsetY + barDragGhostHeight / 2
-    barPoofArmed = barDragRemoveArmed
-    barPoofImage = barDragImageUrl
-    barPoofSerial++
-    barPoofActive = true
+    barPoof = {
+      screen: barDragScreen,
+      x: barDragScreenX - barDragOffsetX + barDragGhostWidth / 2,
+      y: barDragScreenY - barDragOffsetY + barDragGhostHeight / 2,
+      width: barDragGhostWidth,
+      height: barDragGhostHeight,
+      image: barDragImageUrl,
+      seed: Math.random()
+    }
     poofTimer.restart()
   }
 
@@ -1403,7 +1396,7 @@ Item {
     id: poofTimer
     interval: Style.duration(620)
     onTriggered: {
-      root.barPoofActive = false
+      root.barPoof = null
       root.commitBarRemoval()
     }
   }
@@ -1942,8 +1935,7 @@ Item {
     required property var ghostScreen
     readonly property bool active: !!root.barDragSource && root.sameScreen(root.barDragScreen, ghostScreen)
     readonly property var sourceItem: root.barDragSource ? root.barDragSource.activeItem : null
-    readonly property bool poofMatches: root.sameScreen(root.barPoofScreen, ghostScreen)
-    readonly property bool poofShown: root.barPoofActive && poofMatches
+    readonly property bool poofShown: !!root.barPoof && root.sameScreen(root.barPoof.screen, ghostScreen)
 
     visible: (active && sourceItem !== null) || poofShown
     color: "transparent"
@@ -2000,16 +1992,18 @@ Item {
 
       // 0 to 1 through the poof. Each part runs on its own stretch of it.
       property real progress: 1
+      // The poof playing here, kept through its last frames.
+      property var spec: ({ x: 0, y: 0, width: 0, height: 0, image: "", seed: 0 })
 
-      readonly property real spanX: Math.max(Style.spaceReal(16), root.barPoofWidth / 2)
-      readonly property real spanY: Math.max(Style.spaceReal(16), root.barPoofHeight / 2)
-      readonly property real puffSize: Util.clamp(Math.min(root.barPoofWidth, root.barPoofHeight) * 1.1, Style.spaceReal(16), Style.spaceReal(34))
+      readonly property real spanX: Math.max(Style.spaceReal(16), poof.spec.width / 2)
+      readonly property real spanY: Math.max(Style.spaceReal(16), poof.spec.height / 2)
+      readonly property real puffSize: Util.clamp(Math.min(poof.spec.width, poof.spec.height) * 1.1, Style.spaceReal(16), Style.spaceReal(34))
       // Room around the puffs at their furthest, so the blur isn't clipped.
       readonly property real margin: puffSize * 1.4 + Style.spaceReal(16)
 
       // A steady pseudo-random 0 to 1 for part n of this poof.
       function noise(n) {
-        var v = Math.sin(n * 12.9898 + root.barPoofSerial * 78.233) * 43758.5453
+        var v = Math.sin(n * 12.9898 + poof.spec.seed * 78.233) * 43758.5453
         return v - Math.floor(v)
       }
       // How far along a part starting `from` and ending `to` is.
@@ -2020,13 +2014,15 @@ Item {
       function outBack(t) { return 1 + 2.4 * Math.pow(t - 1, 3) + 1.4 * Math.pow(t - 1, 2) }
 
       visible: ghostWindow.poofShown
-      x: Math.round(root.barPoofX)
-      y: Math.round(root.barPoofY)
+      x: Math.round(poof.spec.x)
+      y: Math.round(poof.spec.y)
 
       Connections {
         target: root
-        function onBarPoofSerialChanged() {
-          if (ghostWindow.poofMatches) poofAnimation.restart()
+        function onBarPoofChanged() {
+          if (!root.barPoof || !root.sameScreen(root.barPoof.screen, ghostWindow.ghostScreen)) return
+          poof.spec = root.barPoof
+          poofAnimation.restart()
         }
       }
 
@@ -2042,17 +2038,16 @@ Item {
       // The ghost, picking up as the drag left it.
       Image {
         readonly property real t: poof.outCubic(poof.phase(0, 0.3))
-        readonly property real startScale: root.barPoofArmed ? 0.82 : 1
 
-        width: root.barPoofWidth
-        height: root.barPoofHeight
+        width: poof.spec.width
+        height: poof.spec.height
         x: -width / 2
         y: -height / 2
-        source: root.barPoofImage
+        source: poof.spec.image
         fillMode: Image.Stretch
         smooth: true
-        scale: startScale + 0.45 * t
-        opacity: 0.84 * (root.barPoofArmed ? 0.55 : 1) * (1 - t)
+        scale: 0.82 + 0.45 * t
+        opacity: 0.84 * 0.55 * (1 - t)
       }
 
       // Overlapping puffs blurred into one soft cloud, ringed faintly in the
