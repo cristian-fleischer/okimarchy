@@ -266,6 +266,11 @@ for (const body of ['Your verification code is 938271', 'Your code is 938 271', 
     [{ app: 'omarchy-action', urgency: 0 }, true, ''],
     [{ app: 'Google', urgency: 1, code: '482913' }, true, ''],
   ]) assert.equal(Delivery.quietReason(row, dnd), expected, JSON.stringify([row, dnd]))
+  // The number keys count buttons in the order the card draws them: codes, --action, the sender's.
+  const deeds = Delivery.deeds({ codes: '482913 771204', execActions: JSON.stringify([{ label: 'Edit', argv: ['omasnap'] }]) },
+                               [{ id: 'join', text: 'Join call' }])
+  assert.equal(JSON.stringify(Array.from(deeds, d => d.kind + ':' + d.value)), JSON.stringify(['code:482913', 'code:771204', 'exec:0', 'action:join']))
+  assert.equal(Delivery.deeds({}, []).length, 0)
   for (const [row, ephemeral] of [[{ app: 'notify-send' }, true], [{ app: 'omarchy-action' }, true],
                                   [{ app: 'Slack', transient: true }, true], [{ app: 'Slack' }, false]])
     assert.equal(Delivery.isEphemeral(row), ephemeral, row.app)
@@ -486,6 +491,39 @@ const summaries = rows => Array.from(rows, row => row.summary)
   assert.ok(Store.redacted(s.historyEntries[0]))
   assert.ok(!Store.redacted({ summary: 'Verification notification', body: 'a real message' }))
   assert.ok(!JSON.stringify(s.historyEntries).includes('938271'))
+}
+
+{ // The keyboard only selects cards that fit on screen: the deck does not scroll.
+  const s = newCapacityScope()
+  const other = s.fakeNotification(9, 'Other app')
+  other.appName = 'Other'
+  s.admit(other, ...[1, 2, 3, 4, 5].map(id => s.fakeNotification(id, 'Card ' + id)))
+  Object.assign(s, { Layout, gap: 6, targetDisplayName: 'fixture-display', marginsFor: () => ({ top: 10, right: 10 }),
+    Quickshell: { screens: [{ name: 'fixture-display', height: 300 }] }, keyboardMode: true, keyboardRejected: {} })
+  runIn(s, 'layoutWith', 'reachable', 'moveSelection', 'keepSelectionInReach', 'keyboardOrder')
+  for (const row of s.toasts.rows) s.heights[row.key] = 100
+  Object.defineProperty(s, 'layout', { get: () => s.layoutWith(true, s.openDeck) })
+  s.selectCard = key => { s.keyboardKey = key; s.openDeck = Layout.groupKeyFor(s.toasts.get(s.rowIndexFor(key))) }
+  const summary = () => s.toasts.get(s.rowIndexFor(s.keyboardKey)).summary
+  s.selectCard(s.keyboardOrder()[0])
+  s.moveSelection(1)
+  // 300 tall, 10 down, 6 apart: two 100-tall cards fit, the third would end at 322...
+  assert.equal(summary(), 'Card 4')
+  // ...so Down skips the rest of that deck for the next one, which fits once it opens.
+  s.moveSelection(1)
+  assert.equal(summary(), 'Other app')
+  s.moveSelection(-1)
+  assert.equal(summary(), 'Card 4')
+  // A selected card that grows past the bottom (its buttons, its body) gives way.
+  const grown = s.keyboardKey
+  s.heights[grown] = 200
+  s.keepSelectionInReach()
+  assert.equal(summary(), 'Card 5')
+  // Its buttons hide again once it is not selected; Down passes it rather than
+  // landing on it and giving way again, forever.
+  s.heights[grown] = 100
+  s.moveSelection(1)
+  assert.equal(summary(), 'Other app')
 }
 
 for (const held of [true, false]) { // Capacity: at most 100 live senders, held or deferred.
