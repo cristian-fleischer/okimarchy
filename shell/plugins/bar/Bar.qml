@@ -3009,6 +3009,9 @@ Item {
 
       property bool dragging: false
       property bool suppressClick: false
+      // This area sits over the slot's widget and takes its press, so the
+      // widget never sees itself held; it's told, for its press feedback.
+      property var heldTarget: null
       property real pressedX: 0
       property real pressedY: 0
       readonly property bool canReorder: root.shell && typeof root.shell.mutateShellConfig === "function"
@@ -3038,8 +3041,15 @@ Item {
         suppressClick = false
         pressedX = mouse.x
         pressedY = mouse.y
+        hold(root.moduleClickTargetAt(slot, mouse.x, mouse.y))
         root.finishBarSettle()
         root.clearBarDrag()
+      }
+
+      function hold(target) {
+        if (heldTarget && heldTarget !== target && "held" in heldTarget) heldTarget.held = false
+        heldTarget = target && "held" in target ? target : null
+        if (heldTarget) heldTarget.held = true
       }
 
       onPositionChanged: function(mouse) {
@@ -3049,6 +3059,7 @@ Item {
         if (distance >= dragThreshold) {
           if (!dragging) root.beginBarDrag(slot, pressedX, pressedY)
           dragging = true
+          hold(null)
           root.hideTooltip(slot.activeItem)
         }
 
@@ -3071,6 +3082,7 @@ Item {
 
       onReleased: function(mouse) {
         var wasDragging = dragging
+        hold(null)
 
         dragging = false
 
@@ -3088,6 +3100,7 @@ Item {
       onCanceled: {
         dragging = false
         suppressClick = false
+        hold(null)
         root.clearBarDrag()
       }
 
