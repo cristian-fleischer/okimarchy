@@ -110,7 +110,7 @@ PanelWindow {
   // Keyboard focus follows `open` (NOT `visible`). The window remains
   // mapped during the fade-out so the opacity animation has something to
   // animate, but keyboard/click ownership must release the moment the
-  // logical close fires — otherwise the user is locked out for 140ms.
+  // logical close fires — otherwise the user is locked out until it ends.
   //
   // Prime with Exclusive on every open, then settle on OnDemand. Hyprland
   // focuses OnDemand when a surface first maps, but not when an already-mapped
@@ -243,6 +243,17 @@ PanelWindow {
     return Qt.point(Math.round(x), Math.round(y))
   }
 
+  // Where the card grows from, in its own coordinates: the point on its
+  // bar-facing edge nearest the icon it hangs from.
+  readonly property point growOrigin: {
+    var x = Math.max(0, Math.min(anchorScreenPos.x + anchorW / 2 - cardOrigin.x, contentWidth))
+    var y = Math.max(0, Math.min(anchorScreenPos.y + anchorH / 2 - cardOrigin.y, contentHeight))
+    if (barPos === "bottom") return Qt.point(x, contentHeight)
+    if (barPos === "left") return Qt.point(0, y)
+    if (barPos === "right") return Qt.point(contentWidth, y)
+    return Qt.point(x, 0)
+  }
+
 
   // --- popout coordination (same-bar single-popout model) -----------------
 
@@ -264,7 +275,9 @@ PanelWindow {
     if (open) {
       popoutSwitchClosing = false
       popoutSwitching = bar.activePopout && bar.activePopout !== coordinatorKey
+      if (popoutSwitching) morphFromLastCard()
       bar.requestPopout(coordinatorKey)
+      publishCard()
       if (popoutSwitching) popoutSwitchTimer.restart()
     } else {
       popoutSwitchClosing = !!(owner && owner.popoutSwitchClosing)
@@ -286,8 +299,52 @@ PanelWindow {
 
   Timer {
     id: popoutSwitchTimer
-    interval: 150
+    // Outlasts the morph, so the card stays shown until it has landed.
+    interval: 250
     onTriggered: root.popoutSwitching = false
+  }
+
+  // --- switching between panels --------------------------------------------
+
+  // One card, not two: a panel taking over from another in the same section of
+  // the bar starts its card where the last one stood, at its size, and morphs
+  // it into its own place while the new content fades in. Each panel tells the
+  // bar where its card is. Across sections the new panel opens fresh.
+  readonly property rect cardTarget: Qt.rect(cardOrigin.x, cardOrigin.y, contentWidth, contentHeight)
+  onCardTargetChanged: publishCard()
+
+  function publishCard() {
+    if (!open || !bar || !screen || typeof bar.notePopoutCard !== "function") return
+    bar.notePopoutCard({ screen: screen.name, x: cardTarget.x, y: cardTarget.y,
+                         width: cardTarget.width, height: cardTarget.height })
+  }
+
+  // Already true as `open` flips, before onOpenChanged marks the switch, so
+  // the card never starts growing in on top of the morph. Only a takeover in
+  // the same section morphs; across sections the card grows in as usual.
+  readonly property bool takingOver: !!bar && !!bar.activePopout && bar.activePopout !== coordinatorKey
+    && typeof bar.popoutCardFor === "function" && !!bar.popoutCardFor(coordinatorKey)
+
+  property rect morphFrom: Qt.rect(0, 0, 0, 0)
+  property real morph: 1
+
+  function morphFromLastCard() {
+    var last = bar && typeof bar.popoutCardFor === "function" ? bar.popoutCardFor(coordinatorKey) : null
+    if (!last || !screen || last.screen !== screen.name) return
+    morphFrom = Qt.rect(last.x, last.y, last.width, last.height)
+    morphRun.restart()
+  }
+
+  NumberAnimation {
+    id: morphRun
+    target: root; property: "morph"; from: 0; to: 1
+    duration: Style.duration(220)
+    easing.type: Easing.Bezier
+    easing.bezierCurve: Style.easeOut
+  }
+
+  function morphed(from, to) {
+    return morph >= 1 ? to : from + (to - from) * morph
   }
 
   Timer {
@@ -403,19 +460,39 @@ PanelWindow {
 
   BorderSurface {
     id: card
-    x: root.cardOrigin.x
-    y: root.cardOrigin.y
-    width: root.contentWidth
-    height: root.contentHeight
+    x: root.morphed(root.morphFrom.x, root.cardOrigin.x)
+    y: root.morphed(root.morphFrom.y, root.cardOrigin.y)
+    width: root.morphed(root.morphFrom.width, root.contentWidth)
+    height: root.morphed(root.morphFrom.height, root.contentHeight)
+    // While it morphs, the content keeps its own size and the card crops it.
+    clip: root.morph < 1
     color: Commons.Color.popups.background
     borderSpec: root.borderSpec
     padding: root.padding
     radius: Style.cornerRadius
-    opacity: root.open || root.popoutSwitching ? 1.0 : 0
 
-    Behavior on opacity {
-      enabled: !root.popoutSwitching && !root.popoutSwitchClosing
-      NumberAnimation { duration: Style.duration(140); easing.type: Easing.OutCubic }
+    // The card fades in as it grows out of the bar from just under full size,
+    // toward the icon it hangs from, and goes in two thirds of the time. On a
+    // switch within a section of the bar it doesn't: the card morphs over from
+    // the last one.
+    property real shown: root.open || root.popoutSwitching ? 1 : 0
+    Behavior on shown {
+      id: showing
+      // The card giving way on a switch still fades out, briefly over the one
+      // taking its place, so there's no empty frame while that one maps.
+      enabled: !root.takingOver && !(root.popoutSwitching && root.morph < 1)
+      NumberAnimation {
+        duration: Style.duration(showing.targetValue > 0 ? 180 : 120)
+        easing.type: Easing.Bezier
+        easing.bezierCurve: Style.easeOut
+      }
+    }
+    opacity: shown
+    transform: Scale {
+      origin.x: root.growOrigin.x
+      origin.y: root.growOrigin.y
+      xScale: 0.97 + 0.03 * card.shown
+      yScale: 0.97 + 0.03 * card.shown
     }
 
     // Swallow clicks on the card so they don't bubble to the dismissal
@@ -427,16 +504,18 @@ PanelWindow {
 
     Item {
       id: contentHolder
-      anchors.fill: parent
+      anchors.top: parent.top
+      anchors.left: parent.left
+      width: root.contentWidth - card.contentLeftInset - card.contentRightInset
+      height: root.contentHeight - card.contentTopInset - card.contentBottomInset
       // Right-to-left languages read the card mirrored; the card itself
       // stays where the bar puts it.
       LayoutMirroring.enabled: Commons.I18n.rightToLeft
       LayoutMirroring.childrenInherit: true
       anchors.topMargin: card.contentTopInset
-      anchors.rightMargin: card.contentRightInset
-      anchors.bottomMargin: card.contentBottomInset
       anchors.leftMargin: card.contentLeftInset
-      opacity: root.popoutSwitching ? (root.open ? 1.0 : 0) : 1.0
+      // Fades in with the morph, done by the time the card has mostly landed.
+      opacity: Math.min(1, root.morph * 1.6)
 
       Loader {
         id: contentLoader
@@ -446,10 +525,6 @@ PanelWindow {
         sourceComponent: root.content
       }
 
-      Behavior on opacity {
-        enabled: root.popoutSwitching
-        NumberAnimation { duration: Style.duration(140); easing.type: Easing.OutCubic }
-      }
     }
   }
 }
