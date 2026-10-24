@@ -66,6 +66,7 @@ Item {
   signal dismissed()
   signal codeCopied(string code)
   signal actionInvoked(string identifier)
+  signal execInvoked(int index)
 
   readonly property bool critical: row.urgency === 2
   readonly property color dimColor: Qt.darker(Commons.Color.notifications.text, 1.4)
@@ -109,6 +110,9 @@ Item {
     return out
   }
 
+  // Buttons an Omarchy sender asked for (--action), as commands the shell runs.
+  readonly property var execActions: Security.parseExecActions(row.execActions) || []
+
   // What the card found in its own text first, then the sender's actions.
   readonly property var allDeeds: {
     var out = []
@@ -116,6 +120,8 @@ Item {
       out.push({ kind: "code", value: foundCodes[c],
                  label: foundCodes.length > 1 ? I18n.t("notifications.copyThisCode").arg(foundCodes[c])
                                               : I18n.t("notifications.copyCode") })
+    for (var e = 0; e < execActions.length; e++)
+      out.push({ kind: "exec", label: execActions[e].label, value: e })
     for (var i = 0; i < actions.length; i++)
       out.push({ kind: "action", label: String(actions[i].text || ""), value: String(actions[i].id) })
     return out
@@ -126,13 +132,14 @@ Item {
   readonly property var marks: {
     var out = []
     if (String(row.code || "")) out.push("\u{f0306}")
-    if (actions.length > 0) out.push("\u{f0cfd}")
+    if (actions.length > 0 || execActions.length > 0) out.push("\u{f0cfd}")
     return out
   }
 
   function doDeed(deed) {
     var kind = String(deed.kind || "")
     if (kind === "action") { actionInvoked(String(deed.value)); return }
+    if (kind === "exec") { execInvoked(Number(deed.value)); return }
     codeCopied(String(deed.value))
     copiedCode = String(deed.value)
     tick.restart()
@@ -505,44 +512,69 @@ Item {
       }
     }
 
-    // The button row under the body, drawn in the card because the surface is
-    // clipped. It shows only under the pointer in an open deck. It spans the
-    // content under the mark too, and keeps the side padding below it.
+    // The buttons, as a bar along the card's bottom edge: a hairline above,
+    // equal segments split by hairlines, three to a line. Drawn in the card
+    // because the surface is clipped, and only under the pointer in an open
+    // deck.
     Item {
       id: deedArea
       anchors { left: parent.left; right: parent.right; bottom: parent.bottom
-                leftMargin: plate.contentLeftInset + Style.space(12)
-                rightMargin: plate.contentRightInset + Style.space(12)
-                bottomMargin: plate.contentBottomInset + Style.space(12) }
+                leftMargin: plate.borderLeft; rightMargin: plate.borderRight
+                bottomMargin: plate.borderBottom }
 
       readonly property bool shown: card.hovered && card.expanded && card.allDeeds.length > 0
+      readonly property int columns: Math.max(1, Math.min(3, card.allDeeds.length))
+      readonly property int rows: Math.ceil(card.allDeeds.length / columns)
+      readonly property real rule: 1
+      readonly property real segmentHeight: Style.spacing.controlHeight + Style.space(6)
+      readonly property real barHeight: rule + rows * segmentHeight + (rows - 1) * rule
       // What the state asks for; the drawn height is whatever slack the
-      // scene has given the card so far. The card already pads its text at
-      // the bottom; extraPadding tops that up to the side padding.
-      readonly property real extraPadding: Style.space(12) - card.contentPaddingY
-      readonly property real wanted: shown ? deedRow.implicitHeight + Style.space(10) + extraPadding : 0
-      height: Math.max(0, card.drawnHeight - card.fixedHeight - extraPadding)
+      // scene has given the card so far.
+      readonly property real wanted: shown ? barHeight : 0
+      height: Math.max(0, card.drawnHeight - card.fixedHeight)
       visible: height > 0
       clip: true
 
-      // Right-aligned and wrapping: laid out right to left over the reversed
-      // list, so one line still reads in order.
-      Flow {
-        id: deedRow
+      // The hairlines are this colour showing through the gaps between
+      // segments.
+      Rectangle {
+        id: deedBar
         anchors.bottom: parent.bottom
         width: parent.width
-        layoutDirection: Qt.RightToLeft
-        spacing: Style.space(6)
+        height: deedArea.barHeight
+        color: Qt.rgba(card.dimColor.r, card.dimColor.g, card.dimColor.b, 0.35)
         opacity: deedArea.shown ? 1 : 0
         visible: opacity > 0.01
         Behavior on opacity { NumberAnimation { duration: card.fade; easing.type: Easing.InOutQuad } }
 
-        Repeater {
-          model: card.allDeeds.slice().reverse()
-          DeedButton {
-            required property var modelData
-            deed: modelData
-            toast: card
+        // Placed by hand rather than a Grid: a short last line stretches its
+        // segments across the bar instead of leaving an empty cell.
+        Item {
+          id: deedRow
+          y: deedArea.rule
+          width: parent.width
+          height: parent.height - deedArea.rule
+
+          Repeater {
+            model: card.allDeeds
+            DeedButton {
+              required property var modelData
+              required property int index
+              readonly property int line: Math.floor(index / deedArea.columns)
+              readonly property int slot: index % deedArea.columns
+              readonly property int perLine: line < deedArea.rows - 1 ? deedArea.columns
+                                             : card.allDeeds.length - line * deedArea.columns
+              readonly property real step: (deedRow.width + deedArea.rule) / perLine
+              // Where the segment starts in reading order; the first action
+              // sits on the right in a right-to-left language.
+              readonly property real start: Math.round(slot * step)
+              deed: modelData
+              toast: card
+              width: Math.round((slot + 1) * step) - start - deedArea.rule
+              x: card.LayoutMirroring.enabled ? deedRow.width - start - width : start
+              y: line * (deedArea.segmentHeight + deedArea.rule)
+              height: deedArea.segmentHeight
+            }
           }
         }
       }

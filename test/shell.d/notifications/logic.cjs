@@ -176,6 +176,21 @@ for (const body of ['Your verification code is 938271', 'Your code is 938 271', 
   assert.deepEqual([secret.execArgv, secret.glyph], ['', ''])
 }
 
+{ // --action buttons: up to three, each a label and an argv held to the click's rules.
+  const actions = JSON.stringify([{ label: 'Edit', argv: ['omasnap', '--file', '/tmp/a b.png'] },
+                                  { label: 'Copy path', argv: ['wl-copy', '--', '/tmp/a b.png'] }])
+  assert.equal(JSON.stringify(S.parseExecActions(actions)), actions)
+  const one = { label: 'Go', argv: ['true'] }
+  for (const bad of ['', '[]', '{}', JSON.stringify([one, one, one, one]), JSON.stringify([{ label: ' ', argv: ['true'] }]),
+                     JSON.stringify([{ label: 'Go', argv: ['-rf'] }]), JSON.stringify([{ label: 'Go' }]), JSON.stringify([one, 'x'])])
+    assert.equal(S.parseExecActions(bad), null, bad)
+  // Stored with the row, so a restored card keeps its buttons; redacted with a code.
+  const row = snap({ appName: 'omasnap', summary: 'Screenshot saved', hints: { 'omarchy-actions': actions } })
+  assert.equal(Store.restored(Store.sanitiseForPersistence(row)).execActions, actions)
+  const secret = snap({ appName: 'x', summary: 'Sign in', body: 'Your verification code is 482913', hints: { 'omarchy-actions': actions } })
+  assert.equal(Store.sanitiseForPersistence(secret).execActions, '')
+}
+
 { // Sender image paths: absolute, one spelling, bounded, and never a kernel interface or service state.
   for (const path of ['/tmp/.org.chromium.Chromium.Xk3lQa/1', '/tmp/.org.chromium.Chromium.Xk3lQa/notification-icon', '/home/u/.cache/app/avatar.png',
                       '/usr/share/icons/hicolor/48x48/apps/slack.png', '/run/user/1000/app/com.slack.Slack/icon.png', '/tmp/a b#c?.png',

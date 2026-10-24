@@ -725,6 +725,15 @@ Item {
     closeToast(key, "activated")
   }
 
+  // An --action button: its argv runs like the click command does.
+  function runExecAction(key, index) {
+    var at = rowIndexFor(key)
+    var actions = Security.parseExecActions(at >= 0 ? toasts.get(at).execActions : "")
+    if (!actions || index < 0 || index >= actions.length) return
+    Util.execArgv(actions[index].argv)
+    closeToast(key, "activated")
+  }
+
   function invokeSenderAction(key, identifier) {
     var ref = refs[key]
     if (!ref || !ref.actions) return false
@@ -1395,6 +1404,7 @@ Item {
               hoverX: service.hoverX
               hoverY: service.hoverY
               onActionInvoked: function(identifier) { service.invokeAction(model.key, identifier) }
+              onExecInvoked: function(index) { service.runExecAction(model.key, index) }
               onCodeCopied: function(code) { service.copyCode(code, model.key) }
               now: service.nowTick
               expanded: service.expanded
