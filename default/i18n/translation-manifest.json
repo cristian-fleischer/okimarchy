@@ -71530,6 +71530,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "vi": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
