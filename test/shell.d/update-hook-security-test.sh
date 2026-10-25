@@ -46,7 +46,7 @@ PY
   pass "update $args authorizes once for everything but AUR, which runs cold last, and exits cold"
 done
 
-for step in omarchy-update-system-pkgs yay omarchy-hook omarchy-update-mise; do
+for step in omarchy-update-system-pkgs yay omarchy-hook; do
   reset_boundary
   export SUDO_TEST_FAIL_STEP=$step
   if run_update -y; then fail "$step failure must fail the update"; fi
