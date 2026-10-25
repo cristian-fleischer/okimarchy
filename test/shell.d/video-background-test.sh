@@ -9,16 +9,12 @@ const fs = require('fs')
 
 const utilQml = fs.readFileSync(path.join(root, 'shell/Commons/Util.qml'), 'utf8')
 const mediaQml = fs.readFileSync(path.join(root, 'shell/Ui/BackgroundMedia.qml'), 'utf8')
-const videoQml = fs.readFileSync(path.join(root, 'shell/Ui/BackgroundVideo.qml'), 'utf8')
 const backgroundQml = fs.readFileSync(path.join(root, 'shell/plugins/background/Background.qml'), 'utf8')
 const lockQml = fs.readFileSync(path.join(root, 'shell/plugins/lock/LockView.qml'), 'utf8')
 const themeSwitcher = fs.readFileSync(path.join(root, 'bin/omarchy-theme-switcher'), 'utf8')
 const quattroUpgrade = fs.readFileSync(path.join(root, 'bin/omarchy-upgrade-to-quattro'), 'utf8')
-const multimediaMigration = fs.readFileSync(path.join(root, 'migrations/1786609204.sh'), 'utf8')
 const barTextColor = fs.readFileSync(path.join(root, 'bin/omarchy-bar-text-color'), 'utf8')
 const menuImages = fs.readFileSync(path.join(root, 'bin/omarchy-menu-images'), 'utf8')
-const lockView = fs.readFileSync(path.join(root, 'shell/plugins/lock/LockView.qml'), 'utf8')
-const lockService = fs.readFileSync(path.join(root, 'shell/plugins/lock/Service.qml'), 'utf8')
 const batteryService = fs.readFileSync(path.join(root, 'shell/plugins/services/battery/Service.qml'), 'utf8')
 const themeSet = fs.readFileSync(path.join(root, 'bin/omarchy-theme-set'), 'utf8')
 const directImageList = fs.readFileSync(path.join(root, 'shell/plugins/image-picker/list.sh'), 'utf8')
@@ -29,54 +25,24 @@ assert(
   'shared media helper identifies video paths without truncating valid local names'
 )
 assert(
-  videoQml.includes('loops: MediaPlayer.Infinite') &&
-    videoQml.includes('autoPlay: root.playbackEnabled') &&
-    videoQml.includes('fillMode: VideoOutput.PreserveAspectCrop') &&
-    /imageUrl: path && !Util\.isVideoPath\(path\) \? Util\.fileUrl\(path\) \+ \(version \? "\?v=" \+ version : ""\) : ""/.test(mediaQml) &&
-    /videoUrl: path && Util\.isVideoPath\(path\) \? Util\.fileUrl\(path\) : ""/.test(mediaQml),
-  'background media plays aspect-cropped videos on a loop, and hands each loader only its own kind of file'
+  !fs.existsSync(path.join(root, 'shell/Ui/BackgroundVideo.qml')),
+  'the shell keeps no video player of its own'
 )
 assert(
-  videoQml.includes('MediaPlayer.LoadedMedia') &&
-    videoQml.includes('primePauseTimer') &&
-    videoQml.includes('mediaGeneration') &&
-    videoQml.includes('videoSink') &&
-    videoQml.includes('onVideoFrameChanged') &&
-    videoQml.includes('MediaPlayer.BufferedMedia') &&
-    videoQml.includes('mediaStatus !== MediaPlayer.BufferedMedia') &&
-    videoQml.includes('interval: 1000') &&
-    videoQml.includes('interval: 50') &&
-    videoQml.includes('frameReceived') &&
-    videoQml.includes('output.clearOutput()') &&
-    !videoQml.includes('KeepLastFrame') &&
-    /onPlaybackEnabledChanged:[\s\S]*?if \(playbackEnabled\) player\.play\(\)[\s\S]*?else player\.pause\(\)/.test(videoQml) &&
-    videoQml.includes('primingGeneration') &&
-    videoQml.includes('player.play()') &&
-    videoQml.includes('player.pause()'),
-  'paused video sources are primed to display their first frame'
+  /imageUrl: path && !video \? Util\.fileUrl\(path\) \+ \(version \? "\?v=" \+ version : ""\) : ""/.test(mediaQml) &&
+    /active: root\.path !== "" && !root\.video/.test(mediaQml) &&
+    !mediaQml.includes('videoUrl') &&
+    !mediaQml.includes('videoLoader') &&
+    !mediaQml.includes('videoEnabled'),
+  'background media is image-only: it loads stills and leaves videos to OWE'
 )
 assert(
   !/^\s*import QtMultimedia/m.test(mediaQml) &&
-    mediaQml.includes('source: "BackgroundVideo.qml"'),
-  'the still-image path never imports QtMultimedia, so image-only sessions do not map it'
-)
-assert(
-  !/^\s*Video\s*\{/m.test(videoQml) &&
-    /property bool audioEnabled: false/.test(videoQml) &&
-    /property bool audioEnabled: false/.test(mediaQml) &&
-    /active: root\.audioEnabled && player\.hasAudio/.test(videoQml) &&
-    /audioOutput: audioLoader\.item/.test(videoQml) &&
-    /muted: root\.priming \|\| !root\.playbackEnabled/.test(videoQml) &&
-    /property: "audioEnabled"\s*\n\s*value: root\.audioEnabled/.test(mediaQml) &&
-    /firstScreen: Quickshell\.screens\.length > 0\s*\n\s*&& String\(Quickshell\.screens\[0\]\.name/.test(backgroundQml) &&
-    backgroundQml.includes('audioEnabled: panel.firstScreen') &&
-    !lockQml.includes('audioEnabled'),
-  'a sound track plays from the first monitor only, a silent file builds no audio output, and the lock stays quiet'
-)
-assert(
-  /property: "mediaSource"[\s\S]*?when: videoLoader\.item !== null && Util\.isVideoPath\(root\.path\)\s*\n\s*restoreMode: Binding\.RestoreNone/.test(mediaQml) &&
-    !videoQml.includes('Component.onDestruction'),
-  'a player on its way out keeps its source, so nothing is left loading for its destructor to cancel'
+    !/^\s*import QtMultimedia/m.test(backgroundQml) &&
+    !/^\s*import QtMultimedia/m.test(lockQml) &&
+    !backgroundQml.includes('MediaPlayer') &&
+    !lockQml.includes('MediaPlayer'),
+  'no shell surface builds a Qt Multimedia pipeline'
 )
 assert(
   !mediaQml.includes('mipmap'),
@@ -86,33 +52,21 @@ assert(
   /instant \|\| !displayedBackground \|\| isVideo\(path\) \|\| isVideo\(displayedBackground\)[\s\S]*displayedBackground = finalPath/.test(backgroundQml),
   'video switches bypass the image-only reveal stack and use the durable background path'
 )
-assert(backgroundQml.includes('BackgroundMedia {') && lockQml.includes('BackgroundMedia {'), 'desktop and lock screen share video-capable media rendering')
+assert(backgroundQml.includes('BackgroundMedia {') && lockQml.includes('BackgroundMedia {'), 'desktop and lock screen share still rendering')
 assert(
-  lockQml.includes('source: wallpaper.video ? null : wallpaper') &&
-    lockQml.includes('visible: !wallpaper.video') &&
-    lockQml.includes('visible: wallpaper.video'),
-  'lock screen bypasses its image effect for video output'
+  !backgroundQml.includes('videoEnabled') &&
+    !backgroundQml.includes('displayedReloads') &&
+    !mediaQml.includes('displayedReloads'),
+  'the desktop hands video backgrounds to OWE with no player switch to carry'
 )
 assert(
-  /sessionObscured:\s*lockActive \|\| screensaverActive/.test(backgroundQml) &&
-    backgroundQml.includes('playbackEnabled: !root.sessionObscured && !root.powerSaverActive && !panel.fullscreenHere') &&
-    backgroundQml.includes('omarchy.lock') &&
-    backgroundQml.includes('omarchy.idle') &&
-    backgroundQml.includes('omarchy.battery'),
-  'desktop playback stops while covered or on battery power-saver'
-)
-assert(
-  backgroundQml.includes('Hyprland.monitorFor(modelData)') &&
-    /fullscreenHere: visibleWorkspace \? visibleWorkspace\.hasFullscreen : false/.test(backgroundQml) &&
-    !backgroundQml.includes('ToplevelManager.activeToplevel'),
-  'a fullscreen window pauses only the output it covers, wherever focus is'
-)
-assert(
-  /if \(displayedBackground === finalPath\) displayedReloads \+= 1/.test(backgroundQml) &&
-    backgroundQml.includes('reloads: root.displayedReloads') &&
-    /active: root\.path !== "" && root\.video && !root\.reloading/.test(mediaQml) &&
-    /onReloadsChanged: \{[\s\S]*?reloading = true/.test(mediaQml),
-  'a theme switch that keeps the video path still reopens the replaced file'
+  !backgroundQml.includes('playbackEnabled') &&
+    !backgroundQml.includes('sessionObscured') &&
+    !backgroundQml.includes('fullscreenHere') &&
+    !backgroundQml.includes('Hyprland.monitorFor') &&
+    !backgroundQml.includes('omarchy.lock') &&
+    !backgroundQml.includes('omarchy.battery'),
+  'the desktop no longer carries the shell video pause policy'
 )
 assert(
   barTextColor.includes('magick "$background_path[0]"'),
@@ -149,34 +103,18 @@ assert(
   'theme changes disable both transition snapshots whenever either side is a video'
 )
 assert(
-  /function onScreensChanged\(\) \{[\s\S]*?root\.displaysBlank = false/.test(lockService),
-  'a display coming back gives up the blank state instead of freezing a visible wallpaper'
-)
-assert(
-  lockService.includes('function screenBlank(screenName)') &&
-    lockService.includes('function applyMonitorDpms(text)') &&
-    lockService.includes('command: ["hyprctl", "monitors", "-j"]') &&
-    lockService.includes('running: root.locked && root.videoBackground') &&
-    /displaysBlank: root\.screenBlank\(lockSurface\.screen/.test(lockService) &&
-    /function runWake\(\) \{[\s\S]*?root\.monitorDpmsKnown = false/.test(lockService) &&
-    /function runBlank\(\) \{[\s\S]*?root\.monitorDpmsKnown = false/.test(lockService),
-  'a locked video wallpaper follows what each panel actually did, not only what the lock asked for'
-)
-assert(
-  lockView.includes('playbackEnabled: root.loadBackground && !root.displaysBlank') &&
-    lockView.includes('&& !root.powerSaverActive') &&
-    /displaysBlank: root\.screenBlank\(/.test(lockService) &&
-    /powerSaverActive: root\.powerSaverActive/.test(lockService) &&
-    /function runBlank\(\) \{\s*\n\s*root\.displaysBlank = true/.test(lockService) &&
-    /function runWake\(\) \{\s*\n\s*root\.displaysBlank = false/.test(lockService),
-  'the lock screen stops playback once displays go dark or power-saver is active'
-)
-assert(
   batteryService.includes('property string activePowerProfile') &&
-    batteryService.includes('UPower.onBattery && activePowerProfile === "power-saver"') &&
-    batteryService.includes('["powerprofilesctl", "get"]') &&
-    batteryService.includes('interval: 2000'),
-  'the battery service tracks the active power-saver profile'
+    /function onProfileChanged\(\) \{\s*root\.powerProfileSignals\+\+\s*root\.activePowerProfile = root\.profileName\(PowerProfiles\.profile\)/.test(batteryService) &&
+    batteryService.includes('root.activePowerProfile = BatteryModel.profileAfterRead(root.activePowerProfile, text, root.powerProfileReadSignals, root.powerProfileSignals)') &&
+    /if \(powerProfileReadProcess\.running\) \{\s*powerProfileReadPending = true/.test(batteryService) &&
+    batteryService.includes('if (root.powerProfileReadPending) Qt.callLater(root.refreshPowerProfile)') &&
+    batteryService.includes('case PowerProfile.PowerSaver: return "power-saver"') &&
+    batteryService.includes('"get-property", "net.hadess.PowerProfiles", "/net/hadess/PowerProfiles", "net.hadess.PowerProfiles", "ActiveProfile"') &&
+    !batteryService.includes('["powerprofilesctl"') &&
+    !/Timer \{[^}]*refreshPowerProfile/.test(batteryService) &&
+    batteryService.includes('function refreshPowerProfile(): void { root.refreshPowerProfile() }') &&
+    fs.readFileSync(path.join(root, 'bin/omarchy-powerprofiles-set'), 'utf8').includes('omarchy-shell -q battery refreshPowerProfile'),
+  'the battery service tracks the active power profile'
 )
 assert(
   themeSwitcher.includes("-iname '*.mp4'") &&
@@ -185,10 +123,6 @@ assert(
   'theme switcher previews video-only themes, named preview files included'
 )
 assert(quattroUpgrade.includes("-iname '*.mp4'"), 'Quattro upgrade can seed a video-only theme background')
-assert(
-  multimediaMigration.includes('omarchy-pkg-add qt6-multimedia qt6-multimedia-ffmpeg'),
-  'existing Quattro installations receive video playback dependencies'
-)
 JS
 
 test_tmp=$(mktemp -d)
@@ -302,16 +236,18 @@ timeout_rows=$(PATH="$test_tmp/bin:$PATH" XDG_CACHE_HOME="$timeout_cache" \
 timeout_marker=$(find "$timeout_cache/omarchy/image-selector" -maxdepth 1 -type f -name '*.failed' -print -quit)
 [[ -z $timeout_marker ]] || fail "a timed out video is left to retry rather than remembered as failed"
 
-grep -qx 'qt6-multimedia' "$ROOT/install/omarchy-base.packages" || fail "Qt Multimedia runtime is a base package"
-grep -qx 'qt6-multimedia-ffmpeg' "$ROOT/install/omarchy-base.packages" || fail "Qt Multimedia FFmpeg backend is a base package"
+grep -qx 'owe' "$ROOT/install/omarchy-base.packages" || fail "OWE is a base package"
+# Qt Multimedia ships for building apps; the shell itself plays video through OWE.
+if grep -rqs 'import QtMultimedia' "$ROOT/shell"; then
+  fail "Qt Multimedia is no longer needed by the shell"
+fi
 
 pass "menu image generator creates thumbnails consumed by the picker"
 pass "direct picker generates and reuses still thumbnails"
 pass "direct picker omits videos whose thumbnails cannot be generated"
 pass "a rejected video is remembered so it costs nothing on the next open"
 pass "a timed out video is left to retry"
-pass "a locked video wallpaper follows the panels' real DPMS state"
-pass "Qt Multimedia playback dependencies are declared"
+pass "OWE is a base package"
 
 source <(awk '
   /^(is_video_path|snapshot_background_path|background_transition_uses_snapshots|choose_theme_background|choose_staged_theme_background|set_theme_background)\(\) \{/ { copying=1 }
@@ -325,6 +261,7 @@ NEXT_THEME_PATH="$transition_home/.local/state/omarchy/current/next-theme"
 CURRENT_BACKGROUND_LINK="$transition_home/.local/state/omarchy/current/background"
 BACKGROUND_TRANSITION_CACHE="$transition_home/.cache/omarchy/background-transitions"
 THEME_NAME="video-test"
+PREVIOUS_THEME_NAME="$THEME_NAME"
 HOME="$transition_home"
 mkdir -p "$CURRENT_THEME_PATH/backgrounds" "$NEXT_THEME_PATH/backgrounds" "$HOME/.config/omarchy/backgrounds/$THEME_NAME"
 printf 'old image\n' >"$CURRENT_THEME_PATH/backgrounds/old.png"
@@ -354,7 +291,10 @@ video_snapshot=$(snapshot_background_path "$CURRENT_THEME_PATH/backgrounds/old.m
 
 CHOSEN_THEME_BACKGROUND="$transition_home/disappeared.mp4"
 BACKGROUND_TRANSITION_SNAPSHOTS=false
+THEME_BACKGROUND_INTRO=""
 OLD_BACKGROUND_SNAPSHOT=""
+PREPARED_BACKGROUND=""
+PREPARED_BACKGROUND_SNAPSHOT=""
 colors_payload=""
 shell_payload=""
 shell_ipc() { :; }
