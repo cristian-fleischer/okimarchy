@@ -1,4 +1,14 @@
 {
+  "about.ageUptimeUpdate": "年齡 / 運行時間 / 更新",
+  "about.days": {
+    "other": "%1 天"
+  },
+  "about.hardware": "硬體",
+  "about.osAge": "系統年齡",
+  "about.software": "軟體",
+  "about.update": "更新",
+  "about.updatedAt": "%1 於 %2",
+  "about.uptime": "運行時間",
   "agents.addFailed": "無法新增 %1 帳號",
   "agents.added": "已新增 %1。",
   "agents.allOver": "所有 %1 帳號都已超過 %2%",

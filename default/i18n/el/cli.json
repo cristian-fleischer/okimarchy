@@ -1,4 +1,15 @@
 {
+  "about.ageUptimeUpdate": "Ηλικία / Λειτουργία / Ενημέρωση",
+  "about.days": {
+    "one": "%1 ημέρα",
+    "other": "%1 ημέρες"
+  },
+  "about.hardware": "Υλικό",
+  "about.osAge": "Ηλικία συστήματος",
+  "about.software": "Λογισμικό",
+  "about.update": "Ενημέρωση",
+  "about.updatedAt": "%1 στις %2",
+  "about.uptime": "Χρόνος λειτουργίας",
   "agents.addFailed": "Δεν ήταν δυνατή η προσθήκη λογαριασμού %1",
   "agents.added": "Προστέθηκε το %1.",
   "agents.allOver": "Όλοι οι λογαριασμοί %1 είναι πάνω από %2%",

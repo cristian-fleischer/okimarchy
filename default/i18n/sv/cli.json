@@ -1,4 +1,15 @@
 {
+  "about.ageUptimeUpdate": "Ålder / Drifttid / Uppdatering",
+  "about.days": {
+    "one": "%1 dag",
+    "other": "%1 dagar"
+  },
+  "about.hardware": "Hårdvara",
+  "about.osAge": "OS-ålder",
+  "about.software": "Programvara",
+  "about.update": "Uppdatering",
+  "about.updatedAt": "%1 kl. %2",
+  "about.uptime": "Drifttid",
   "agents.addFailed": "Kunde inte lägga till kontot %1",
   "agents.added": "Lade till %1.",
   "agents.allOver": "Alla %1-konton är över %2%",

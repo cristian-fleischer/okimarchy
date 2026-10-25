@@ -1,4 +1,16 @@
 {
+  "about.ageUptimeUpdate": "Stáří / Doba běhu / Aktualizace",
+  "about.days": {
+    "few": "%1 dny",
+    "one": "%1 den",
+    "other": "%1 dní"
+  },
+  "about.hardware": "Hardware",
+  "about.osAge": "Stáří systému",
+  "about.software": "Software",
+  "about.update": "Aktualizace",
+  "about.updatedAt": "%1 v %2",
+  "about.uptime": "Doba běhu",
   "agents.addFailed": "Nepodařilo se přidat účet %1",
   "agents.added": "Přidáno %1.",
   "agents.allOver": "Všechny účty %1 jsou nad %2%",

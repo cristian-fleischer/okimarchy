@@ -1,4 +1,15 @@
 {
+  "about.ageUptimeUpdate": "Yoshi / Ish vaqti / Yangilanish",
+  "about.days": {
+    "one": "%1 kun",
+    "other": "%1 kun"
+  },
+  "about.hardware": "Uskuna",
+  "about.osAge": "OT yoshi",
+  "about.software": "Dasturiy ta'minot",
+  "about.update": "Yangilanish",
+  "about.updatedAt": "%1, soat %2",
+  "about.uptime": "Ish vaqti",
   "agents.addFailed": "%1 hisobini qoʻshib boʻlmadi",
   "agents.added": "%1 qoʻshildi.",
   "agents.allOver": "Barcha %1 hisoblari %2% dan oshgan",

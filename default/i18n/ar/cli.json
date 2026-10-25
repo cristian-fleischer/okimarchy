@@ -1,4 +1,19 @@
 {
+  "about.ageUptimeUpdate": "العمر / مدة التشغيل / التحديث",
+  "about.days": {
+    "few": "%1 أيام",
+    "many": "%1 يومًا",
+    "one": "يوم واحد",
+    "other": "%1 يوم",
+    "two": "يومان",
+    "zero": "%1 يوم"
+  },
+  "about.hardware": "العتاد",
+  "about.osAge": "عمر النظام",
+  "about.software": "البرامج",
+  "about.update": "التحديث",
+  "about.updatedAt": "%1 في %2",
+  "about.uptime": "مدة التشغيل",
   "agents.addFailed": "تعذّرت إضافة حساب %1",
   "agents.added": "تمت إضافة %1.",
   "agents.allOver": "جميع حسابات %1 تجاوزت %2%",

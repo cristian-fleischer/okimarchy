@@ -1,4 +1,18 @@
 {
+  "about.ageUptimeUpdate": "Aois / Am ar Siúl / Nuashonrú",
+  "about.days": {
+    "few": "%1 lá",
+    "many": "%1 lá",
+    "one": "%1 lá",
+    "other": "%1 lá",
+    "two": "%1 lá"
+  },
+  "about.hardware": "Crua-earraí",
+  "about.osAge": "Aois OS",
+  "about.software": "Bogearraí",
+  "about.update": "Nuashonrú",
+  "about.updatedAt": "%1 ag %2",
+  "about.uptime": "Am ar Siúl",
   "agents.addFailed": "Níorbh fhéidir cuntas %1 a chur leis",
   "agents.added": "Cuireadh %1 leis.",
   "agents.allOver": "Tá gach cuntas %1 os cionn %2%",

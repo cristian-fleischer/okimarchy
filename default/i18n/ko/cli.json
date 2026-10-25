@@ -1,4 +1,14 @@
 {
+  "about.ageUptimeUpdate": "설치 기간 / 가동 시간 / 업데이트",
+  "about.days": {
+    "other": "%1일"
+  },
+  "about.hardware": "하드웨어",
+  "about.osAge": "OS 설치 기간",
+  "about.software": "소프트웨어",
+  "about.update": "업데이트",
+  "about.updatedAt": "%1 %2",
+  "about.uptime": "가동 시간",
   "agents.addFailed": "%1 계정을 추가할 수 없습니다",
   "agents.added": "%1을(를) 추가했습니다.",
   "agents.allOver": "모든 %1 계정이 %2%를 초과했습니다",

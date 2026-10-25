@@ -1,5 +1,13 @@
 {
   "ar": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -1547,6 +1555,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "bg": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -3094,6 +3110,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "bn": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -4641,6 +4665,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "ca": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -6188,6 +6220,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "cs": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -7735,6 +7775,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "da": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -9282,6 +9330,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "de": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -10829,6 +10885,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "el": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -12376,6 +12440,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "es-MX": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -13923,6 +13995,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "et": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -15470,6 +15550,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "fa": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -17017,6 +17105,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "fi": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -18564,6 +18660,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "fil": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -20111,6 +20215,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "fr": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -21658,6 +21770,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "ga": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -23205,6 +23325,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "he": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -24752,6 +24880,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "hi": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -26299,6 +26435,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "hr": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -27846,6 +27990,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "hu": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -29393,6 +29545,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "id": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -30940,6 +31100,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "is": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -32487,6 +32655,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "it": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -34034,6 +34210,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "ja": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -35581,6 +35765,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "ko": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -37128,6 +37320,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "lt": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -38675,6 +38875,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "lv": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -40222,6 +40430,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "ms": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -41769,6 +41985,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "nl": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -43316,6 +43540,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "no": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -44863,6 +45095,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "pl": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -46410,6 +46650,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "pt": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -47957,6 +48205,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "pt-BR": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -49504,6 +49760,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "ro": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -51051,6 +51315,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "ru": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -52598,6 +52870,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "si": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -54145,6 +54425,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "sk": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -55692,6 +55980,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "sl": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -57239,6 +57535,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "sr": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -58786,6 +59090,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "sv": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -60333,6 +60645,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "sw": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -61880,6 +62200,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "ta": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -63427,6 +63755,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "th": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -64974,6 +65310,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "tr": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -66521,6 +66865,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "uk": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -68068,6 +68420,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "ur": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -69615,6 +69975,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "uz": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -72709,6 +73077,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "zh-CN": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",
@@ -74256,6 +74632,14 @@
     "shell:wifiqr.showPassword": "6aeaa6a53d09"
   },
   "zh-TW": {
+    "cli:about.ageUptimeUpdate": "19b2f97aa34c",
+    "cli:about.days": "b712706e999e",
+    "cli:about.hardware": "7975300f01bc",
+    "cli:about.osAge": "1abd91b38487",
+    "cli:about.software": "9b3289a385a5",
+    "cli:about.update": "c1c1009d3f37",
+    "cli:about.updatedAt": "11aed8ce6cc2",
+    "cli:about.uptime": "d63ab4711473",
     "cli:agents.addFailed": "dc953177184a",
     "cli:agents.added": "9dd2b37ffbb7",
     "cli:agents.allOver": "33d4a9a78e2d",

@@ -1,4 +1,17 @@
 {
+  "about.ageUptimeUpdate": "Starost / Čas delovanja / Posodobitev",
+  "about.days": {
+    "few": "%1 dnevi",
+    "one": "%1 dan",
+    "other": "%1 dni",
+    "two": "%1 dneva"
+  },
+  "about.hardware": "Strojna oprema",
+  "about.osAge": "Starost OS",
+  "about.software": "Programska oprema",
+  "about.update": "Posodobitev",
+  "about.updatedAt": "%1 ob %2",
+  "about.uptime": "Čas delovanja",
   "agents.addFailed": "Računa %1 ni bilo mogoče dodati",
   "agents.added": "Dodano: %1.",
   "agents.allOver": "Vsi računi %1 so nad %2%",

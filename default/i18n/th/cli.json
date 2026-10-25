@@ -1,4 +1,14 @@
 {
+  "about.ageUptimeUpdate": "อายุ / เวลาใช้งาน / อัปเดต",
+  "about.days": {
+    "other": "%1 วัน"
+  },
+  "about.hardware": "ฮาร์ดแวร์",
+  "about.osAge": "อายุระบบ",
+  "about.software": "ซอฟต์แวร์",
+  "about.update": "อัปเดต",
+  "about.updatedAt": "%1 เวลา %2",
+  "about.uptime": "เวลาใช้งาน",
   "agents.addFailed": "เพิ่มบัญชี %1 ไม่สำเร็จ",
   "agents.added": "เพิ่ม %1 แล้ว",
   "agents.allOver": "บัญชี %1 ทั้งหมดใช้ไปเกิน %2%",

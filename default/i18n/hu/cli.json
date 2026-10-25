@@ -1,4 +1,15 @@
 {
+  "about.ageUptimeUpdate": "Kor / Üzemidő / Frissítés",
+  "about.days": {
+    "one": "%1 nap",
+    "other": "%1 nap"
+  },
+  "about.hardware": "Hardver",
+  "about.osAge": "Rendszer kora",
+  "about.software": "Szoftver",
+  "about.update": "Frissítés",
+  "about.updatedAt": "%1, %2",
+  "about.uptime": "Üzemidő",
   "agents.addFailed": "Nem sikerült hozzáadni a(z) %1 fiókot",
   "agents.added": "%1 hozzáadva.",
   "agents.allOver": "Minden %1-fiók %2% felett van",

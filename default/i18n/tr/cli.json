@@ -1,4 +1,15 @@
 {
+  "about.ageUptimeUpdate": "Yaş / Çalışma Süresi / Güncelleme",
+  "about.days": {
+    "one": "%1 gün",
+    "other": "%1 gün"
+  },
+  "about.hardware": "Donanım",
+  "about.osAge": "İşletim Sistemi Yaşı",
+  "about.software": "Yazılım",
+  "about.update": "Güncelleme",
+  "about.updatedAt": "%1, %2",
+  "about.uptime": "Çalışma Süresi",
   "agents.addFailed": "%1 hesabı eklenemedi",
   "agents.added": "%1 eklendi.",
   "agents.allOver": "Tüm %1 hesapları %%2 seviyesinin üzerinde",

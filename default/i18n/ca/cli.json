@@ -1,4 +1,16 @@
 {
+  "about.ageUptimeUpdate": "Edat / Temps d'activitat / Actualització",
+  "about.days": {
+    "many": "%1 de dies",
+    "one": "%1 dia",
+    "other": "%1 dies"
+  },
+  "about.hardware": "Maquinari",
+  "about.osAge": "Edat del SO",
+  "about.software": "Programari",
+  "about.update": "Actualització",
+  "about.updatedAt": "%1 a les %2",
+  "about.uptime": "Temps d'activitat",
   "agents.addFailed": "No s'ha pogut afegir el compte %1",
   "agents.added": "S'ha afegit %1.",
   "agents.allOver": "Tots els comptes de %1 superen el %2%",

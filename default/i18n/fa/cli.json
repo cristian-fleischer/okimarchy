@@ -1,4 +1,15 @@
 {
+  "about.ageUptimeUpdate": "عمر / مدت کارکرد / به‌روزرسانی",
+  "about.days": {
+    "one": "%1 روز",
+    "other": "%1 روز"
+  },
+  "about.hardware": "سخت‌افزار",
+  "about.osAge": "عمر سیستم‌عامل",
+  "about.software": "نرم‌افزار",
+  "about.update": "به‌روزرسانی",
+  "about.updatedAt": "%1 ساعت %2",
+  "about.uptime": "مدت کارکرد",
   "agents.addFailed": "حساب %1 اضافه نشد",
   "agents.added": "%1 اضافه شد.",
   "agents.allOver": "همهٔ حساب‌های %1 بیش از %2% هستند",

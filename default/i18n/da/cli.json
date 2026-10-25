@@ -1,4 +1,15 @@
 {
+  "about.ageUptimeUpdate": "Alder / Oppetid / Opdatering",
+  "about.days": {
+    "one": "%1 dag",
+    "other": "%1 dage"
+  },
+  "about.hardware": "Hardware",
+  "about.osAge": "OS-alder",
+  "about.software": "Software",
+  "about.update": "Opdatering",
+  "about.updatedAt": "%1 kl. %2",
+  "about.uptime": "Oppetid",
   "agents.addFailed": "Kunne ikke tilføje %1-kontoen",
   "agents.added": "Tilføjede %1.",
   "agents.allOver": "Alle %1-konti er over %2%",

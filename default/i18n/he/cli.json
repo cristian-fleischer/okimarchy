@@ -1,4 +1,16 @@
 {
+  "about.ageUptimeUpdate": "גיל / זמן פעילות / עדכון",
+  "about.days": {
+    "one": "יום אחד",
+    "other": "%1 ימים",
+    "two": "יומיים"
+  },
+  "about.hardware": "חומרה",
+  "about.osAge": "גיל המערכת",
+  "about.software": "תוכנה",
+  "about.update": "עדכון",
+  "about.updatedAt": "%1 בשעה %2",
+  "about.uptime": "זמן פעילות",
   "agents.addFailed": "לא ניתן להוסיף את חשבון %1",
   "agents.added": "%1 נוסף.",
   "agents.allOver": "כל חשבונות %1 עברו את %2%",

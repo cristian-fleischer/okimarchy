@@ -1,4 +1,15 @@
 {
+  "about.ageUptimeUpdate": "Ikä / Käyttöaika / Päivitys",
+  "about.days": {
+    "one": "%1 päivä",
+    "other": "%1 päivää"
+  },
+  "about.hardware": "Laitteisto",
+  "about.osAge": "Järjestelmän ikä",
+  "about.software": "Ohjelmisto",
+  "about.update": "Päivitys",
+  "about.updatedAt": "%1 klo %2",
+  "about.uptime": "Käyttöaika",
   "agents.addFailed": "%1-tilin lisääminen ei onnistunut",
   "agents.added": "%1 lisätty.",
   "agents.allOver": "Kaikkien %1-tilien käyttö on yli %2 %",

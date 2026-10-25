@@ -1,4 +1,16 @@
 {
+  "about.ageUptimeUpdate": "Старост / Време рада / Ажурирање",
+  "about.days": {
+    "few": "%1 дана",
+    "one": "%1 дан",
+    "other": "%1 дана"
+  },
+  "about.hardware": "Хардвер",
+  "about.osAge": "Старост ОС-а",
+  "about.software": "Софтвер",
+  "about.update": "Ажурирање",
+  "about.updatedAt": "%1 у %2",
+  "about.uptime": "Време рада",
   "agents.addFailed": "Није могуће додати %1 налог",
   "agents.added": "Додато: %1.",
   "agents.allOver": "Сви %1 налози су преко %2%",

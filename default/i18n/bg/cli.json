@@ -1,4 +1,15 @@
 {
+  "about.ageUptimeUpdate": "Възраст / Време на работа / Актуализация",
+  "about.days": {
+    "one": "%1 ден",
+    "other": "%1 дни"
+  },
+  "about.hardware": "Хардуер",
+  "about.osAge": "Възраст на ОС",
+  "about.software": "Софтуер",
+  "about.update": "Актуализация",
+  "about.updatedAt": "%1 в %2",
+  "about.uptime": "Време на работа",
   "agents.addFailed": "Профилът %1 не можа да се добави",
   "agents.added": "Добавен е %1.",
   "agents.allOver": "Всички профили в %1 са над %2%",

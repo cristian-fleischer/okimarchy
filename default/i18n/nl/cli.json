@@ -1,4 +1,15 @@
 {
+  "about.ageUptimeUpdate": "Leeftijd / Uptime / Update",
+  "about.days": {
+    "one": "%1 dag",
+    "other": "%1 dagen"
+  },
+  "about.hardware": "Hardware",
+  "about.osAge": "OS-leeftijd",
+  "about.software": "Software",
+  "about.update": "Update",
+  "about.updatedAt": "%1 om %2",
+  "about.uptime": "Uptime",
   "agents.addFailed": "Kon het %1-account niet toevoegen",
   "agents.added": "%1 toegevoegd.",
   "agents.allOver": "Alle %1-accounts zitten boven %2%",

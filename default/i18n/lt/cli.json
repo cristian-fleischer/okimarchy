@@ -1,4 +1,16 @@
 {
+  "about.ageUptimeUpdate": "Amžius / Veikimo laikas / Atnaujinimas",
+  "about.days": {
+    "few": "%1 dienos",
+    "one": "%1 diena",
+    "other": "%1 dienų"
+  },
+  "about.hardware": "Aparatūra",
+  "about.osAge": "OS amžius",
+  "about.software": "Programinė įranga",
+  "about.update": "Atnaujinimas",
+  "about.updatedAt": "%1 %2",
+  "about.uptime": "Veikimo laikas",
   "agents.addFailed": "Nepavyko pridėti %1 paskyros",
   "agents.added": "Pridėta %1.",
   "agents.allOver": "Visos %1 paskyros viršijo %2%",

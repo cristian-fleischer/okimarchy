@@ -1,4 +1,15 @@
 {
+  "about.ageUptimeUpdate": "වයස / ක්‍රියාත්මක කාලය / යාවත්කාලීනය",
+  "about.days": {
+    "one": "එක් දිනයක්",
+    "other": "දින %1ක්"
+  },
+  "about.hardware": "දෘඩාංග",
+  "about.osAge": "OS වයස",
+  "about.software": "මෘදුකාංග",
+  "about.update": "යාවත්කාලීනය",
+  "about.updatedAt": "%1 %2 ට",
+  "about.uptime": "ක්‍රියාත්මක කාලය",
   "agents.addFailed": "%1 ගිණුම එක් කළ නොහැකි විය",
   "agents.added": "%1 එක් කළා.",
   "agents.allOver": "සියලුම %1 ගිණුම් %2% ඉක්මවා ඇත",

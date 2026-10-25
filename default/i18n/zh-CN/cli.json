@@ -1,4 +1,14 @@
 {
+  "about.ageUptimeUpdate": "安装时长 / 运行时间 / 更新",
+  "about.days": {
+    "other": "%1 天"
+  },
+  "about.hardware": "硬件",
+  "about.osAge": "安装时长",
+  "about.software": "软件",
+  "about.update": "更新",
+  "about.updatedAt": "%1 %2",
+  "about.uptime": "运行时间",
   "agents.addFailed": "无法添加 %1 账户",
   "agents.added": "已添加 %1。",
   "agents.allOver": "所有 %1 账户均已超过 %2%",

@@ -1,4 +1,15 @@
 {
+  "about.ageUptimeUpdate": "आयु / अपटाइम / अपडेट",
+  "about.days": {
+    "one": "%1 दिन",
+    "other": "%1 दिन"
+  },
+  "about.hardware": "हार्डवेयर",
+  "about.osAge": "OS आयु",
+  "about.software": "सॉफ़्टवेयर",
+  "about.update": "अपडेट",
+  "about.updatedAt": "%1 को %2",
+  "about.uptime": "अपटाइम",
   "agents.addFailed": "%1 खाता जोड़ा नहीं जा सका",
   "agents.added": "%1 जोड़ा गया।",
   "agents.allOver": "सभी %1 खाते %2% से ऊपर हैं",

@@ -1,4 +1,16 @@
 {
+  "about.ageUptimeUpdate": "Età / Tempo di attività / Aggiornamento",
+  "about.days": {
+    "many": "%1 giorni",
+    "one": "%1 giorno",
+    "other": "%1 giorni"
+  },
+  "about.hardware": "Hardware",
+  "about.osAge": "Età del sistema operativo",
+  "about.software": "Software",
+  "about.update": "Aggiornamento",
+  "about.updatedAt": "%1 alle %2",
+  "about.uptime": "Tempo di attività",
   "agents.addFailed": "Impossibile aggiungere l'account %1",
   "agents.added": "Aggiunto %1.",
   "agents.allOver": "Tutti gli account %1 superano il %2%",

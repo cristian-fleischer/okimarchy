@@ -1,4 +1,16 @@
 {
+  "about.ageUptimeUpdate": "Antigüedad / Tiempo activo / Actualización",
+  "about.days": {
+    "many": "%1 días",
+    "one": "%1 día",
+    "other": "%1 días"
+  },
+  "about.hardware": "Hardware",
+  "about.osAge": "Antigüedad del SO",
+  "about.software": "Software",
+  "about.update": "Actualización",
+  "about.updatedAt": "%1 a las %2",
+  "about.uptime": "Tiempo activo",
   "agents.addFailed": "No se pudo agregar la cuenta de %1",
   "agents.added": "Se agregó %1.",
   "agents.allOver": "Todas las cuentas de %1 superan el %2%",

@@ -1,4 +1,17 @@
 {
+  "about.ageUptimeUpdate": "Вік / Час роботи / Оновлення",
+  "about.days": {
+    "few": "%1 дні",
+    "many": "%1 днів",
+    "one": "%1 день",
+    "other": "%1 дня"
+  },
+  "about.hardware": "Обладнання",
+  "about.osAge": "Вік ОС",
+  "about.software": "Програмне забезпечення",
+  "about.update": "Оновлення",
+  "about.updatedAt": "%1 о %2",
+  "about.uptime": "Час роботи",
   "agents.addFailed": "Не вдалося додати обліковий запис %1",
   "agents.added": "Додано %1.",
   "agents.allOver": "Усі облікові записи %1 перевищують %2%",

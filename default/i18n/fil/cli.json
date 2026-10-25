@@ -1,4 +1,15 @@
 {
+  "about.ageUptimeUpdate": "Edad / Uptime / Update",
+  "about.days": {
+    "one": "%1 araw",
+    "other": "%1 araw"
+  },
+  "about.hardware": "Hardware",
+  "about.osAge": "Edad ng OS",
+  "about.software": "Software",
+  "about.update": "Update",
+  "about.updatedAt": "%1 sa %2",
+  "about.uptime": "Uptime",
   "agents.addFailed": "Hindi maidagdag ang account na %1",
   "agents.added": "Naidagdag ang %1.",
   "agents.allOver": "Lahat ng %1 account ay lampas sa %2%",

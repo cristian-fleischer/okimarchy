@@ -1,4 +1,14 @@
 {
+  "about.ageUptimeUpdate": "経過期間 / 稼働時間 / 更新",
+  "about.days": {
+    "other": "%1日"
+  },
+  "about.hardware": "ハードウェア",
+  "about.osAge": "OS使用期間",
+  "about.software": "ソフトウェア",
+  "about.update": "更新",
+  "about.updatedAt": "%1 %2",
+  "about.uptime": "稼働時間",
   "agents.addFailed": "%1 アカウントを追加できませんでした",
   "agents.added": "%1 を追加しました。",
   "agents.allOver": "すべての %1 アカウントが %2% を超えています",

@@ -1,4 +1,15 @@
 {
+  "about.ageUptimeUpdate": "বয়স / আপটাইম / আপডেট",
+  "about.days": {
+    "one": "%1 দিন",
+    "other": "%1 দিন"
+  },
+  "about.hardware": "হার্ডওয়্যার",
+  "about.osAge": "OS-এর বয়স",
+  "about.software": "সফটওয়্যার",
+  "about.update": "আপডেট",
+  "about.updatedAt": "%1, %2-এ",
+  "about.uptime": "আপটাইম",
   "agents.addFailed": "%1 অ্যাকাউন্ট যোগ করা যায়নি",
   "agents.added": "%1 যোগ করা হয়েছে।",
   "agents.allOver": "সব %1 অ্যাকাউন্ট %2%-এর ওপরে",

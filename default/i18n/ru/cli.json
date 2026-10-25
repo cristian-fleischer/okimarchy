@@ -1,4 +1,17 @@
 {
+  "about.ageUptimeUpdate": "Возраст / Время работы / Обновление",
+  "about.days": {
+    "few": "%1 дня",
+    "many": "%1 дней",
+    "one": "%1 день",
+    "other": "%1 дней"
+  },
+  "about.hardware": "Оборудование",
+  "about.osAge": "Возраст ОС",
+  "about.software": "ПО",
+  "about.update": "Обновление",
+  "about.updatedAt": "%1 в %2",
+  "about.uptime": "Время работы",
   "agents.addFailed": "Не удалось добавить аккаунт %1",
   "agents.added": "Добавлен %1.",
   "agents.allOver": "Все аккаунты %1 превысили %2%",

@@ -1,4 +1,15 @@
 {
+  "about.ageUptimeUpdate": "Aldur / Uppitími / Uppfærsla",
+  "about.days": {
+    "one": "%1 dagur",
+    "other": "%1 dagar"
+  },
+  "about.hardware": "Vélbúnaður",
+  "about.osAge": "Aldur stýrikerfis",
+  "about.software": "Hugbúnaður",
+  "about.update": "Uppfærsla",
+  "about.updatedAt": "%1 kl. %2",
+  "about.uptime": "Uppitími",
   "agents.addFailed": "Ekki tókst að bæta %1-reikningnum við",
   "agents.added": "Bætti %1 við.",
   "agents.allOver": "Allir %1-reikningar eru yfir %2%",

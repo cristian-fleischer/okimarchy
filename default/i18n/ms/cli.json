@@ -1,4 +1,14 @@
 {
+  "about.ageUptimeUpdate": "Usia / Masa Aktif / Kemas Kini",
+  "about.days": {
+    "other": "%1 hari"
+  },
+  "about.hardware": "Perkakasan",
+  "about.osAge": "Usia OS",
+  "about.software": "Perisian",
+  "about.update": "Kemas Kini",
+  "about.updatedAt": "%1 pada %2",
+  "about.uptime": "Masa Aktif",
   "agents.addFailed": "Tidak dapat menambah akaun %1",
   "agents.added": "%1 ditambah.",
   "agents.allOver": "Semua akaun %1 melebihi %2%",

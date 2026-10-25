@@ -1,4 +1,15 @@
 {
+  "about.ageUptimeUpdate": "Umri / Muda wa Uendeshaji / Sasisho",
+  "about.days": {
+    "one": "siku moja",
+    "other": "siku %1"
+  },
+  "about.hardware": "Maunzi",
+  "about.osAge": "Umri wa OS",
+  "about.software": "Programu",
+  "about.update": "Sasisho",
+  "about.updatedAt": "%1 saa %2",
+  "about.uptime": "Muda wa Uendeshaji",
   "agents.addFailed": "Imeshindwa kuongeza akaunti ya %1",
   "agents.added": "Imeongezwa %1.",
   "agents.allOver": "Akaunti zote za %1 zimezidi %2%",
