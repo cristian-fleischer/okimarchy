@@ -9,7 +9,7 @@ require_platform_fixtures "the composed mkinitcpio HOOKS"
 test_tmp=$(mktemp -d)
 trap 'rm -rf "$test_tmp"' EXIT
 
-for platform in aarch64-apple aarch64 x86; do
+for platform in aarch64-apple aarch64-qualcomm aarch64 x86; do
   fake_platform "$test_tmp/platforms/$platform" "$platform"
 done
 # omarchy-settings without the runtime package: no detector on PATH.
@@ -249,6 +249,29 @@ for platform in aarch64; do
   assert_composed "$platform with hibernation and a provisioning key is unchanged" "$platform" \
     "$omarchy_hooks resume" "thunderbolt" "/etc/omarchy/provisioning.key"
 done
+
+# A Snapdragon laptop's internal keyboard on I2C needs the I2C HID transport
+# at the disk unlock prompt; mkinitcpio's keyboard hook adds only hid-*. It is
+# early-loaded where the detector calls the machine Snapdragon and the kernel
+# builds it as a module, and nowhere else.
+new_etc
+KERNEL_MODULES="thunderbolt i2c-hid-of" assert_composed "a Snapdragon laptop early-loads i2c-hid-of for its keyboard" aarch64-qualcomm \
+  "$omarchy_hooks" "i2c-hid-of thunderbolt" ""
+new_etc
+KERNEL_MODULES="thunderbolt i2c-hid-of" assert_composed "a machine without a device tree leaves i2c-hid-of out" x86 \
+  "$omarchy_hooks" "thunderbolt" ""
+new_etc
+KERNEL_MODULES="thunderbolt i2c-hid-of" assert_composed "a device-tree machine that isn't Snapdragon leaves i2c-hid-of out" aarch64 \
+  "$omarchy_hooks" "thunderbolt" ""
+new_etc
+KERNEL_MODULES="thunderbolt i2c-hid-of" assert_composed "without the runtime's detector i2c-hid-of stays out" no-detector \
+  "$omarchy_hooks" "thunderbolt" ""
+new_etc
+KERNEL_MODULES="thunderbolt i2c-hid-of" assert_composed "an Apple Silicon Mac leaves i2c-hid-of out" aarch64-apple \
+  "$apple_hooks" "thunderbolt" ""
+new_etc
+KERNEL_MODULES="thunderbolt" KERNEL_BUILTINS="i2c-hid-of" assert_composed "a kernel with i2c-hid-of built in leaves it out" aarch64-qualcomm \
+  "$omarchy_hooks" "thunderbolt" ""
 
 # thunderbolt is early-loaded only where the kernel builds it as a module. A
 # systemd initramfs writes MODULES into modules-load.d as they are, so neither
