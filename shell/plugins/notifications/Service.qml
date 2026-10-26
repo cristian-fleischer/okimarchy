@@ -300,12 +300,12 @@ Item {
     return true
   }
 
-  function startKeyboard() {
+  function startKeyboard(key) {
     var order = keyboardOrder()
     if (!order.length) return false
     keyboardMode = true
     keyboardRejected = ({})
-    selectCard(order[0])
+    selectCard(order.indexOf(key) >= 0 ? key : order[0])
     keyboardIdle.restart()
     return true
   }
@@ -853,6 +853,19 @@ Item {
     return true
   }
 
+  // The newest card, by what it offers: with no button it is dismissed, with
+  // one that button is pressed, and with several it takes the keyboard so
+  // you can pick.
+  function actOnNewest() {
+    var key = newestLive()
+    if (!key) return false
+    var count = deedsFor(key).length
+    if (count === 0) closeToast(key, "dismissed", true)
+    else if (count === 1) runDeed(key, 0)
+    else startKeyboard(key)
+    return true
+  }
+
   // What the sender said can be done with this notification. A restored row
   // has no live sender, so it has none of these.
   function actionsOf(key, revision) {
@@ -1368,8 +1381,12 @@ Item {
       return isDnd()
     }
 
-    // Dismiss the newest card on screen. These three are what the keybindings
-    // run, and a keypress is answered at once, without motion.
+    // Dismiss, press the one button on, or focus the newest card on screen.
+    // These are what the keybindings run, and a keypress is answered at once,
+    // without motion.
+    function act(): string { return service.actOnNewest() ? "ok" : "none" }
+
+    // Dismiss the newest card on screen.
     function dismissOne(): string { return service.dismissNewest(true) ? "ok" : "none" }
 
     // Every card, every stack.

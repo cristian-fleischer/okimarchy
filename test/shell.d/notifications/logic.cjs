@@ -334,6 +334,7 @@ const capacityFunctions = ['pinDeckDisplay', 'showsOn', 'fullscreenOn',
   'durationFor', 'liveCount', 'reserveLive', 'releaseLive',
   'nextKey', 'rowIndexFor', 'keyForOriginal', 'handleNotification', 'watchNotification', 'showRow', 'release', 'closeToast',
   'closeToasts', 'unmarkLeaving', 'finishDeparted', 'newestLive', 'finishLeaving', 'finishClose', 'clearAll', 'dismissNewest', 'releaseHeld', 'restoreRows', 'actionsOf', 'dismissOne',
+  'deedsFor', 'runDeed', 'invokeAction', 'invokeSenderAction', 'actOnNewest', 'act',
   'storePut', 'storeClose', 'storeDrop', 'storeRecord', 'saveSoon', 'loadLive']
 
 function newCapacityScope() {
@@ -437,6 +438,29 @@ const summaries = rows => Array.from(rows, row => row.summary)
   assert.equal(senders[3].expiries, 1)
   for (const sender of senders.slice(0, 3)) assert.equal(sender.dismissals, 1)
   for (const sender of senders) assert.equal(sender.closeAttempts, 1)
+}
+
+{ // Acting on the newest card dismisses it bare, presses its lone button, or picks among several.
+  const s = newCapacityScope()
+  const picking = []
+  s.startKeyboard = key => { picking.push(key); return true }
+  assert.equal(s.act(), 'none')
+  const bare = s.fakeNotification(1), single = s.fakeNotification(2), several = s.fakeNotification(3)
+  let pressed = 0
+  bare.actions = []
+  single.actions = [{ identifier: 'open', text: 'Open', invoke: () => { pressed += 1 } }]
+  several.actions = [{ identifier: 'reply', text: 'Reply' }, { identifier: 'archive', text: 'Archive' }]
+  s.admit(bare, single, several)
+  const [severalKey, singleKey, bareKey] = s.toasts.rows.map(row => row.key)
+  assert.equal(s.act(), 'ok')
+  assert.deepEqual(picking, [severalKey], 'several buttons hand that card the keyboard')
+  assert.equal(s.leaving[severalKey], undefined)
+  s.closeToast(severalKey, 'dismissed')
+  assert.equal(s.act(), 'ok')
+  assert.equal(pressed, 1, 'a lone button is pressed')
+  assert.equal(s.leaving[singleKey], 'activated')
+  assert.equal(s.act(), 'ok')
+  assert.equal(s.leaving[bareKey], 'dismissed', 'a card with no buttons is dismissed')
 }
 
 { // A clicked card rises out before it goes; a keypress clears every card with one jump.
