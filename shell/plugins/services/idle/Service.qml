@@ -243,7 +243,12 @@ Item {
   Timer {
     id: lockTimer
     repeat: false
-    onTriggered: if (root.idleEnabled && root.idledThisCycle && root.lockEnabled) root.lockSystem("lock-timeout")
+    onTriggered: {
+      if (!root.idleEnabled || !root.idledThisCycle || !root.lockEnabled) return
+      // A deadline inside the launch grace must not lock a user who is already back.
+      if (root.screensaverStartedThisCycle && screensaverLaunchGraceTimer.running && !idleMonitor.isIdle) root.userReturned()
+      else root.lockSystem("lock-timeout")
+    }
   }
 
   Timer {
