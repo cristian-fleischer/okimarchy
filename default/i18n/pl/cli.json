@@ -116,6 +116,7 @@
   "done.failed": "Niepowodzenie (kod wyjścia %1)! Naciśnij dowolny klawisz, aby zamknąć...",
   "done.success": "Gotowe! Naciśnij dowolny klawisz, aby zamknąć...",
   "download.complete": "Pobieranie zakończone",
+  "download.cut": "Wytnij",
   "download.failed": "Pobieranie nie powiodło się",
   "download.none": "Nie znaleziono wideo do pobrania",
   "download.open": "Otwórz",

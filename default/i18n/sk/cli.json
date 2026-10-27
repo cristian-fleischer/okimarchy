@@ -115,6 +115,7 @@
   "done.failed": "Zlyhalo (kód ukončenia %1)! Zavrite stlačením ľubovoľnej klávesy...",
   "done.success": "Hotovo! Zavrite stlačením ľubovoľnej klávesy...",
   "download.complete": "Sťahovanie dokončené",
+  "download.cut": "Vystrihnúť",
   "download.failed": "Sťahovanie zlyhalo",
   "download.none": "Nenašlo sa video na stiahnutie",
   "download.open": "Otvoriť",

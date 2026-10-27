@@ -113,6 +113,7 @@
   "done.failed": "失敗しました（終了コード %1）！任意のキーを押して閉じてください...",
   "done.success": "完了しました！任意のキーを押して閉じてください...",
   "download.complete": "ダウンロードが完了しました",
+  "download.cut": "カット",
   "download.failed": "ダウンロードに失敗しました",
   "download.none": "ダウンロードできる動画が見つかりません",
   "download.open": "開く",

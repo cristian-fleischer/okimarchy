@@ -114,6 +114,7 @@
   "done.failed": "Sikertelen (kilépési kód: %1)! Nyomj meg egy billentyűt a bezáráshoz...",
   "done.success": "Kész! Nyomj meg egy billentyűt a bezáráshoz...",
   "download.complete": "Letöltés kész",
+  "download.cut": "Kivágás",
   "download.failed": "Letöltés sikertelen",
   "download.none": "Nem található letölthető videó",
   "download.open": "Megnyitás",

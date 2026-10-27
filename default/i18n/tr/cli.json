@@ -114,6 +114,7 @@
   "done.failed": "Başarısız (çıkış kodu %1)! Kapatmak için bir tuşa basın...",
   "done.success": "Tamamlandı! Kapatmak için bir tuşa basın...",
   "download.complete": "İndirme tamamlandı",
+  "download.cut": "Kes",
   "download.failed": "İndirme başarısız",
   "download.none": "İndirilecek video bulunamadı",
   "download.open": "Aç",

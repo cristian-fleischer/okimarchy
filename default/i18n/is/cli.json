@@ -114,6 +114,7 @@
   "done.failed": "Mistókst (útkóði %1)! Ýttu á einhvern takka til að loka...",
   "done.success": "Lokið! Ýttu á einhvern takka til að loka...",
   "download.complete": "Niðurhali lokið",
+  "download.cut": "Klippa",
   "download.failed": "Niðurhal mistókst",
   "download.none": "Ekkert myndband fannst til niðurhals",
   "download.open": "Opna",

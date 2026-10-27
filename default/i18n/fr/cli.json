@@ -115,6 +115,7 @@
   "done.failed": "Échec (code de sortie %1) ! Appuyez sur une touche pour fermer...",
   "done.success": "Terminé ! Appuyez sur une touche pour fermer...",
   "download.complete": "Téléchargement terminé",
+  "download.cut": "Couper",
   "download.failed": "Échec du téléchargement",
   "download.none": "Aucune vidéo trouvée à télécharger",
   "download.open": "Ouvrir",

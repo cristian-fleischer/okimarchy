@@ -113,6 +113,7 @@
   "done.failed": "Thất bại (mã thoát %1)! Nhấn phím bất kỳ để đóng...",
   "done.success": "Hoàn tất! Nhấn phím bất kỳ để đóng...",
   "download.complete": "Tải xuống xong",
+  "download.cut": "Cắt",
   "download.failed": "Tải xuống thất bại",
   "download.none": "Không tìm thấy video để tải",
   "download.open": "Mở",

@@ -115,6 +115,7 @@
   "done.failed": "Operazione non riuscita (codice di uscita %1)! Premi un tasto qualsiasi per chiudere...",
   "done.success": "Fatto! Premi un tasto qualsiasi per chiudere...",
   "download.complete": "Download completato",
+  "download.cut": "Taglia",
   "download.failed": "Download non riuscito",
   "download.none": "Nessun video da scaricare",
   "download.open": "Apri",

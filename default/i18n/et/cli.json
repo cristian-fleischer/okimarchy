@@ -114,6 +114,7 @@
   "done.failed": "Ebaõnnestus (väljundkood %1)! Sulgemiseks vajuta suvalist klahvi...",
   "done.success": "Valmis! Sulgemiseks vajuta suvalist klahvi...",
   "download.complete": "Allalaadimine valmis",
+  "download.cut": "Lõika",
   "download.failed": "Allalaadimine ebaõnnestus",
   "download.none": "Allalaadimiseks videot ei leitud",
   "download.open": "Ava",

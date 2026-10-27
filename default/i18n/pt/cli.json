@@ -115,6 +115,7 @@
   "done.failed": "Falhou (código de saída %1)! Prime qualquer tecla para fechar...",
   "done.success": "Concluído! Prime qualquer tecla para fechar...",
   "download.complete": "Transferência concluída",
+  "download.cut": "Cortar",
   "download.failed": "A transferência falhou",
   "download.none": "Nenhum vídeo encontrado para transferir",
   "download.open": "Abrir",

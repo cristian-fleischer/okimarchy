@@ -113,6 +113,7 @@
   "done.failed": "Gagal (kod keluar %1)! Tekan sebarang kekunci untuk tutup...",
   "done.success": "Selesai! Tekan sebarang kekunci untuk tutup...",
   "download.complete": "Muat turun selesai",
+  "download.cut": "Potong",
   "download.failed": "Muat turun gagal",
   "download.none": "Tiada video ditemui untuk dimuat turun",
   "download.open": "Buka",

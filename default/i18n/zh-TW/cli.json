@@ -113,6 +113,7 @@
   "done.failed": "失敗（結束代碼 %1）！按任意鍵關閉...",
   "done.success": "完成！按任意鍵關閉...",
   "download.complete": "下載完成",
+  "download.cut": "剪下",
   "download.failed": "下載失敗",
   "download.none": "找不到可下載的影片",
   "download.open": "開啟",

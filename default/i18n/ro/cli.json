@@ -115,6 +115,7 @@
   "done.failed": "Eșuat (cod de ieșire %1)! Apasă orice tastă pentru a închide...",
   "done.success": "Gata! Apasă orice tastă pentru a închide...",
   "download.complete": "Descărcare finalizată",
+  "download.cut": "Decupează",
   "download.failed": "Descărcare eșuată",
   "download.none": "Nu s-a găsit niciun video de descărcat",
   "download.open": "Deschide",

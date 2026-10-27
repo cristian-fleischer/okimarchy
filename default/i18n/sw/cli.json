@@ -114,6 +114,7 @@
   "done.failed": "Imeshindwa (msimbo wa kutoka %1)! Bonyeza kitufe chochote kufunga...",
   "done.success": "Imekamilika! Bonyeza kitufe chochote kufunga...",
   "download.complete": "Upakuaji umekamilika",
+  "download.cut": "Kata",
   "download.failed": "Upakuaji umeshindwa",
   "download.none": "Hakuna video iliyopatikana ya kupakua",
   "download.open": "Fungua",

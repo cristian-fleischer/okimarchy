@@ -115,6 +115,7 @@
   "done.failed": "Nepavyko (išeities kodas %1)! Paspauskite bet kurį klavišą, kad uždarytumėte...",
   "done.success": "Atlikta! Paspauskite bet kurį klavišą, kad uždarytumėte...",
   "download.complete": "Atsisiuntimas baigtas",
+  "download.cut": "Iškirpti",
   "download.failed": "Atsisiuntimas nepavyko",
   "download.none": "Vaizdo įrašo atsisiuntimui nerasta",
   "download.open": "Atidaryti",

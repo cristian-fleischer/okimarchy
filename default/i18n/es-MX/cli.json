@@ -115,6 +115,7 @@
   "done.failed": "¡Falló (código de salida %1)! Presiona cualquier tecla para cerrar...",
   "done.success": "¡Listo! Presiona cualquier tecla para cerrar...",
   "download.complete": "Descarga completada",
+  "download.cut": "Cortar",
   "download.failed": "La descarga falló",
   "download.none": "No se encontró ningún video para descargar",
   "download.open": "Abrir",

@@ -114,6 +114,7 @@
   "done.failed": "Mislykkedes (afslutningskode %1)! Tryk på en tast for at lukke...",
   "done.success": "Færdig! Tryk på en tast for at lukke...",
   "download.complete": "Download fuldført",
+  "download.cut": "Klip",
   "download.failed": "Download mislykkedes",
   "download.none": "Ingen video fundet til download",
   "download.open": "Åbn",

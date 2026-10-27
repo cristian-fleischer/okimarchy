@@ -114,6 +114,7 @@
   "done.failed": "Mislukt (exitcode %1)! Druk op een toets om te sluiten...",
   "done.success": "Klaar! Druk op een toets om te sluiten...",
   "download.complete": "Download voltooid",
+  "download.cut": "Knippen",
   "download.failed": "Download mislukt",
   "download.none": "Geen video gevonden om te downloaden",
   "download.open": "Openen",

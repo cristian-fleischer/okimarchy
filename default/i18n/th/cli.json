@@ -113,6 +113,7 @@
   "done.failed": "ล้มเหลว (exit code %1)! กดปุ่มใดก็ได้เพื่อปิด...",
   "done.success": "เสร็จแล้ว! กดปุ่มใดก็ได้เพื่อปิด...",
   "download.complete": "ดาวน์โหลดเสร็จแล้ว",
+  "download.cut": "ตัด",
   "download.failed": "ดาวน์โหลดไม่สำเร็จ",
   "download.none": "ไม่พบวิดีโอสำหรับดาวน์โหลด",
   "download.open": "เปิด",

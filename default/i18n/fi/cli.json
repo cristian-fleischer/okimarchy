@@ -114,6 +114,7 @@
   "done.failed": "Epäonnistui (poistumiskoodi %1)! Sulje painamalla mitä tahansa näppäintä...",
   "done.success": "Valmis! Sulje painamalla mitä tahansa näppäintä...",
   "download.complete": "Lataus valmis",
+  "download.cut": "Leikkaa",
   "download.failed": "Lataus epäonnistui",
   "download.none": "Ladattavaa videota ei löytynyt",
   "download.open": "Avaa",

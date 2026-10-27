@@ -113,6 +113,7 @@
   "done.failed": "失败（退出码 %1）！按任意键关闭...",
   "done.success": "完成！按任意键关闭...",
   "download.complete": "下载完成",
+  "download.cut": "剪切",
   "download.failed": "下载失败",
   "download.none": "未找到可下载的视频",
   "download.open": "打开",

@@ -114,6 +114,7 @@
   "done.failed": "असफल (exit code %1)! बंद करने के लिए कोई भी कुंजी दबाएं...",
   "done.success": "हो गया! बंद करने के लिए कोई भी कुंजी दबाएं...",
   "download.complete": "डाउनलोड पूर्ण",
+  "download.cut": "काटें",
   "download.failed": "डाउनलोड असफल",
   "download.none": "डाउनलोड के लिए कोई वीडियो नहीं मिला",
   "download.open": "खोलें",

@@ -115,6 +115,7 @@
   "done.failed": "Ha fallat (codi de sortida %1)! Prem qualsevol tecla per tancar...",
   "done.success": "Fet! Prem qualsevol tecla per tancar...",
   "download.complete": "Baixada completada",
+  "download.cut": "Retalla",
   "download.failed": "La baixada ha fallat",
   "download.none": "No s'ha trobat cap vídeo per baixar",
   "download.open": "Obre",

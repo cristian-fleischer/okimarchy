@@ -115,6 +115,7 @@
   "done.failed": "Selhalo (kód ukončení %1)! Stiskněte libovolnou klávesu pro zavření...",
   "done.success": "Hotovo! Stiskněte libovolnou klávesu pro zavření...",
   "download.complete": "Stahování dokončeno",
+  "download.cut": "Vyjmout",
   "download.failed": "Stahování selhalo",
   "download.none": "Nenašlo se žádné video ke stažení",
   "download.open": "Otevřít",

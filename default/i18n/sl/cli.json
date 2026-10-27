@@ -116,6 +116,7 @@
   "done.failed": "Ni uspelo (izhodna koda %1)! Pritisnite katero koli tipko za zaprtje...",
   "done.success": "Končano! Pritisnite katero koli tipko za zaprtje...",
   "download.complete": "Prenos končan",
+  "download.cut": "Izreži",
   "download.failed": "Prenos ni uspel",
   "download.none": "Ni najdenega videa za prenos",
   "download.open": "Odpri",

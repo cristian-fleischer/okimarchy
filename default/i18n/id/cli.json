@@ -113,6 +113,7 @@
   "done.failed": "Gagal (kode keluar %1)! Tekan tombol apa pun untuk menutup...",
   "done.success": "Selesai! Tekan tombol apa pun untuk menutup...",
   "download.complete": "Unduhan selesai",
+  "download.cut": "Potong",
   "download.failed": "Unduhan gagal",
   "download.none": "Tidak ada video yang ditemukan untuk diunduh",
   "download.open": "Buka",

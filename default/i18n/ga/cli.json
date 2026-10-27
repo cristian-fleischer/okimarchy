@@ -117,6 +117,7 @@
   "done.failed": "Theip air (cód scoir %1)! Brúigh aon eochair chun dúnadh...",
   "done.success": "Déanta! Brúigh aon eochair chun dúnadh...",
   "download.complete": "Íoslódáil críochnaithe",
+  "download.cut": "Gearr",
   "download.failed": "Theip ar íoslódáil",
   "download.none": "Níor aimsíodh físeán le híoslódáil",
   "download.open": "Oscail",

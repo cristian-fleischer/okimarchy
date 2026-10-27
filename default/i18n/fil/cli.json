@@ -114,6 +114,7 @@
   "done.failed": "Nabigo (exit code %1)! Pindutin ang anumang key para isara...",
   "done.success": "Tapos na! Pindutin ang anumang key para isara...",
   "download.complete": "Tapos na ang pag-download",
+  "download.cut": "Gupitin",
   "download.failed": "Nabigo ang pag-download",
   "download.none": "Walang nakitang video para i-download",
   "download.open": "Buksan",

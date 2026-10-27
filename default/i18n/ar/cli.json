@@ -118,6 +118,7 @@
   "done.failed": "فشل (رمز الخروج %1)! اضغط أي مفتاح للإغلاق...",
   "done.success": "تم! اضغط أي مفتاح للإغلاق...",
   "download.complete": "اكتمل التنزيل",
+  "download.cut": "قص",
   "download.failed": "فشل التنزيل",
   "download.none": "لم يُعثر على فيديو للتنزيل",
   "download.open": "فتح",
