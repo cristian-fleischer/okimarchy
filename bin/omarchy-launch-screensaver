@@ -3,9 +3,4 @@
 # omarchy:summary=Launch the Omarchy screensaver on every display.
 # omarchy:args=[force] [options]
 
-# A virtual GPU can stall under the default 120 fps; OMARCHY_SCREENSAVER_FRAME_RATE lowers it.
-if [[ -n ${OMARCHY_SCREENSAVER_FRAME_RATE:-} ]]; then
-  exec /usr/lib/omarchy-screensaver/omarchy-screensaver --frame-rate "$OMARCHY_SCREENSAVER_FRAME_RATE" "$@"
-else
-  exec /usr/lib/omarchy-screensaver/omarchy-screensaver "$@"
-fi
+exec /usr/lib/omarchy-screensaver/omarchy-screensaver "$@"
