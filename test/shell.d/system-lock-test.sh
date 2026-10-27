@@ -11,12 +11,19 @@ mock_bin="$tmpdir/bin"
 call_log="$tmpdir/calls"
 mkdir -p "$mock_bin"
 
-for command in omarchy-shell hyprctl pkill timeout; do
+for command in omarchy-shell hyprctl pkill; do
   cat >"$mock_bin/$command" <<'SH'
 #!/bin/bash
 printf '%s %s\n' "$(basename "$0")" "$*" >>"$CALL_LOG"
 SH
 done
+
+# A screensaver that does not exit within its second.
+cat >"$mock_bin/timeout" <<'SH'
+#!/bin/bash
+printf '%s %s\n' "$(basename "$0")" "$*" >>"$CALL_LOG"
+exit 124
+SH
 
 cat >"$mock_bin/pgrep" <<'SH'
 #!/bin/bash

@@ -21,9 +21,8 @@ fi
 
 # Avoid running screensaver when locked
 screensaver='[/]usr/lib/omarchy-screensaver/omarchy-screensaver'
-pkill -f "$screensaver" 2>/dev/null || true
-timeout 1s pidwait -f "$screensaver" 2>/dev/null || true
-if pkill -KILL -f "$screensaver" 2>/dev/null; then
-  # A killed screensaver cannot show the cursor it hid.
+if pkill -f "$screensaver" 2>/dev/null; then
+  timeout 1s pidwait -f "$screensaver" 2>/dev/null || pkill -KILL -f "$screensaver" 2>/dev/null || true
+  # It hid the cursor, and a killed or failed exit leaves it hidden.
   hyprctl eval 'hl.config({ cursor = { invisible = false } })' >/dev/null 2>&1 || hyprctl keyword cursor:invisible false >/dev/null 2>&1 || true
 fi
