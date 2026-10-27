@@ -116,6 +116,7 @@
   "download.complete": "İndirme tamamlandı",
   "download.failed": "İndirme başarısız",
   "download.none": "İndirilecek video bulunamadı",
+  "download.open": "Aç",
   "drive.confirmNewPassword": "Yeni şifreleme parolasını onaylayın",
   "drive.currentPassword": "Mevcut şifreleme parolası",
   "drive.newPassword": "Yeni şifreleme parolası",

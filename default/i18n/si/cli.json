@@ -116,6 +116,7 @@
   "download.complete": "බාගැනීම සම්පූර්ණයි",
   "download.failed": "බාගැනීම අසාර්ථකයි",
   "download.none": "බාගැනීමට වීඩියෝවක් හමු නොවීය",
+  "download.open": "විවෘත කරන්න",
   "drive.confirmNewPassword": "නව සංකේතන මුරපදය තහවුරු කරන්න",
   "drive.currentPassword": "වත්මන් සංකේතන මුරපදය",
   "drive.newPassword": "නව සංකේතන මුරපදය",

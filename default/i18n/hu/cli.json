@@ -116,6 +116,7 @@
   "download.complete": "Letöltés kész",
   "download.failed": "Letöltés sikertelen",
   "download.none": "Nem található letölthető videó",
+  "download.open": "Megnyitás",
   "drive.confirmNewPassword": "Erősítsd meg az új titkosítási jelszót",
   "drive.currentPassword": "Jelenlegi titkosítási jelszó",
   "drive.newPassword": "Új titkosítási jelszó",

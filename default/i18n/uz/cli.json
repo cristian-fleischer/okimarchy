@@ -116,6 +116,7 @@
   "download.complete": "Yuklab olish yakunlandi",
   "download.failed": "Yuklab olish muvaffaqiyatsiz",
   "download.none": "Yuklab olish uchun video topilmadi",
+  "download.open": "Ochish",
   "drive.confirmNewPassword": "Yangi shifrlash parolini tasdiqlang",
   "drive.currentPassword": "Joriy shifrlash paroli",
   "drive.newPassword": "Yangi shifrlash paroli",

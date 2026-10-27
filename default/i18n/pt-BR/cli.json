@@ -117,6 +117,7 @@
   "download.complete": "Download concluído",
   "download.failed": "Falha no download",
   "download.none": "Nenhum vídeo encontrado para download",
+  "download.open": "Abrir",
   "drive.confirmNewPassword": "Confirme a nova senha de criptografia",
   "drive.currentPassword": "Senha de criptografia atual",
   "drive.newPassword": "Nova senha de criptografia",

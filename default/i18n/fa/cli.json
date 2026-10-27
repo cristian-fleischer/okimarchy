@@ -116,6 +116,7 @@
   "download.complete": "دانلود کامل شد",
   "download.failed": "دانلود ناموفق بود",
   "download.none": "ویدیویی برای دانلود یافت نشد",
+  "download.open": "باز کردن",
   "drive.confirmNewPassword": "گذرواژه رمزگذاری جدید را تأیید کنید",
   "drive.currentPassword": "گذرواژه رمزگذاری فعلی",
   "drive.newPassword": "گذرواژه رمزگذاری جدید",

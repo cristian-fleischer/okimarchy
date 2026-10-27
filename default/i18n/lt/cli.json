@@ -117,6 +117,7 @@
   "download.complete": "Atsisiuntimas baigtas",
   "download.failed": "Atsisiuntimas nepavyko",
   "download.none": "Vaizdo įrašo atsisiuntimui nerasta",
+  "download.open": "Atidaryti",
   "drive.confirmNewPassword": "Patvirtinkite naują šifravimo slaptažodį",
   "drive.currentPassword": "Dabartinis šifravimo slaptažodis",
   "drive.newPassword": "Naujas šifravimo slaptažodis",

@@ -117,6 +117,7 @@
   "download.complete": "Descarga completada",
   "download.failed": "La descarga falló",
   "download.none": "No se encontró ningún video para descargar",
+  "download.open": "Abrir",
   "drive.confirmNewPassword": "Confirma la nueva contraseña de cifrado",
   "drive.currentPassword": "Contraseña de cifrado actual",
   "drive.newPassword": "Nueva contraseña de cifrado",

@@ -120,6 +120,7 @@
   "download.complete": "اكتمل التنزيل",
   "download.failed": "فشل التنزيل",
   "download.none": "لم يُعثر على فيديو للتنزيل",
+  "download.open": "فتح",
   "drive.confirmNewPassword": "تأكيد كلمة مرور التشفير الجديدة",
   "drive.currentPassword": "كلمة مرور التشفير الحالية",
   "drive.newPassword": "كلمة مرور التشفير الجديدة",

@@ -117,6 +117,7 @@
   "download.complete": "Preuzimanje dovršeno",
   "download.failed": "Preuzimanje nije uspjelo",
   "download.none": "Nije pronađen video za preuzimanje",
+  "download.open": "Otvori",
   "drive.confirmNewPassword": "Potvrdite novu lozinku za šifriranje",
   "drive.currentPassword": "Trenutna lozinka za šifriranje",
   "drive.newPassword": "Nova lozinka za šifriranje",

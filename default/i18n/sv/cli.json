@@ -116,6 +116,7 @@
   "download.complete": "Nedladdning klar",
   "download.failed": "Nedladdningen misslyckades",
   "download.none": "Ingen video hittades för nedladdning",
+  "download.open": "Öppna",
   "drive.confirmNewPassword": "Bekräfta nytt krypteringslösenord",
   "drive.currentPassword": "Nuvarande krypteringslösenord",
   "drive.newPassword": "Nytt krypteringslösenord",

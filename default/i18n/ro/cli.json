@@ -117,6 +117,7 @@
   "download.complete": "Descărcare finalizată",
   "download.failed": "Descărcare eșuată",
   "download.none": "Nu s-a găsit niciun video de descărcat",
+  "download.open": "Deschide",
   "drive.confirmNewPassword": "Confirmă noua parolă de criptare",
   "drive.currentPassword": "Parola curentă de criptare",
   "drive.newPassword": "Noua parolă de criptare",

@@ -116,6 +116,7 @@
   "download.complete": "Nedlasting fullført",
   "download.failed": "Nedlasting mislyktes",
   "download.none": "Ingen video funnet for nedlasting",
+  "download.open": "Åpne",
   "drive.confirmNewPassword": "Bekreft nytt krypteringspassord",
   "drive.currentPassword": "Gjeldende krypteringspassord",
   "drive.newPassword": "Nytt krypteringspassord",

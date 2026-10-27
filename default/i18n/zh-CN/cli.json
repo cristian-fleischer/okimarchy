@@ -115,6 +115,7 @@
   "download.complete": "下载完成",
   "download.failed": "下载失败",
   "download.none": "未找到可下载的视频",
+  "download.open": "打开",
   "drive.confirmNewPassword": "确认新加密密码",
   "drive.currentPassword": "当前加密密码",
   "drive.newPassword": "新加密密码",

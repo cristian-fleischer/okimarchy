@@ -116,6 +116,7 @@
   "download.complete": "Allalaadimine valmis",
   "download.failed": "Allalaadimine ebaõnnestus",
   "download.none": "Allalaadimiseks videot ei leitud",
+  "download.open": "Ava",
   "drive.confirmNewPassword": "Kinnita uus krüptimisparool",
   "drive.currentPassword": "Praegune krüptimisparool",
   "drive.newPassword": "Uus krüptimisparool",

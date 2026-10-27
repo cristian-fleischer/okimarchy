@@ -115,6 +115,7 @@
   "download.complete": "ดาวน์โหลดเสร็จแล้ว",
   "download.failed": "ดาวน์โหลดไม่สำเร็จ",
   "download.none": "ไม่พบวิดีโอสำหรับดาวน์โหลด",
+  "download.open": "เปิด",
   "drive.confirmNewPassword": "ยืนยันรหัสผ่านการเข้ารหัสใหม่",
   "drive.currentPassword": "รหัสผ่านการเข้ารหัสปัจจุบัน",
   "drive.newPassword": "รหัสผ่านการเข้ารหัสใหม่",

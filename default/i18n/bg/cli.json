@@ -116,6 +116,7 @@
   "download.complete": "Изтеглянето завърши",
   "download.failed": "Изтеглянето се провали",
   "download.none": "Видео за изтегляне не е намерено",
+  "download.open": "Отвори",
   "drive.confirmNewPassword": "Потвърди новата парола за криптиране",
   "drive.currentPassword": "Текуща парола за криптиране",
   "drive.newPassword": "Нова парола за криптиране",

@@ -115,6 +115,7 @@
   "download.complete": "ダウンロードが完了しました",
   "download.failed": "ダウンロードに失敗しました",
   "download.none": "ダウンロードできる動画が見つかりません",
+  "download.open": "開く",
   "drive.confirmNewPassword": "新しい暗号化パスワードを確認",
   "drive.currentPassword": "現在の暗号化パスワード",
   "drive.newPassword": "新しい暗号化パスワード",

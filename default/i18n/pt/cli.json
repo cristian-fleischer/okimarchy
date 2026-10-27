@@ -117,6 +117,7 @@
   "download.complete": "Transferência concluída",
   "download.failed": "A transferência falhou",
   "download.none": "Nenhum vídeo encontrado para transferir",
+  "download.open": "Abrir",
   "drive.confirmNewPassword": "Confirma a nova palavra-passe de encriptação",
   "drive.currentPassword": "Palavra-passe de encriptação atual",
   "drive.newPassword": "Nova palavra-passe de encriptação",

@@ -116,6 +116,7 @@
   "download.complete": "Lataus valmis",
   "download.failed": "Lataus epäonnistui",
   "download.none": "Ladattavaa videota ei löytynyt",
+  "download.open": "Avaa",
   "drive.confirmNewPassword": "Vahvista uusi salaussalasana",
   "drive.currentPassword": "Nykyinen salaussalasana",
   "drive.newPassword": "Uusi salaussalasana",

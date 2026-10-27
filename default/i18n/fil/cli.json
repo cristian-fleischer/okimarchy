@@ -116,6 +116,7 @@
   "download.complete": "Tapos na ang pag-download",
   "download.failed": "Nabigo ang pag-download",
   "download.none": "Walang nakitang video para i-download",
+  "download.open": "Buksan",
   "drive.confirmNewPassword": "Kumpirmahin ang bagong encryption password",
   "drive.currentPassword": "Kasalukuyang encryption password",
   "drive.newPassword": "Bagong encryption password",

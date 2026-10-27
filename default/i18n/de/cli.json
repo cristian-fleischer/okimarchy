@@ -116,6 +116,7 @@
   "download.complete": "Download abgeschlossen",
   "download.failed": "Download fehlgeschlagen",
   "download.none": "Kein Video zum Download gefunden",
+  "download.open": "Öffnen",
   "drive.confirmNewPassword": "Neues Verschlüsselungspasswort bestätigen",
   "drive.currentPassword": "Aktuelles Verschlüsselungspasswort",
   "drive.newPassword": "Neues Verschlüsselungspasswort",

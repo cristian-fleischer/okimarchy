@@ -118,6 +118,7 @@
   "download.complete": "Загрузка завершена",
   "download.failed": "Загрузка не удалась",
   "download.none": "Видео для загрузки не найдено",
+  "download.open": "Открыть",
   "drive.confirmNewPassword": "Подтвердите новый пароль шифрования",
   "drive.currentPassword": "Текущий пароль шифрования",
   "drive.newPassword": "Новый пароль шифрования",

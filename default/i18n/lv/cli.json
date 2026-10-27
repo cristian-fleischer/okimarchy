@@ -117,6 +117,7 @@
   "download.complete": "Lejupielāde pabeigta",
   "download.failed": "Lejupielāde neizdevās",
   "download.none": "Nav atrasts neviens video lejupielādei",
+  "download.open": "Atvērt",
   "drive.confirmNewPassword": "Apstiprini jauno šifrēšanas paroli",
   "drive.currentPassword": "Pašreizējā šifrēšanas parole",
   "drive.newPassword": "Jaunā šifrēšanas parole",
