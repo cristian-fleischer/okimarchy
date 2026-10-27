@@ -1,6 +1,5 @@
 import QtQuick
 import Quickshell
-import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Wayland
 import "IdleModel.js" as IdleModel
@@ -28,7 +27,6 @@ Item {
   readonly property int screensaverDelaySeconds: IdleModel.delayAfterFirstIdle(screensaverTimeoutSeconds, firstIdleTimeoutSeconds)
   readonly property int lockDelaySeconds: IdleModel.delayAfterFirstIdle(lockTimeoutSeconds, firstIdleTimeoutSeconds)
   readonly property bool idleEnabled: stayAwakeStateLoaded && !stayAwake
-  readonly property string screensaverClass: "org.omarchy.screensaver"
 
   property bool stayAwake: false
   property bool stayAwakeStateLoaded: false
@@ -38,8 +36,6 @@ Item {
   property bool screensaverStartedThisCycle: false
   property string lastEvent: "starting"
   property string lastEventAt: ""
-  property var screensaverWindows: ({})
-  property int screensaverWindowCount: 0
 
   function secondsFromConfig(value, fallback) {
     return IdleModel.secondsFromConfig(value, fallback)
@@ -80,7 +76,6 @@ Item {
     screensaverLaunchGraceTimer.stop()
     root.idledThisCycle = false
     root.screensaverStartedThisCycle = false
-    resetScreensaverWindows()
     runProcess(lockProcess, "lock", "omarchy-system-lock")
   }
 
@@ -93,7 +88,6 @@ Item {
     logEvent("idle-cycle-start", "screensaver=" + root.screensaverTimeoutSeconds + " lock=" + root.lockTimeoutSeconds)
     root.idledThisCycle = true
     root.screensaverStartedThisCycle = false
-    resetScreensaverWindows()
 
     // Set this cycle's deadlines once: a bound interval would restart a pending
     // timer from the moment shell.json changes, locking early or late.
@@ -124,61 +118,14 @@ Item {
 
     root.idledThisCycle = false
     root.screensaverStartedThisCycle = false
-    resetScreensaverWindows()
-  }
-
-  function resetScreensaverWindows() {
-    root.screensaverWindows = ({})
-    root.screensaverWindowCount = 0
-  }
-
-  function setScreensaverWindow(address, visible) {
-    var next = IdleModel.screensaverWindowsAfter(root.screensaverWindows, address, visible)
-    root.screensaverWindows = next.windows
-    root.screensaverWindowCount = next.count
-  }
-
-  function handleScreensaverWindowOpened(address) {
-    setScreensaverWindow(address, true)
-    screensaverLaunchGraceTimer.stop()
-  }
-
-  function handleScreensaverWindowClosed(address) {
-    setScreensaverWindow(address, false)
-
-    if (!root.idleEnabled || !root.idledThisCycle || !root.screensaverStartedThisCycle) return
-    if (root.screensaverWindowCount > 0) return
-
-    // The user dismissed the screensaver before the lock deadline. Treat that
-    // as activity and cancel the pending lock; the lock timer is only allowed
-    // to fire while the screensaver remains up.
-    root.cancelIdleCycle("screensaver-dismissed")
-  }
-
-  function eventParts(event, count) {
-    return IdleModel.eventParts(event, count)
-  }
-
-  function handleHyprlandEvent(event) {
-    var name = String(event && event.name ? event.name : "")
-    if (name === "openwindow") {
-      var open = eventParts(event, 4)
-      if (String(open[2] || "") === root.screensaverClass) root.handleScreensaverWindowOpened(open[0])
-    } else if (name === "closewindow") {
-      var close = eventParts(event, 1)
-      var address = String(close[0] || "")
-      if (root.screensaverWindows[address]) root.handleScreensaverWindowClosed(address)
-    }
   }
 
   function handleActiveSignal() {
     if (!root.idledThisCycle) return
 
-    // Starting the screensaver can make the compositor report activity. Keep
-    // the lock timer running once the screensaver exists (or during its short
-    // launch grace); Hyprland window events cancel the cycle if it exits before
-    // the normal lock deadline.
-    if (root.screensaverStartedThisCycle && (root.screensaverWindowCount > 0 || screensaverLaunchGraceTimer.running)) {
+    // Starting the screensaver can make the compositor report activity, so the
+    // launch grace ignores it. Any later input also dismisses the screensaver.
+    if (root.screensaverStartedThisCycle && screensaverLaunchGraceTimer.running) {
       logEvent("idle-monitor-active", "screensaver cycle remains armed")
       return
     }
@@ -207,7 +154,6 @@ Item {
       lock: root.lockTimeoutSeconds,
       screensaverDelay: root.screensaverDelaySeconds,
       lockDelay: root.lockDelaySeconds,
-      screensaverWindows: root.screensaverWindowCount,
       timers: {
         screensaver: screensaverTimer.running,
         lock: lockTimer.running,
@@ -292,15 +238,10 @@ Item {
     interval: 3000
     repeat: false
     onTriggered: {
-      if (root.idleEnabled && root.idledThisCycle && root.screensaverStartedThisCycle && root.screensaverWindowCount === 0 && !idleMonitor.isIdle) {
-        root.cancelIdleCycle("screensaver-not-running")
+      if (root.idleEnabled && root.idledThisCycle && root.screensaverStartedThisCycle && !idleMonitor.isIdle) {
+        root.cancelIdleCycle("activity")
       }
     }
-  }
-
-  Connections {
-    target: Hyprland
-    function onRawEvent(event) { root.handleHyprlandEvent(event) }
   }
 
   Process {
