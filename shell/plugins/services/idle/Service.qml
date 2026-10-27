@@ -130,6 +130,10 @@ Item {
       return
     }
 
+    userReturned()
+  }
+
+  function userReturned() {
     // Input the screensaver never sees (a bound media key, a touchscreen) still means the user is back.
     if (root.screensaverStartedThisCycle) screensaverStopProcess.running = true
     cancelIdleCycle("activity")
@@ -247,9 +251,7 @@ Item {
     interval: 3000
     repeat: false
     onTriggered: {
-      if (root.idleEnabled && root.idledThisCycle && root.screensaverStartedThisCycle && !idleMonitor.isIdle) {
-        root.cancelIdleCycle("activity")
-      }
+      if (root.idleEnabled && root.idledThisCycle && root.screensaverStartedThisCycle && !idleMonitor.isIdle) root.userReturned()
     }
   }
 
