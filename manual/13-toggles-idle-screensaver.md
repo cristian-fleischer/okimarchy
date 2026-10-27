@@ -28,7 +28,7 @@ _Appearance_ holds the menu bar and animations, plus a few things that aren't `o
 
 Most of these are just a flag file under `~/.local/state/omarchy/toggles/`. If you want to branch on one in a script, `omarchy-toggle-enabled` gives you an exit code instead of making you go looking:
 
-```
+```bash
 omarchy-toggle-enabled screensaver-off && echo "screensaver is off"
 ```
 
