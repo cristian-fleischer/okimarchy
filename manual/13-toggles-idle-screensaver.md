@@ -28,7 +28,7 @@ _Appearance_ holds the menu bar and animations, plus a few things that aren't `o
 
 Most of these are just a flag file under `~/.local/state/omarchy/toggles/`. If you want to branch on one in a script, `omarchy-toggle-enabled` gives you an exit code instead of making you go looking:
 
-```bash
+```
 omarchy-toggle-enabled screensaver-off && echo "screensaver is off"
 ```
 
@@ -91,7 +91,11 @@ Omarchy's screensaver is ASCII art running through random text effects, one inst
 
 You can start it on demand from _System > Screensaver_ (`Super + Esc`), which forces it up even if you've turned the idle screensaver off. There's no hotkey bound to it by default.
 
-`omarchy toggle screensaver` is what turns the idle one off, if you'd rather go straight from working to locked. It needs a terminal it knows how to configure — Alacritty, Foot, Ghostty, or Kitty — and will tell you so if your default terminal is something else.
+`omarchy toggle screensaver` is what turns the idle one off, if you'd rather go straight from working to locked. Any key, click, scroll or mouse movement closes it. On a machine where the animation runs too hot, slow it down by adding this to a file under `~/.config/uwsm/env.d/` (like `~/.config/uwsm/env.d/screensaver`):
+
+```
+export OMARCHY_SCREENSAVER_FRAME_RATE=30
+```
 
 The logo it draws is yours to change, under _Appearance > Branding > Screensaver_. Upload a png or svg and Omarchy converts it to ASCII. See [branding](41-branding.md).
 
