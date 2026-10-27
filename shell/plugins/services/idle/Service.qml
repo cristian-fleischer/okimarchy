@@ -124,13 +124,22 @@ Item {
     if (!root.idledThisCycle) return
 
     // Starting the screensaver can make the compositor report activity, so the
-    // launch grace ignores it. Any later input also dismisses the screensaver.
+    // launch grace ignores it.
     if (root.screensaverStartedThisCycle && screensaverLaunchGraceTimer.running) {
       logEvent("idle-monitor-active", "screensaver cycle remains armed")
       return
     }
 
+    // Input the screensaver never sees (a bound media key, a touchscreen) still means the user is back.
+    if (root.screensaverStartedThisCycle) screensaverStopProcess.running = true
     cancelIdleCycle("activity")
+  }
+
+  function handleScreensaverExited() {
+    // Closing while the user is active is a dismissal, even inside the launch grace.
+    if (root.idleEnabled && root.idledThisCycle && root.screensaverStartedThisCycle && !idleMonitor.isIdle) {
+      cancelIdleCycle("screensaver-dismissed")
+    }
   }
 
   function handleIdleChanged() {
@@ -246,7 +255,14 @@ Item {
 
   Process {
     id: screensaverProcess
-    onExited: function(exitCode, exitStatus) { root.logEvent("process-exit", "screensaver exitCode=" + exitCode + " status=" + exitStatus) }
+    onExited: function(exitCode, exitStatus) {
+      root.logEvent("process-exit", "screensaver exitCode=" + exitCode + " status=" + exitStatus)
+      root.handleScreensaverExited()
+    }
+  }
+  Process {
+    id: screensaverStopProcess
+    command: ["pkill", "-f", "[/]usr/lib/omarchy-screensaver/omarchy-screensaver"]
   }
   Process {
     id: lockProcess
