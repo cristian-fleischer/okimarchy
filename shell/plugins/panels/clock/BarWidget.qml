@@ -162,9 +162,9 @@ BarWidget {
     horizontalMargin: 8.75
     verticalPadding: 8.75
     tooltipText: I18n.t("clock.toggleFormat")
-    // Right click swaps the label for the next format, which is its own
-    // feedback; shrinking the new text as it lands reads as a glitch.
-    pressFeedbackButtons: Qt.LeftButton | Qt.MiddleButton
+    // The clock is text to read, not an icon to press, so a click never
+    // shrinks it; the format it cycles to, or the panel it opens, is feedback.
+    pressFeedbackButtons: Qt.NoButton
 
     onPressed: function(b) {
       if (b === Qt.RightButton) root.cycleFormat()

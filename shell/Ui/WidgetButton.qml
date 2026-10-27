@@ -34,8 +34,8 @@ Item {
   // Set by the bar while its own press handler, laid over the widget for
   // dragging, holds this button down; mouseArea never sees that press.
   property int heldButtons: Qt.NoButton
-  // The mouse buttons the mark gives under. A button whose click changes the
-  // mark itself, like the clock's format cycle, is left out.
+  // The mouse buttons the mark gives under; none for a label that is read
+  // rather than pressed, like the clock.
   property int pressFeedbackButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
 
   signal pressed(int button)
