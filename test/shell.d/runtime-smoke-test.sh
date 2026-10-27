@@ -699,6 +699,52 @@ jq -e 'all(.bar.layout.right[]; (.id // .) != "omarchy.microphone")' \
   fail_with_log "bar put added a second copy of a widget already on the bar"
 pass "bar put leaves a widget already on the bar alone"
 
+# A hand edit that drops the closing brace puts the shell on the defaults,
+# which have no omarchy.microphone. A bar change then applies for the session
+# only, leaving the file as the user left it until they fix it.
+config="$test_home/.config/omarchy/shell.json"
+# Elsewhen saves its first-run cities once its probe returns. Landing between
+# the edit and the shell's reload, that save would write valid JSON back.
+for _ in {1..80}; do
+  jq -e 'any(.bar.layout[][]; .id? == "omarchy.elsewhen" and .cities? != null)' "$config" >/dev/null 2>&1 && break
+  kill -0 "$QS_PID" 2>/dev/null || fail_with_log "test shell exited before Elsewhen saved its cities"
+  sleep 0.1
+done
+jq -e 'any(.bar.layout[][]; .id? == "omarchy.elsewhen" and .cities? != null)' "$config" >/dev/null ||
+  fail_with_log "Elsewhen saves its first-run cities before shell.json is edited"
+sed -i '$ d' "$config"
+cp "$config" "$TMPDIR/broken.json"
+for _ in {1..80}; do
+  [[ $(center_ids) != *omarchy.microphone* ]] && break
+  kill -0 "$QS_PID" 2>/dev/null || fail_with_log "test shell exited while reading an unreadable shell.json"
+  sleep 0.1
+done
+[[ $(center_ids) != *omarchy.microphone* ]] || fail_with_log "shell falls back to defaults on an unreadable shell.json"
+[[ $(shell_ipc shell setBarWidget omarchy.clock format '"HH:mm"' '{}') == "ok" ]] ||
+  fail_with_log "bar widget setting is applied while shell.json is unreadable"
+jq -e 'any(.bar.layout[][]; .id? == "omarchy.clock" and .format? == "HH:mm")' \
+  <<<"$(shell_ipc shell listShellConfig)" >/dev/null ||
+  fail_with_log "a bar change still applies in memory while shell.json is unreadable"
+sleep 0.5
+cmp -s "$config" "$TMPDIR/broken.json" || fail "a bar change leaves an unreadable shell.json as the user left it" "$(cat "$config")"
+pass "a bar change leaves an unreadable shell.json as the user left it"
+
+printf '}\n' >>"$config"
+for _ in {1..80}; do
+  [[ $(center_ids) == *omarchy.microphone* ]] && break
+  kill -0 "$QS_PID" 2>/dev/null || fail_with_log "test shell exited while reading a fixed shell.json"
+  sleep 0.1
+done
+[[ $(shell_ipc shell setBarWidget omarchy.clock format '"H:mm"' '{}') == "ok" ]] ||
+  fail_with_log "bar widget setting is applied once shell.json is fixed"
+saved='any(.bar.layout[][]; (.id? // .) == "omarchy.microphone") and any(.bar.layout[][]; .id? == "omarchy.clock" and .format? == "H:mm")'
+for _ in {1..40}; do
+  jq -e "$saved" "$config" >/dev/null 2>&1 && break
+  sleep 0.1
+done
+jq -e "$saved" "$config" >/dev/null || fail "a bar change is saved again once shell.json is fixed" "$(cat "$config")"
+pass "a bar change is saved again once shell.json is fixed"
+
 # Run the replacement-bar probes last: switching bar loaders can transiently
 # leave bar-aware panels without a visual host, which should not add noise to
 # the default-bar assertions above.
