@@ -1,4 +1,6 @@
 import QtQuick
+import QtQuick.Effects
+import QtQuick.Shapes
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
@@ -26,6 +28,13 @@ Item {
   property string themeColors: ""
   property string themeShell: ""
   property real themeOpacity: 1
+  // A finished switch whose wallpaper is still hidden or decoding keeps its
+  // cover until the wallpaper is on screen, so the fade never reveals a gap.
+  property bool themeFinishing: false
+  // A switch to a still without an intro of its own opens the cover with the
+  // same slanted cut as an ordinary background transition, not the intro fade.
+  property bool themeCut: false
+  property real themeCutProgress: 0
   readonly property var backgroundService: host && host.services ? host.firstPartyServiceFor("omarchy.background") : null
   readonly property bool backgroundActive: !!backgroundService && !backgroundService.suspended
   readonly property bool backgroundReady: backgroundActive && backgroundService.ready !== false
@@ -55,7 +64,10 @@ Item {
   }
 
   onDesktopReadyChanged: revealStartup()
-  onBackgroundReadyChanged: finishStartup()
+  onBackgroundReadyChanged: {
+    finishStartup()
+    if (themeFinishing && backgroundReady) revealTheme()
+  }
   Connections {
     target: root.host && root.host.pluginRegistry ? root.host.pluginRegistry : null
     function onPluginsChanged() { root.finishStartup() }
@@ -64,6 +76,9 @@ Item {
   function prepareTheme(fromPath, token, colors, shell) {
     framePoll.stop()
     themeFade.stop()
+    themeCutReveal.stop()
+    themeCut = false
+    themeCutProgress = 0
     themeToken = token
     transitionToken = token
     if (themeBackground !== fromPath) {
@@ -73,11 +88,13 @@ Item {
     themeColors = colors
     themeShell = shell
     themeOpacity = 1
+    themeFinishing = false
     themeFallback.restart()
   }
 
   function revealTheme() {
     if (!themeToken && !cover) return
+    themeFinishing = false
     framePoll.stop()
     themeFallback.stop()
     if (themeToken) {
@@ -94,17 +111,24 @@ Item {
       themeBackground = ""
       startupMediaReady = true
       revealStartup()
+    } else if (themeCut) {
+      themeCutReveal.restart()
     } else {
       themeFade.restart()
     }
   }
 
-  function finishTheme(token) {
-    if (token === themeToken) revealTheme()
+  // OWE hands the desktop back to the shell when an intro ends or is cut
+  // short, and the new still may still be decoding then.
+  function finishTheme(token, cut) {
+    if (token !== themeToken) return
+    themeCut = !!cut
+    if (backgroundReady || !backgroundService) revealTheme()
+    else themeFinishing = true
   }
 
   function themeStatus(token) {
-    return token === transitionToken && (themeToken || themeFade.running || startupFade.running) ? "pending" : "ready"
+    return token === transitionToken && (themeToken || themeFade.running || themeCutReveal.running || startupFade.running) ? "pending" : "ready"
   }
 
   function themeCoverStatus(token) {
@@ -118,9 +142,13 @@ Item {
   }
 
   function cancelTheme() {
+    themeFinishing = false
     framePoll.stop()
     themeFallback.stop()
     themeFade.stop()
+    themeCutReveal.stop()
+    themeCut = false
+    themeCutProgress = 0
     themeToken = ""
     transitionToken = ""
     themeBackground = ""
@@ -159,6 +187,22 @@ Item {
     duration: Style.duration(420)
     easing.type: Easing.OutCubic
     onFinished: root.themeBackground = ""
+  }
+
+  // Matches the background service's own transition.
+  NumberAnimation {
+    id: themeCutReveal
+    target: root
+    property: "themeCutProgress"
+    from: 0
+    to: 1
+    duration: Style.duration(840)
+    easing.type: Easing.OutCubic
+    onFinished: {
+      root.themeBackground = ""
+      root.themeCut = false
+      root.themeCutProgress = 0
+    }
   }
 
   Timer {
@@ -312,6 +356,44 @@ Item {
         // Start decoding while the remaining theme configs render.
         asynchronous: true
         onStatusChanged: panel.coverFrames = 0
+        layer.enabled: root.themeCut && root.themeCutProgress > 0
+        layer.smooth: true
+        layer.effect: MultiEffect {
+          maskEnabled: true
+          maskInverted: true
+          maskSource: cutMask
+          maskThresholdMin: 0.5
+          maskSpreadAtMin: 0.02
+        }
+      }
+
+      // The background service's reveal band, opening a hole in the cover.
+      Item {
+        id: cutMask
+        anchors.fill: parent
+        visible: false
+        layer.enabled: root.themeCut
+
+        readonly property real slant: -0.18
+        readonly property real centerTop: width / 2 - slant * height / 2
+        readonly property real centerBottom: width / 2 + slant * height / 2
+        readonly property real reach: width / 2 + Math.abs(slant) * height / 2 + 4
+        readonly property real spread: reach * root.themeCutProgress
+
+        Shape {
+          anchors.fill: parent
+          antialiasing: true
+          preferredRendererType: Shape.CurveRenderer
+          ShapePath {
+            fillColor: "white"
+            strokeColor: "transparent"
+            startX: cutMask.centerTop - cutMask.spread; startY: 0
+            PathLine { x: cutMask.centerTop + cutMask.spread; y: 0 }
+            PathLine { x: cutMask.centerBottom + cutMask.spread; y: cutMask.height }
+            PathLine { x: cutMask.centerBottom - cutMask.spread; y: cutMask.height }
+            PathLine { x: cutMask.centerTop - cutMask.spread; y: 0 }
+          }
+        }
       }
 
       // Give the ready image a frame to reach the compositor before OWE

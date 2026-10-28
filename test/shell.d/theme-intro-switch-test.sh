@@ -47,6 +47,9 @@ STUB
 cat >"$commands/omarchy-shell" <<'STUB'
 #!/bin/bash
 printf 'shell: %s\n' "$*" >>"$TEST_LOG"
+if [[ $2 == "themeIntroCoverStatus" && -n ${TEST_COVER_LINK:-} ]]; then
+  printf 'cover checked on %s\n' "$(readlink "$TEST_COVER_LINK")" >>"$TEST_LOG"
+fi
 if [[ -n ${TEST_GATE_DIR:-} ]]; then
   if [[ $2 == "themeIntroStatus" && ! -f $TEST_GATE_DIR/fade-ready ]]; then
     if [[ ! -f $TEST_GATE_DIR/fade-waited ]]; then
@@ -78,6 +81,9 @@ if [[ $1 == intro && -n ${TEST_RELEASE:-} ]]; then
   printf '%s\n' "$$" >"$TEST_INTRO_PID"
 fi
 printf 'owe: %s\n' "$*" >>"$TEST_LOG"
+if [[ $1 == status && ${TEST_INTRO_PLAYING:-false} == true ]]; then
+  echo '{"intro":true}'
+fi
 [[ ${TEST_OWE_FAIL:-false} != true ]] || exit 1
 if [[ $1 == "render" ]]; then
   [[ ${TEST_LIVE_FRAME:-false} == "true" ]] || exit 1
@@ -219,8 +225,19 @@ set_background "$state/theme/backgrounds/1-sky.webp"
 grep -Fxq "shell: -q background set $state/theme/backgrounds/1-sky.webp" "$log" || fail "a background without an intro is set directly"
 ! grep -q '^owe: intro ' "$log" || fail "a background without an intro plays none"
 set_background "$state/theme/backgrounds/2-road.webp"
-wait_command "^shell: -q background setInstant $state/theme/backgrounds/2-road.webp\$"
-grep -Fxq "owe: intro --start first-frame $state/theme/backgrounds/intros/2-road.mp4" "$log" || fail "changing the background plays its matching intro"
+wait_command '^shell: shell finishThemeIntro '
+grep -Fxq "owe: intro --start first-frame --refresh $state/theme/backgrounds/intros/2-road.mp4" "$log" || fail "changing the background plays its matching prepared intro"
+# The outgoing still covers the desktop until the clip moves, then fades out,
+# so the gap before the clip's first frame is never shown.
+token=$(awk -v cover="$state/theme/backgrounds/1-sky.webp" '$1 == "shell:" && $3 == "prepareThemeIntro" && $4 == cover { print $5; exit }' "$log")
+[[ $token == background-* ]] || fail "the outgoing background covers the desktop during the intro" "$(cat "$log")"
+grep -Fxq "shell: background setInstant $state/theme/backgrounds/2-road.webp" "$log" || fail "the shell takes the new still under the cover"
+# OWE hands the desktop back to the shell when the clip ends, so the shell must
+# already hold the new still, or the old one flashes before it arrives.
+still_line=$(grep -n '^shell: background setInstant ' "$log" | head -1 | cut -d: -f1)
+intro_line=$(grep -n '^owe: intro --start ' "$log" | head -1 | cut -d: -f1)
+(( still_line < intro_line )) || fail "the shell takes the new still before the intro plays" "$(cat "$log")"
+grep -Fxq "shell: shell finishThemeIntro $token" "$log" || fail "the cover fades out once the intro is moving"
 [[ $(readlink "$state/background") == "$state/theme/backgrounds/2-road.webp" ]] || fail "the background with an intro is selected"
 set_background "$state/theme/backgrounds/2-road.webp"
 ! grep -q '^owe: intro ' "$log" || fail "reselecting the current background plays no intro"
@@ -240,5 +257,29 @@ done
 sleep 0.1
 ! grep -q '2-road' "$log" || fail "a superseded intro leaves the newer background in place"
 TEST_OWE_FAIL=true set_background "$state/theme/backgrounds/2-road.webp"
-wait_command "^shell: -q background set $state/theme/backgrounds/2-road.webp\$"
+wait_command '^shell: shell finishThemeIntro '
+grep -Fxq "shell: background setInstant $state/theme/backgrounds/2-road.webp" "$log" || fail "a failed intro fades the cover to the new still"
 pass "a superseded or failed background intro keeps the latest selection on screen"
+
+# A playing intro hides the shell's background, so the ordinary transition to a
+# still without an intro of its own would run unseen. The cover holds the
+# playing frame instead and opens with the same cut once OWE hands back.
+TEST_INTRO_PLAYING=true TEST_COVER_LINK="$state/background" set_background "$state/theme/backgrounds/1-sky.webp"
+wait_command '^shell: shell cutThemeIntro '
+# Repointing the link cancels the playing intro, so the cover is up first.
+[[ $(grep -m1 '^cover checked on ' "$log") == "cover checked on $state/theme/backgrounds/2-road.webp" ]] || fail "the cover is on screen before the link changes" "$(cat "$log")"
+! grep -q '^shell: shell finishThemeIntro ' "$log" || fail "a still without an intro opens with the cut, not the intro fade"
+grep -q '^shell: shell prepareThemeIntro ' "$log" || fail "a background change during an intro covers the playing frame"
+grep -Fxq "shell: background setInstant $state/theme/backgrounds/1-sky.webp" "$log" || fail "the still without an intro is set under the cover"
+! grep -qE '^owe: intro(-prepare)? ' "$log" || fail "a still without an intro plays none"
+! grep -q '^shell: -q background set ' "$log" || fail "no ordinary transition runs under the playing intro"
+if [[ $(<"$state/theme.name") == alpha ]]; then next_theme=beta; else next_theme=alpha; fi
+printf '%s\n' "$state/theme/backgrounds/1-sky.webp" >"$home/.local/state/omarchy/theme-backgrounds/$next_theme"
+TEST_INTRO_PLAYING=true set_theme "$next_theme"
+wait_command '^shell: shell cutThemeIntro '
+! grep -q '^shell: shell finishThemeIntro ' "$log" || fail "the theme's still without an intro opens with the cut, not the intro fade"
+grep -q '^shell: shell prepareThemeIntro ' "$log" || fail "a theme switch during an intro covers the playing frame"
+grep -Fxq "shell: background setInstant $state/theme/backgrounds/1-sky.webp" "$log" || fail "the theme's still without an intro is set under the cover"
+! grep -q '^shell: background themeTransition ' "$log" || fail "no ordinary transition runs under the playing intro"
+! grep -qE '^owe: intro(-prepare)? ' "$log" || fail "the theme's still without an intro plays none"
+pass "switching to a still without an intro while one plays cuts from the playing frame"
