@@ -17,9 +17,32 @@ if [[ ! -f $BACKGROUND ]]; then
   exit 1
 fi
 
+PREVIOUS_BACKGROUND=$(readlink -f "$CURRENT_BACKGROUND_LINK" 2>/dev/null)
+
 # Create symlink to the new background media
 ln -nsf "$BACKGROUND" "$CURRENT_BACKGROUND_LINK"
 
+INTRO=""
+if [[ $PREVIOUS_BACKGROUND != "$BACKGROUND" && ! -f $HOME/.local/state/omarchy/toggles/background-intros-off ]] &&
+  [[ $(hyprctl -j getoption animations:enabled 2>/dev/null | jq -r '.bool' 2>/dev/null) == "true" ]]; then
+  INTRO=$(omarchy-theme-bg-boot-intro --resolve-only "$BACKGROUND")
+fi
+
 # Update the live shell background when it is running. Nothing watches the
 # symlink, so this is how the shell learns of the new background.
-omarchy-shell -q background set "$BACKGROUND"
+if [[ -n $INTRO ]]; then
+  # OWE hides the shell's background while the intro plays, so the shell takes
+  # the new still unseen once it ends. A newer selection owns the shell by then.
+  (
+    if owe intro --start first-frame "$INTRO"; then
+      update="setInstant"
+    else
+      update="set"
+    fi
+    if [[ $(readlink -f "$CURRENT_BACKGROUND_LINK") == "$BACKGROUND" ]]; then
+      omarchy-shell -q background "$update" "$BACKGROUND"
+    fi
+  ) </dev/null >/dev/null 2>&1 &
+else
+  omarchy-shell -q background set "$BACKGROUND"
+fi
