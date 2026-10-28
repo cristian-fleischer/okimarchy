@@ -35,6 +35,13 @@ Item {
   // same slanted cut as an ordinary background transition, not the intro fade.
   property bool themeCut: false
   property real themeCutProgress: 0
+  // A new palette restyles the whole shell in the frame it lands, and an
+  // animation started in that frame begins already advanced by its length,
+  // about 40% of the fade. The reveal starts two frames later instead.
+  property int revealDelayFrames: 0
+  readonly property bool revealing: revealDelayFrames > 0 || themeFade.running || themeCutReveal.running || startupFade.running
+  // The outgoing frame reached, or failed to reach, the screen.
+  signal coverPresented()
   readonly property var backgroundService: host && host.services ? host.firstPartyServiceFor("omarchy.background") : null
   readonly property bool backgroundActive: !!backgroundService && !backgroundService.suspended
   readonly property bool backgroundReady: backgroundActive && backgroundService.ready !== false
@@ -77,6 +84,7 @@ Item {
     framePoll.stop()
     themeFade.stop()
     themeCutReveal.stop()
+    revealDelayFrames = 0
     themeCut = false
     themeCutProgress = 0
     themeToken = token
@@ -97,7 +105,8 @@ Item {
     themeFinishing = false
     framePoll.stop()
     themeFallback.stop()
-    if (themeToken) {
+    // A background change keeps the theme, so it hands over no palette.
+    if (themeToken && (themeColors || themeShell)) {
       Commons.Color.loadColors(Util.decodeBase64(themeColors))
       Commons.Color.loadShell(Util.decodeBase64(themeShell))
       Style.scheduleRefresh()
@@ -111,10 +120,8 @@ Item {
       themeBackground = ""
       startupMediaReady = true
       revealStartup()
-    } else if (themeCut) {
-      themeCutReveal.restart()
     } else {
-      themeFade.restart()
+      revealDelayFrames = 2
     }
   }
 
@@ -128,7 +135,7 @@ Item {
   }
 
   function themeStatus(token) {
-    return token === transitionToken && (themeToken || themeFade.running || themeCutReveal.running || startupFade.running) ? "pending" : "ready"
+    return token === transitionToken && (themeToken || revealing) ? "pending" : "ready"
   }
 
   function themeCoverStatus(token) {
@@ -147,6 +154,7 @@ Item {
     themeFallback.stop()
     themeFade.stop()
     themeCutReveal.stop()
+    revealDelayFrames = 0
     themeCut = false
     themeCutProgress = 0
     themeToken = ""
@@ -202,6 +210,16 @@ Item {
       root.themeBackground = ""
       root.themeCut = false
       root.themeCutProgress = 0
+    }
+  }
+
+  FrameAnimation {
+    running: root.revealDelayFrames > 0
+    onTriggered: {
+      root.revealDelayFrames -= 1
+      if (root.revealDelayFrames > 0) return
+      if (root.themeCut) themeCutReveal.restart()
+      else themeFade.restart()
     }
   }
 
@@ -323,6 +341,8 @@ Item {
       property int coverFrames: 0
       readonly property bool coverReady: outgoingFrame.status === Image.Ready && coverFrames >= 2
       readonly property bool coverFailed: outgoingFrame.status === Image.Error
+      onCoverReadyChanged: root.coverPresented()
+      onCoverFailedChanged: root.coverPresented()
       screen: modelData
       visible: (!root.startupPending && root.cover) || root.themeBackground !== ""
       // Keep the window transparent throughout the fade. Paint the startup
